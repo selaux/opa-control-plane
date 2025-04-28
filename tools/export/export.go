@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -8,10 +9,39 @@ import (
 	"net/http"
 	"os"
 	"strings"
+
+	"gopkg.in/yaml.v3"
 )
 
 var urlFlag = flag.String("u", "", "set URL of Styra DAS tenant to export from")
 var styraToken = os.Getenv("STYRA_TOKEN")
+
+type Config struct {
+	Systems map[string]*SystemConfig `yaml:"systems"`
+	Secrets map[string]*SecretConfig `yaml:"secrets"`
+}
+
+type SystemConfig struct {
+	Name string    `yaml:"name"`
+	Git  GitConfig `yaml:"git"`
+}
+
+type GitConfig struct {
+	Repo        string  `yaml:"repo"`
+	Reference   *string `yaml:"reference,omitempty"`
+	Commit      *string `yaml:"commit,omitempty"`
+	Path        *string `yaml:"path,omitempty"`
+	Credentials struct {
+		HTTP          *string `yaml:"http,omitempty"`
+		SSHPrivateKey *string `yaml:"ssh_private_key,omitempty"`
+		SSHPassphrase *string `yaml:"ssh_passphrase,omitempty"`
+	} `yaml:"credentials"`
+}
+
+type SecretConfig struct {
+	Name  string  `yaml:"name"`
+	Value *string `yaml:"value,omitempty"`
+}
 
 type DASClient struct {
 	url    string
@@ -20,8 +50,14 @@ type DASClient struct {
 }
 
 type DASResponse struct {
-	Result    *interface{} `json:"result"`
-	RequestId string       `json:"request_id"`
+	Result    json.RawMessage `json:"result"`
+	RequestId string          `json:"request_id"`
+}
+
+func (r *DASResponse) Decode(x interface{}) error {
+	buf := bytes.NewBuffer(r.Result)
+	decoder := json.NewDecoder(buf)
+	return decoder.Decode(x)
 }
 
 func (c *DASClient) Get(path string) (*DASResponse, error) {
@@ -49,6 +85,41 @@ func (c *DASClient) Get(path string) (*DASResponse, error) {
 	return &r, decoder.Decode(&r)
 }
 
+func mapV1SystemToSystemConfig(v1 *v1System) (*SystemConfig, error) {
+	var x SystemConfig
+
+	x.Name = v1.Name
+
+	if v1.SourceControl == nil {
+		return nil, fmt.Errorf("not git backed")
+	}
+
+	x.Git.Repo = v1.SourceControl.Origin.URL
+
+	if v1.SourceControl.Origin.Commit != "" {
+		x.Git.Commit = &v1.SourceControl.Origin.Commit
+	} else if v1.SourceControl.Origin.Reference != "" {
+		x.Git.Reference = &v1.SourceControl.Origin.Reference
+	} else {
+		return nil, fmt.Errorf("origin missing commit and reference")
+	}
+
+	if v1.SourceControl.Origin.Path != "" {
+		x.Git.Path = &v1.SourceControl.Origin.Path
+	}
+
+	if v1.SourceControl.Origin.Credentials != "" {
+		x.Git.Credentials.HTTP = &v1.SourceControl.Origin.Credentials
+	} else if v1.SourceControl.Origin.SSHCredentials.PrivateKey != "" {
+		x.Git.Credentials.SSHPrivateKey = &v1.SourceControl.Origin.SSHCredentials.PrivateKey
+		if v1.SourceControl.Origin.SSHCredentials.Passphrase != "" {
+			x.Git.Credentials.SSHPassphrase = &v1.SourceControl.Origin.SSHCredentials.Passphrase
+		}
+	}
+
+	return &x, nil
+}
+
 func main() {
 
 	flag.Parse()
@@ -67,10 +138,111 @@ func main() {
 		client: http.DefaultClient,
 	}
 
+	output := Config{
+		Systems: map[string]*SystemConfig{},
+		Secrets: map[string]*SecretConfig{},
+	}
+
 	resp, err := c.Get("v1/systems")
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	log.Println(resp, err)
+	var systems []*v1System
+	err = resp.Decode(&systems)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	resp, err = c.Get("v1/secrets")
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	var secrets []*v1Secret
+	err = resp.Decode(&secrets)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	for _, system := range systems {
+		sc, err := mapV1SystemToSystemConfig(system)
+		if err != nil {
+			log.Printf("skipping system %q: %v", system.Name, err)
+			continue
+		}
+
+		output.Systems[sc.Name] = sc
+	}
+
+	secretsById := map[string]*v1Secret{}
+	for _, secret := range secretsById {
+		secretsById[secret.Id] = secret
+	}
+
+	for _, sc := range output.Systems {
+		if sc.Git.Credentials.HTTP != nil {
+			id := *sc.Git.Credentials.HTTP
+			output.Secrets[id] = &SecretConfig{Name: id}
+		}
+		if sc.Git.Credentials.SSHPassphrase != nil {
+			id := *sc.Git.Credentials.SSHPassphrase
+			output.Secrets[id] = &SecretConfig{Name: id}
+		}
+		if sc.Git.Credentials.SSHPrivateKey != nil {
+			id := *sc.Git.Credentials.SSHPrivateKey
+			output.Secrets[id] = &SecretConfig{Name: id}
+		}
+	}
+
+	bs, err := yaml.Marshal(output)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	fmt.Println(string(bs))
+}
+
+type v1System struct {
+	Name          string `json:"name"`
+	Type          string `json:"type"`
+	SourceControl *struct {
+		Origin v1GitRepoConfig `json:"origin"`
+	} `json:"source_control"`
+}
+
+type v1Secret struct {
+	Name string `json:"string"`
+	Id   string `json:"id"`
+}
+
+type v1Library struct {
+	Id            string `json:"id"`
+	SourceControl *struct {
+		UseWorkspaceSettings bool            `json:"use_workspace_settings"`
+		Origin               v1GitRepoConfig `json:"origin"`
+		LibraryOrigin        v1GitRepoConfig `json:"library_origin"`
+	} `json:"source_control"`
+}
+
+type v1Stack struct {
+	Name          string `json:"name"`
+	Id            string `json:"id"`
+	SourceControl *struct {
+		UseWorkspaceSettings bool            `json:"use_workspace_settings"`
+		Origin               v1GitRepoConfig `json:"origin"`
+		StackOrigin          v1GitRepoConfig `json:"stack_origin"`
+	} `json:"source_control"`
+}
+
+type v1GitRepoConfig struct {
+	Commit         string `json:"commit"`
+	Path           string `json:"path"`
+	Reference      string `json:"reference"`
+	Credentials    string `json:"credentials"`
+	SSHCredentials struct {
+		Passphrase string `json:"passphrase"`
+		PrivateKey string `json:"private_key"`
+	} `json:"ssh_credentials"`
+	URL string `json:"url"`
 }
