@@ -1,11 +1,34 @@
 package config
 
+import (
+	"fmt"
+	"os"
+
+	"gopkg.in/yaml.v3"
+)
+
 // Internal configuration data structures for Lighthouse.
 
 // Root is the top-level configuration structure used by Lighthouse.
 type Root struct {
 	Systems map[string]*System `yaml:"systems"`
 	Secrets map[string]*Secret `yaml:"secrets"`
+}
+
+func (r *Root) ValidateAndInjectDefaults() (warnings []error, err error) {
+	for name, system := range r.Systems {
+		system.Name = name
+		if system.Git.Repo == "" {
+			return nil, fmt.Errorf("system %q is missing a git repo", name)
+		}
+	}
+	for name, secret := range r.Secrets {
+		secret.Name = name
+		if secret.Value == nil {
+			warnings = append(warnings, fmt.Errorf("secret %q is missing a value", name))
+		}
+	}
+	return warnings, nil
 }
 
 // System defines the configuration for a Lighthouse System.
@@ -34,4 +57,22 @@ type Git struct {
 type Secret struct {
 	Name  string  `yaml:"name"`
 	Value *string `yaml:"value,omitempty"`
+}
+
+func ParseFile(filename string) (root *Root, warnings []error, err error) {
+	bs, err := os.ReadFile(filename)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to read config file %s: %w", filename, err)
+	}
+
+	if err := yaml.Unmarshal(bs, &root); err != nil {
+		return nil, nil, fmt.Errorf("failed to unmarshal config file %s: %w", filename, err)
+	}
+
+	warnings, err = root.ValidateAndInjectDefaults()
+	if err != nil {
+		return nil, nil, err
+	}
+
+	return root, warnings, nil
 }
