@@ -76,3 +76,24 @@ func ParseFile(filename string) (root *Root, warnings []error, err error) {
 
 	return root, warnings, nil
 }
+
+type ObjectStorage struct {
+	Provider string `yaml:"provider"` // "aws" for Amazon S3, "gcp" for Google Cloud Storage, "azure" for Azure Blob Storage
+}
+
+// AmazonS3 defines the configuration for an Amazon S3-compatible object storage.
+type AmazonS3 struct {
+	Bucket string `yaml:"bucket"`
+}
+
+// GCPCloudStorage defines the configuration for a Google Cloud Storage bucket.
+type GCPCloudStorage struct {
+	Project string `yaml:"project"`
+	Bucket  string `yaml:"bucket"`
+}
+
+// AzureBlobStorage defines the configuration for an Azure Blob Storage container.
+type AzureBlobStorage struct {
+	AccountURL string `yaml:"account_url"`
+	Container  string `yaml:"container"`
+}

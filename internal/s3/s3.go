@@ -9,9 +9,11 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob"
 	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/config"
+	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/feature/s3/manager"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/tsandall/lighthouse/internal/config"
+	"gopkg.in/yaml.v3"
 )
 
 var (
@@ -43,33 +45,53 @@ type (
 )
 
 // NewS3 creates a new S3 client based on the provided configuration.
-func NewS3(ctx context.Context, provider string, bucket string) (ObjectStorage, error) {
-	switch provider {
+func NewS3(ctx context.Context, data []byte) (ObjectStorage, error) {
+	var commonCfg config.ObjectStorage
+	err := yaml.Unmarshal(data, &commonCfg)
+	if err != nil {
+		return nil, err
+	}
+
+	switch commonCfg.Provider {
 	case "aws":
-		cfg, err := config.LoadDefaultConfig(ctx)
+		var parsedCfg config.AmazonS3
+		if err := yaml.Unmarshal(data, &parsedCfg); err != nil {
+			return nil, err
+		}
+
+		awsCfg, err := awsconfig.LoadDefaultConfig(ctx)
 		if err != nil {
 			return nil, err
 		}
-		return &AmazonS3{bucket: bucket, uploader: manager.NewUploader(s3.NewFromConfig(cfg))}, nil
+		return &AmazonS3{bucket: parsedCfg.Bucket, uploader: manager.NewUploader(s3.NewFromConfig(awsCfg))}, nil
 	case "gcp":
+		var parsedCfg config.GCPCloudStorage
+		if err := yaml.Unmarshal(data, &parsedCfg); err != nil {
+			return nil, err
+		}
+
 		client, err := storage.NewClient(ctx)
 		if err != nil {
 			return nil, err
 		}
 
-		return &GCPCloudStorage{project: "TODO", bucket: bucket, client: client}, nil
+		return &GCPCloudStorage{project: parsedCfg.Project, bucket: parsedCfg.Bucket, client: client}, nil
 	case "azure":
+		var parsedCfg config.AzureBlobStorage
+		if err := yaml.Unmarshal(data, &parsedCfg); err != nil {
+			return nil, err
+		}
+
 		credential, err := azidentity.NewDefaultAzureCredential(nil)
 		if err != nil {
 			return nil, err
 		}
-		accountURL := "TODO"
-		client, err := azblob.NewClient(accountURL, credential, nil)
+		client, err := azblob.NewClient(parsedCfg.AccountURL, credential, nil)
 		if err != nil {
 			return nil, err
 		}
 
-		return &AzureBlobStorage{container: "TODO", client: client}, nil
+		return &AzureBlobStorage{container: parsedCfg.Container, client: client}, nil
 	default:
 		return nil, ErrUnsupportedProvider
 	}
