@@ -14,7 +14,6 @@ import (
 type Service struct {
 	configFile     string
 	persistenceDir string
-	resetDb        bool
 	db             *sql.DB
 }
 
@@ -29,11 +28,6 @@ func (s *Service) WithPersistenceDir(d string) *Service {
 
 func (s *Service) WithConfigFile(configFile string) *Service {
 	s.configFile = configFile
-	return s
-}
-
-func (s *Service) WithResetDb(resetDb bool) *Service {
-	s.resetDb = resetDb
 	return s
 }
 
@@ -70,12 +64,18 @@ func (s *Service) loadConfig(_ context.Context) error {
 		log.Println("warning:", warning)
 	}
 
-	s.loadSystems(root)
+	if err := s.loadSecrets(root); err != nil {
+		return err
+	}
+
+	if err := s.loadSystems(root); err != nil {
+		return err
+	}
 
 	return nil
 }
 
-func (s *Service) loadSystems(root *config.Root) {
+func (s *Service) loadSystems(root *config.Root) error {
 
 	var names []string
 	for _, system := range root.Systems {
@@ -87,9 +87,42 @@ func (s *Service) loadSystems(root *config.Root) {
 	for _, name := range names {
 		system := root.Systems[name]
 		if _, err := s.db.Exec(`INSERT OR REPLACE INTO systems (id, repo, ref, gitcommit, path) VALUES (?, ?, ?, ?, ?)`, system.Name, system.Git.Repo, system.Git.Reference, system.Git.Commit, system.Git.Path); err != nil {
-			log.Fatal(err)
+			return err
+		}
+
+		if system.Git.Credentials.HTTP != nil {
+			s.db.Exec(`INSERT OR REPLACE INTO systems_secrets (system_id, secret_id, usage_type) VALUES (?, ?, ?)`, system.Name, system.Git.Credentials.HTTP, "http")
+		}
+
+		if system.Git.Credentials.SSHPassphrase != nil {
+			s.db.Exec(`INSERT OR REPLACE INTO systems_secrets (system_id, secret_id, usage_type) VALUES (?, ?, ?)`, system.Name, system.Git.Credentials.SSHPassphrase, "ssh_passphrase")
+		}
+
+		if system.Git.Credentials.SSHPrivateKey != nil {
+			s.db.Exec(`INSERT OR REPLACE INTO systems_secrets (system_id, secret_id, usage_type) VALUES (?, ?, ?)`, system.Name, system.Git.Credentials.SSHPrivateKey, "ssh_private_key")
 		}
 	}
+
+	return nil
+}
+
+func (s *Service) loadSecrets(root *config.Root) error {
+
+	var names []string
+	for _, secret := range root.Secrets {
+		names = append(names, secret.Name)
+	}
+
+	sort.Strings(names)
+
+	for _, name := range names {
+		secret := root.Secrets[name]
+		if _, err := s.db.Exec(`INSERT OR REPLACE INTO secrets (id, value) VALUES (?, ?)`, secret.Name, secret.Value); err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 func (s *Service) initDb() {
@@ -101,6 +134,18 @@ func (s *Service) initDb() {
 			ref TEXT,
 			gitcommit TEXT,
 			path TEXT
+		);`,
+		`CREATE TABLE IF NOT EXISTS secrets (
+			id TEXT PRIMARY KEY,
+			value TEXT
+		);`,
+		`CREATE TABLE IF NOT EXISTS systems_secrets (
+			system_id TEXT NOT NULL,
+			secret_id TEXT NOT NULL,
+			usage_type TEXT NOT NULL,
+			PRIMARY KEY (system_id, secret_id),
+			FOREIGN KEY (system_id) REFERENCES systems(id),
+			FOREIGN KEY (secret_id) REFERENCES secrets(id)
 		);`,
 	}
 

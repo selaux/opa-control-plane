@@ -1,7 +1,9 @@
 package config
 
 import (
+	"bytes"
 	"fmt"
+	"io"
 	"os"
 
 	"gopkg.in/yaml.v3"
@@ -15,20 +17,47 @@ type Root struct {
 	Secrets map[string]*Secret `yaml:"secrets"`
 }
 
-func (r *Root) ValidateAndInjectDefaults() (warnings []error, err error) {
-	for name, system := range r.Systems {
-		system.Name = name
-		if system.Git.Repo == "" {
-			return nil, fmt.Errorf("system %q is missing a git repo", name)
-		}
-	}
+func (r *Root) ValidateAndInjectDefaults() (errs []error) {
 	for name, secret := range r.Secrets {
 		secret.Name = name
 		if secret.Value == nil {
-			warnings = append(warnings, fmt.Errorf("secret %q is missing a value", name))
+			errs = append(errs, fmt.Errorf("secret %q is missing a value", name))
+			delete(r.Secrets, name)
 		}
 	}
-	return warnings, nil
+	for name, system := range r.Systems {
+		system.Name = name
+		if system.Git.Repo == "" {
+			errs = append(errs, fmt.Errorf("system %q is missing a git repo", name))
+			delete(r.Systems, name)
+			continue
+		}
+		if system.Git.Credentials.HTTP != nil {
+			_, ok := r.Secrets[*system.Git.Credentials.HTTP]
+			if !ok {
+				errs = append(errs, fmt.Errorf("system %q git http credential refers to secret %q that is invalid or undefined", name, *system.Git.Credentials.HTTP))
+				delete(r.Systems, name)
+				continue
+			}
+		}
+		if system.Git.Credentials.SSHPassphrase != nil {
+			_, ok := r.Secrets[*system.Git.Credentials.SSHPassphrase]
+			if !ok {
+				errs = append(errs, fmt.Errorf("system %q git ssh passphrase credential refers to secret %q that is invalid or undefined", name, *system.Git.Credentials.SSHPassphrase))
+				delete(r.Systems, name)
+				continue
+			}
+		}
+		if system.Git.Credentials.SSHPrivateKey != nil {
+			_, ok := r.Secrets[*system.Git.Credentials.SSHPrivateKey]
+			if !ok {
+				errs = append(errs, fmt.Errorf("system %q git ssh private key credential refers to secret %q that is invalid or undefined", name, *system.Git.Credentials.SSHPrivateKey))
+				delete(r.Systems, name)
+				continue
+			}
+		}
+	}
+	return errs
 }
 
 // System defines the configuration for a Lighthouse System.
@@ -65,16 +94,19 @@ func ParseFile(filename string) (root *Root, warnings []error, err error) {
 		return nil, nil, fmt.Errorf("failed to read config file %s: %w", filename, err)
 	}
 
-	if err := yaml.Unmarshal(bs, &root); err != nil {
-		return nil, nil, fmt.Errorf("failed to unmarshal config file %s: %w", filename, err)
-	}
+	return Parse(bytes.NewReader(bs))
+}
 
-	warnings, err = root.ValidateAndInjectDefaults()
+func Parse(r io.Reader) (root *Root, warnings []error, err error) {
+	bs, err := io.ReadAll(r)
 	if err != nil {
 		return nil, nil, err
 	}
-
-	return root, warnings, nil
+	if err := yaml.Unmarshal(bs, &root); err != nil {
+		return nil, nil, fmt.Errorf("failed to unmarshal config: %w", err)
+	}
+	errs := root.ValidateAndInjectDefaults()
+	return root, errs, nil
 }
 
 type ObjectStorage struct {
