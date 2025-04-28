@@ -11,37 +11,12 @@ import (
 	"strings"
 
 	"gopkg.in/yaml.v3"
+
+	"github.com/tsandall/lighthouse/internal/config"
 )
 
 var urlFlag = flag.String("u", "", "set URL of Styra DAS tenant to export from")
 var styraToken = os.Getenv("STYRA_TOKEN")
-
-type Config struct {
-	Systems map[string]*SystemConfig `yaml:"systems"`
-	Secrets map[string]*SecretConfig `yaml:"secrets"`
-}
-
-type SystemConfig struct {
-	Name string    `yaml:"name"`
-	Git  GitConfig `yaml:"git"`
-}
-
-type GitConfig struct {
-	Repo        string  `yaml:"repo"`
-	Reference   *string `yaml:"reference,omitempty"`
-	Commit      *string `yaml:"commit,omitempty"`
-	Path        *string `yaml:"path,omitempty"`
-	Credentials struct {
-		HTTP          *string `yaml:"http,omitempty"`
-		SSHPrivateKey *string `yaml:"ssh_private_key,omitempty"`
-		SSHPassphrase *string `yaml:"ssh_passphrase,omitempty"`
-	} `yaml:"credentials"`
-}
-
-type SecretConfig struct {
-	Name  string  `yaml:"name"`
-	Value *string `yaml:"value,omitempty"`
-}
 
 type DASClient struct {
 	url    string
@@ -85,8 +60,8 @@ func (c *DASClient) Get(path string) (*DASResponse, error) {
 	return &r, decoder.Decode(&r)
 }
 
-func mapV1SystemToSystemConfig(v1 *v1System) (*SystemConfig, error) {
-	var x SystemConfig
+func mapV1SystemToSystemConfig(v1 *v1System) (*config.System, error) {
+	var x config.System
 
 	x.Name = v1.Name
 
@@ -138,9 +113,9 @@ func main() {
 		client: http.DefaultClient,
 	}
 
-	output := Config{
-		Systems: map[string]*SystemConfig{},
-		Secrets: map[string]*SecretConfig{},
+	output := config.Root{
+		Systems: map[string]*config.System{},
+		Secrets: map[string]*config.Secret{},
 	}
 
 	resp, err := c.Get("v1/systems")
@@ -183,15 +158,15 @@ func main() {
 	for _, sc := range output.Systems {
 		if sc.Git.Credentials.HTTP != nil {
 			id := *sc.Git.Credentials.HTTP
-			output.Secrets[id] = &SecretConfig{Name: id}
+			output.Secrets[id] = &config.Secret{Name: id}
 		}
 		if sc.Git.Credentials.SSHPassphrase != nil {
 			id := *sc.Git.Credentials.SSHPassphrase
-			output.Secrets[id] = &SecretConfig{Name: id}
+			output.Secrets[id] = &config.Secret{Name: id}
 		}
 		if sc.Git.Credentials.SSHPrivateKey != nil {
 			id := *sc.Git.Credentials.SSHPrivateKey
-			output.Secrets[id] = &SecretConfig{Name: id}
+			output.Secrets[id] = &config.Secret{Name: id}
 		}
 	}
 
