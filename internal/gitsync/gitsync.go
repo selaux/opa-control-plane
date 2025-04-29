@@ -102,5 +102,5 @@ func (s *Synchronizer) auth() (transport.AuthMethod, error) {
 		)
 	}
 
-	return nil, errors.New("no authentication method configured for git synchronization")
+	return nil, nil
 }
