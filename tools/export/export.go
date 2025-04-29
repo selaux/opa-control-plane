@@ -60,39 +60,48 @@ func (c *DASClient) Get(path string) (*DASResponse, error) {
 	return &r, decoder.Decode(&r)
 }
 
-func mapV1SystemToSystemConfig(v1 *v1System) (*config.System, error) {
-	var x config.System
+func mapV1SystemToSystemAndSecretConfig(v1 *v1System, secretsById map[string]*v1Secret) (*config.System, *config.Secret, error) {
+	var system config.System
+	var secret config.Secret
 
-	x.Name = v1.Name
+	system.Name = v1.Name
 
 	if v1.SourceControl == nil {
-		return nil, fmt.Errorf("not git backed")
+		return nil, nil, fmt.Errorf("not git backed")
 	}
 
-	x.Git.Repo = v1.SourceControl.Origin.URL
+	system.Git.Repo = v1.SourceControl.Origin.URL
 
 	if v1.SourceControl.Origin.Commit != "" {
-		x.Git.Commit = &v1.SourceControl.Origin.Commit
+		system.Git.Commit = &v1.SourceControl.Origin.Commit
 	} else if v1.SourceControl.Origin.Reference != "" {
-		x.Git.Reference = &v1.SourceControl.Origin.Reference
+		system.Git.Reference = &v1.SourceControl.Origin.Reference
 	} else {
-		return nil, fmt.Errorf("origin missing commit and reference")
+		return nil, nil, fmt.Errorf("origin missing commit and reference")
 	}
 
 	if v1.SourceControl.Origin.Path != "" {
-		x.Git.Path = &v1.SourceControl.Origin.Path
+		system.Git.Path = &v1.SourceControl.Origin.Path
 	}
 
 	if v1.SourceControl.Origin.Credentials != "" {
-		x.Git.Credentials.HTTP = &v1.SourceControl.Origin.Credentials
-	} else if v1.SourceControl.Origin.SSHCredentials.PrivateKey != "" {
-		x.Git.Credentials.SSHPrivateKey = &v1.SourceControl.Origin.SSHCredentials.PrivateKey
-		if v1.SourceControl.Origin.SSHCredentials.Passphrase != "" {
-			x.Git.Credentials.SSHPassphrase = &v1.SourceControl.Origin.SSHCredentials.Passphrase
+		secret.Name = v1.SourceControl.Origin.Credentials
+		if s, ok := secretsById[v1.SourceControl.Origin.Credentials]; ok {
+			secret.Value = map[string]interface{}{
+				"type":     "http_basic_auth",
+				"username": s.Name,
+			}
 		}
+		system.Git.Credentials = &config.SecretRef{Name: secret.Name}
+	} else if v1.SourceControl.Origin.SSHCredentials.PrivateKey != "" {
+		secret.Name = v1.SourceControl.Origin.SSHCredentials.PrivateKey
+		secret.Value = map[string]interface{}{
+			"type": "ssh_private_key",
+		}
+		system.Git.Credentials = &config.SecretRef{Name: secret.Name}
 	}
 
-	return &x, nil
+	return &system, &secret, nil
 }
 
 func main() {
@@ -140,43 +149,20 @@ func main() {
 		log.Fatal(err)
 	}
 
+	secretsById := map[string]*v1Secret{}
+	for _, secret := range secrets {
+		secretsById[secret.Id] = secret
+	}
+
 	for _, system := range systems {
-		sc, err := mapV1SystemToSystemConfig(system)
+		sc, secret, err := mapV1SystemToSystemAndSecretConfig(system, secretsById)
 		if err != nil {
 			log.Printf("skipping system %q: %v", system.Name, err)
 			continue
 		}
 
 		output.Systems[sc.Name] = sc
-	}
-
-	secretsById := map[string]*v1Secret{}
-	for _, secret := range secrets {
-		secretsById[secret.Id] = secret
-	}
-
-	for _, sc := range output.Systems {
-		if sc.Git.Credentials.HTTP != nil {
-			id := *sc.Git.Credentials.HTTP
-			output.Secrets[id] = &config.Secret{
-				Name: secretsById[id].Name,
-				// TODO: Secret.
-			}
-		}
-		if sc.Git.Credentials.SSHPassphrase != nil {
-			id := *sc.Git.Credentials.SSHPassphrase
-			output.Secrets[id] = &config.Secret{
-				Name: secretsById[id].Name,
-				// TODO: Secret.
-			}
-		}
-		if sc.Git.Credentials.SSHPrivateKey != nil {
-			id := *sc.Git.Credentials.SSHPrivateKey
-			output.Secrets[id] = &config.Secret{
-				Name: secretsById[id].Name,
-				// TODO: Secret.
-			}
-		}
+		output.Secrets[secret.Name] = secret
 	}
 
 	bs, err := yaml.Marshal(output)
@@ -196,7 +182,7 @@ type v1System struct {
 }
 
 type v1Secret struct {
-	Name string `json:"string"`
+	Name string `json:"name"`
 	Id   string `json:"id"`
 }
 

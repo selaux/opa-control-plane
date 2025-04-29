@@ -5,13 +5,13 @@ package gitsync
 
 import (
 	"errors"
+	"fmt"
 	"os"
 
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/transport"
 	"github.com/go-git/go-git/v5/plumbing/transport/http"
-	"github.com/go-git/go-git/v5/plumbing/transport/ssh"
 	"github.com/tsandall/lighthouse/internal/config"
 )
 
@@ -91,16 +91,23 @@ func (s *Synchronizer) Execute() error {
 }
 
 func (s *Synchronizer) auth() (transport.AuthMethod, error) {
-	if s.config.Credentials.HTTP != nil {
-		return &http.TokenAuth{
-			Token: *s.config.Credentials.HTTP,
-		}, nil
-	} else if s.config.Credentials.SSHUserName != nil && s.config.Credentials.SSHPrivateKey != nil && s.config.Credentials.SSHPassphrase != nil {
-		return ssh.NewPublicKeys(*s.config.Credentials.SSHUserName,
-			[]byte(*s.config.Credentials.SSHPrivateKey),
-			*s.config.Credentials.SSHPassphrase,
-		)
+
+	if s.config.Credentials == nil {
+		return nil, nil
 	}
 
-	return nil, nil
+	secret, err := s.config.Credentials.Resolve()
+	if err != nil {
+		return nil, err
+	}
+
+	switch secret.Value["type"] {
+	case "http_basic_auth":
+		return &http.BasicAuth{
+			Username: secret.Value["username"].(string),
+			Password: secret.Value["password"].(string),
+		}, nil
+	default:
+		return nil, fmt.Errorf("unsupported authentication type: %s", secret.Value["type"])
+	}
 }

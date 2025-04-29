@@ -45,12 +45,7 @@ func TestGitsync(t *testing.T) {
 
 	ref := "refs/heads/master"
 	s := New(clonedRepositoryPath, config.Git{
-		Repo: testRepositoryPath,
-		Credentials: config.GitCredentials{
-			HTTP:          nil,
-			SSHPassphrase: nil,
-			SSHPrivateKey: nil,
-		},
+		Repo:      testRepositoryPath,
 		Reference: &ref,
 		Commit:    nil,
 	})

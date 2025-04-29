@@ -17,87 +17,37 @@ type Root struct {
 	Secrets map[string]*Secret `yaml:"secrets"`
 }
 
-func (r *Root) ValidateAndInjectDefaults() (errs []error) {
-	for name, secret := range r.Secrets {
+// UnmarshalYAML implements the yaml.Marshaler interface for the Root struct. This
+// lets us define Lighthouse resources in a more user-friendly way with mappings
+// where keys are the resource names. It is also used to inject the secret store
+// into each secret reference so that internal callers can resolve secret values
+// as needed.
+func (r *Root) UnmarshalYAML(node *yaml.Node) error {
+	type rawRoot Root // avoid recursive calls to UnmarshalYAML by type aliasing
+	var raw rawRoot
+
+	if err := node.Decode(&raw); err != nil {
+		return fmt.Errorf("failed to decode Root: %w", err)
+	}
+
+	for name, secret := range raw.Secrets {
 		secret.Name = name
-		if secret.Value == nil {
-			errs = append(errs, fmt.Errorf("secret %q is missing a value", name))
-			delete(r.Secrets, name)
-		}
 	}
-	for name, system := range r.Systems {
+
+	for name, system := range raw.Systems {
 		system.Name = name
-		if system.Git.Repo == "" {
-			errs = append(errs, fmt.Errorf("system %q is missing a git repo", name))
-			delete(r.Systems, name)
-			continue
+		if system.Git.Credentials != nil {
+			system.Git.Credentials.value = raw.Secrets[system.Git.Credentials.Name]
 		}
-		if system.Git.Credentials.HTTP != nil {
-			_, ok := r.Secrets[*system.Git.Credentials.HTTP]
-			if !ok {
-				errs = append(errs, fmt.Errorf("system %q git http credential refers to secret %q that is invalid or undefined", name, *system.Git.Credentials.HTTP))
-				delete(r.Systems, name)
-				continue
-			}
-		}
-		if system.Git.Credentials.SSHPassphrase != nil {
-			_, ok := r.Secrets[*system.Git.Credentials.SSHPassphrase]
-			if !ok {
-				errs = append(errs, fmt.Errorf("system %q git ssh passphrase credential refers to secret %q that is invalid or undefined", name, *system.Git.Credentials.SSHPassphrase))
-				delete(r.Systems, name)
-				continue
-			}
-		}
-		if system.Git.Credentials.SSHPrivateKey != nil {
-			_, ok := r.Secrets[*system.Git.Credentials.SSHPrivateKey]
-			if !ok {
-				errs = append(errs, fmt.Errorf("system %q git ssh private key credential refers to secret %q that is invalid or undefined", name, *system.Git.Credentials.SSHPrivateKey))
-				delete(r.Systems, name)
-				continue
-			}
-		}
-
-		if system.ObjectStorage.AmazonS3 != nil {
-			accessKeyId := system.ObjectStorage.AmazonS3.AccessKeyId
-			secretAccessKey := system.ObjectStorage.AmazonS3.SecretAccessKey
-			sessionToken := system.ObjectStorage.AmazonS3.SessionToken
-
-			if accessKeyId != "" {
-				_, ok := r.Secrets[accessKeyId]
-				if !ok {
-					errs = append(errs, fmt.Errorf("system %q S3 access key id refers to secret %q that is invalid or undefined", name, accessKeyId))
-					delete(r.Systems, name)
-					continue
-				}
-			}
-
-			if secretAccessKey != "" {
-				_, ok := r.Secrets[secretAccessKey]
-				if !ok {
-					errs = append(errs, fmt.Errorf("system %q S3 secret access key refers to secret %q that is invalid or undefined", name, secretAccessKey))
-					delete(r.Systems, name)
-					continue
-				}
-			}
-
-			if sessionToken != "" {
-				_, ok := r.Secrets[sessionToken]
-				if !ok {
-					errs = append(errs, fmt.Errorf("system %q S3 session token refers to secret %q that is invalid or undefined", name, sessionToken))
-					delete(r.Systems, name)
-					continue
-				}
-			}
-		}
-
-		// TODO: Add validation for GCP and Azure object storage configurations once they are more complete.
 	}
-	return errs
+
+	*r = Root(raw) // Assign the unmarshaled data back to the original struct
+	return nil
 }
 
 // System defines the configuration for a Lighthouse System.
 type System struct {
-	Name          string        `yaml:"name"`
+	Name          string        `yaml:"-"`
 	Git           Git           `yaml:"git"`
 	ObjectStorage ObjectStorage `yaml:"object_storage"`
 }
@@ -105,47 +55,82 @@ type System struct {
 // Git defines the Git synchronization configuration used by Lighthouse
 // resources like Systems, Stacks, and Libraries.
 type Git struct {
-	Repo        string         `yaml:"repo"`
-	Reference   *string        `yaml:"reference,omitempty"`
-	Commit      *string        `yaml:"commit,omitempty"`
-	Path        *string        `yaml:"path,omitempty"`
-	Credentials GitCredentials `yaml:"credentials"`
+	Repo        string     `yaml:"repo"`
+	Reference   *string    `yaml:"reference,omitempty"`
+	Commit      *string    `yaml:"commit,omitempty"`
+	Path        *string    `yaml:"path,omitempty"`
+	Credentials *SecretRef `yaml:"credentials,omitempty"`
 }
 
-type GitCredentials struct {
-	HTTP          *string `yaml:"http,omitempty"`
-	SSHUserName   *string `yaml:"ssh_username,omitempty"`
-	SSHPrivateKey *string `yaml:"ssh_private_key,omitempty"`
-	SSHPassphrase *string `yaml:"ssh_passphrase,omitempty"`
+type SecretRef struct {
+	Name  string `yaml:"name,omitempty"`
+	value *Secret
+}
+
+func (s *SecretRef) Resolve() (*Secret, error) {
+	if s.value == nil {
+		return nil, fmt.Errorf("secret %q not found", s.Name)
+	}
+	return s.value, nil
+}
+
+func (s *SecretRef) MarshalYAML() (interface{}, error) {
+	if s.Name == "" {
+		return nil, nil
+	}
+	return s.Name, nil
+}
+
+func (s *SecretRef) UnmarshalYAML(n *yaml.Node) error {
+	if n.Kind == yaml.ScalarNode {
+		return n.Decode(&s.Name)
+	}
+	return fmt.Errorf("expected scalar node, got %v", n.Kind)
 }
 
 // Secret defines the configuration for secrets/tokens used by Lighthouse
-// for Git synchronization, datasources, etc. If the value is unset it indicates
-// the Secret has not been configured completely.
+// for Git synchronization, datasources, etc.
 type Secret struct {
-	Name  string  `yaml:"name,omitempty"` // Secret consists of a pair of strings, a name and a value. For example, they may hold a user name and password for HTTP basic auth.
-	Value *string `yaml:"value,omitempty"`
+	Name  string                 `yaml:"-"`
+	Value map[string]interface{} `yaml:"value,omitempty"`
 }
 
-func ParseFile(filename string) (root *Root, warnings []error, err error) {
+func (s *Secret) Ref() *SecretRef {
+	return &SecretRef{Name: s.Name, value: s}
+}
+
+func (s *Secret) MarshalYAML() (interface{}, error) {
+	if len(s.Value) == 0 {
+		return map[string]interface{}{}, nil
+	}
+	return s.Value, nil
+}
+
+func (s *Secret) UnmarshalYAML(n *yaml.Node) error {
+	if n.Kind == yaml.MappingNode {
+		return n.Decode(&s.Value)
+	}
+	return fmt.Errorf("expected mapping node, got %v", n.Kind)
+}
+
+func ParseFile(filename string) (root *Root, err error) {
 	bs, err := os.ReadFile(filename)
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to read config file %s: %w", filename, err)
+		return nil, fmt.Errorf("failed to read config file %s: %w", filename, err)
 	}
 
 	return Parse(bytes.NewReader(bs))
 }
 
-func Parse(r io.Reader) (root *Root, warnings []error, err error) {
+func Parse(r io.Reader) (root *Root, err error) {
 	bs, err := io.ReadAll(r)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 	if err := yaml.Unmarshal(bs, &root); err != nil {
-		return nil, nil, fmt.Errorf("failed to unmarshal config: %w", err)
+		return nil, fmt.Errorf("failed to unmarshal config: %w", err)
 	}
-	errs := root.ValidateAndInjectDefaults()
-	return root, errs, nil
+	return root, nil
 }
 
 type ObjectStorage struct {

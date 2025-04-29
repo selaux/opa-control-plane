@@ -5,6 +5,7 @@ import (
 	"crypto/md5"
 	"database/sql"
 	"encoding/hex"
+	"encoding/json"
 	"log"
 	"path"
 	"sort"
@@ -129,14 +130,9 @@ func (s *Service) launchWorkers() {
 // loadConfig loads the configuration from the configuration file into the database.
 func (s *Service) loadConfig(_ context.Context) error {
 
-	root, warnings, err := config.ParseFile(s.configFile)
+	root, err := config.ParseFile(s.configFile)
 	if err != nil {
 		return err
-	}
-
-	// TODO(tsandall): make default behaviour treat warnings as errors
-	for _, warning := range warnings {
-		log.Println("warning:", warning)
 	}
 
 	if err := s.loadSecrets(root); err != nil {
@@ -157,16 +153,14 @@ func (s *Service) listSystemsWithGitCredentials() ([]*config.System, error) {
         systems.gitcommit,
         systems.path,
         secrets.id AS secret_id,
-        secrets.value AS secret_value,
-        systems_secrets.usage_type AS secret_usage_type
+        secrets.value AS secret_value
     FROM
         systems
     LEFT JOIN
         systems_secrets ON systems.id = systems_secrets.system_id
     LEFT JOIN
         secrets ON systems_secrets.secret_id = secrets.id
-    ORDER BY
-        systems.id, systems_secrets.usage_type;`)
+	WHERE systems_secrets.ref_type = 'git_credentials'`)
 	if err != nil {
 		return nil, err
 	}
@@ -175,16 +169,16 @@ func (s *Service) listSystemsWithGitCredentials() ([]*config.System, error) {
 	systemMap := make(map[string]*config.System)
 
 	for rows.Next() {
-		var systemID, repo, secretID, secretValue, usageType string
+		var systemId, repo, secretId, secretValue string
 		var ref, gitCommit, path *string
-		if err := rows.Scan(&systemID, &repo, &ref, &gitCommit, &path, &secretID, &secretValue, &usageType); err != nil {
+		if err := rows.Scan(&systemId, &repo, &ref, &gitCommit, &path, &secretId, &secretValue); err != nil {
 			return nil, err
 		}
 
-		system, exists := systemMap[systemID]
+		system, exists := systemMap[systemId]
 		if !exists {
 			system = &config.System{
-				Name: systemID,
+				Name: systemId,
 				Git: config.Git{
 					Repo: repo,
 				},
@@ -198,18 +192,16 @@ func (s *Service) listSystemsWithGitCredentials() ([]*config.System, error) {
 			if path != nil {
 				system.Git.Path = path
 			}
-			systemMap[systemID] = system
-		}
 
-		if secretID != "" && secretValue != "" {
-			switch usageType {
-			case "http":
-				system.Git.Credentials.HTTP = &secretValue
-			case "ssh_passphrase":
-				system.Git.Credentials.SSHPassphrase = &secretValue
-			case "ssh_private_key":
-				system.Git.Credentials.SSHPrivateKey = &secretValue
+			if secretId != "" {
+				s := config.Secret{Name: secretId}
+				if err := json.Unmarshal([]byte(secretValue), &s.Value); err != nil {
+					return nil, err
+				}
+				system.Git.Credentials = s.Ref()
 			}
+
+			systemMap[systemId] = system
 		}
 	}
 
@@ -235,16 +227,8 @@ func (s *Service) loadSystems(root *config.Root) error {
 			return err
 		}
 
-		if system.Git.Credentials.HTTP != nil {
-			s.db.Exec(`INSERT OR REPLACE INTO systems_secrets (system_id, secret_id, usage_type) VALUES (?, ?, ?)`, system.Name, system.Git.Credentials.HTTP, "http")
-		}
-
-		if system.Git.Credentials.SSHPassphrase != nil {
-			s.db.Exec(`INSERT OR REPLACE INTO systems_secrets (system_id, secret_id, usage_type) VALUES (?, ?, ?)`, system.Name, system.Git.Credentials.SSHPassphrase, "ssh_passphrase")
-		}
-
-		if system.Git.Credentials.SSHPrivateKey != nil {
-			s.db.Exec(`INSERT OR REPLACE INTO systems_secrets (system_id, secret_id, usage_type) VALUES (?, ?, ?)`, system.Name, system.Git.Credentials.SSHPrivateKey, "ssh_private_key")
+		if system.Git.Credentials != nil {
+			s.db.Exec(`INSERT OR REPLACE INTO systems_secrets (system_id, secret_id, ref_type) VALUES (?, ?, ?)`, system.Name, system.Git.Credentials.Name, "git_credentials")
 		}
 	}
 
@@ -262,7 +246,11 @@ func (s *Service) loadSecrets(root *config.Root) error {
 
 	for _, name := range names {
 		secret := root.Secrets[name]
-		if _, err := s.db.Exec(`INSERT OR REPLACE INTO secrets (id, value) VALUES (?, ?)`, secret.Name, secret.Value); err != nil {
+		bs, err := json.Marshal(secret.Value)
+		if err != nil {
+			return err
+		}
+		if _, err := s.db.Exec(`INSERT OR REPLACE INTO secrets (id, value) VALUES (?, ?)`, secret.Name, string(bs)); err != nil {
 			return err
 		}
 	}
@@ -287,7 +275,7 @@ func (s *Service) initDb() {
 		`CREATE TABLE IF NOT EXISTS systems_secrets (
 			system_id TEXT NOT NULL,
 			secret_id TEXT NOT NULL,
-			usage_type TEXT NOT NULL,
+			ref_type TEXT NOT NULL,
 			PRIMARY KEY (system_id, secret_id),
 			FOREIGN KEY (system_id) REFERENCES systems(id),
 			FOREIGN KEY (secret_id) REFERENCES secrets(id)

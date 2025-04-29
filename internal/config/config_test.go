@@ -2,49 +2,46 @@ package config_test
 
 import (
 	"bytes"
+	"reflect"
 	"testing"
 
 	"github.com/tsandall/lighthouse/internal/config"
 )
 
-func TestRootValidateAndInjectDefaults(t *testing.T) {
-	cases := []struct {
-		name string
-		root string
-		errs []string
-	}{
-		{
-			name: "valid config",
-			root: `{systems: {foo: {git: {repo: https://example.com/repo.git}}}}`,
-		},
-		{
-			name: "missing secret value",
-			root: `{systems: {foo: {git: {repo: https://example.com/repo.git}}}, secrets: {bar: {}}}`,
-			errs: []string{
-				`secret "bar" is missing a value`,
-			},
-		},
-		{
-			name: "bad system secret reference",
-			root: `{systems: {foo: {git: {repo: https://example.com/repo.git, credentials: {http: missing_secret_name}}}}, secrets: {bar: {value: x1234}}}`,
-			errs: []string{`system "foo" git http credential refers to secret "missing_secret_name" that is invalid or undefined`},
-		},
-	}
+func TestParseSecretResolve(t *testing.T) {
 
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			_, warnings, err := config.Parse(bytes.NewReader([]byte(tc.root)))
-			if err != nil {
-				t.Fatal(err)
-			}
-			if len(warnings) != len(tc.errs) {
-				t.Fatalf("expected: %v\n\ngot: %v", tc.errs, warnings)
-			}
-			for i := range warnings {
-				if warnings[i].Error() != tc.errs[i] {
-					t.Fatalf("expected: %v\n\ngot: %v", tc.errs, warnings)
+	result, err := config.Parse(bytes.NewReader([]byte(`{
+		systems: {
+			foo: {
+				git: {
+					repo: https://example.com/repo.git,
+					credentials: secret1
 				}
 			}
-		})
+		},
+		secrets: {
+			secret1: {
+				username: bob,
+				password: passw0rd
+			}
+		}
+	}`)))
+
+	if err != nil {
+		t.Fatal(err)
 	}
+
+	secret, err := result.Systems["foo"].Git.Credentials.Resolve()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	exp := map[string]interface{}{
+		"username": "bob",
+		"password": "passw0rd",
+	}
+	if !reflect.DeepEqual(secret.Value, exp) {
+		t.Fatalf("expected: %v\n\ngot: %v", exp, secret.Value)
+	}
+
 }
