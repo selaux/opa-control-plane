@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/go-git/go-git/v5"
+	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/tsandall/lighthouse/internal/config"
 )
 
@@ -34,7 +35,7 @@ func TestGitsync(t *testing.T) {
 		t.Fatalf("expected no error while adding file to worktree: %v", err)
 	}
 
-	_, err = w.Commit("README", &git.CommitOptions{})
+	_, err = w.Commit("README", &git.CommitOptions{Author: &object.Signature{}})
 	if err != nil {
 		t.Fatalf("expected no error while committing changes: %v", err)
 	}
@@ -86,7 +87,7 @@ func TestGitsync(t *testing.T) {
 		t.Fatalf("expected no error while adding file to worktree: %v", err)
 	}
 
-	_, err = w.Commit("README", &git.CommitOptions{})
+	_, err = w.Commit("README", &git.CommitOptions{Author: &object.Signature{}})
 	if err != nil {
 		t.Fatalf("expected no error while committing changes: %v", err)
 	}
