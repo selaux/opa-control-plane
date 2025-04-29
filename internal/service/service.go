@@ -159,11 +159,11 @@ func (s *Service) listSystemsWithGitCredentials() ([]*config.System, error) {
 		if secretID != "" && secretValue != "" {
 			switch usageType {
 			case "http":
-				system.Git.Credentials.HTTP = &secretID
+				system.Git.Credentials.HTTP = &secretValue
 			case "ssh_passphrase":
-				system.Git.Credentials.SSHPassphrase = &secretID
+				system.Git.Credentials.SSHPassphrase = &secretValue
 			case "ssh_private_key":
-				system.Git.Credentials.SSHPrivateKey = &secretID
+				system.Git.Credentials.SSHPrivateKey = &secretValue
 			}
 		}
 	}
