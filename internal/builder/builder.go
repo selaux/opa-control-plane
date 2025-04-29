@@ -6,9 +6,10 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 
 	"github.com/open-policy-agent/opa/ast"
-	"github.com/open-policy-agent/opa/compile"
+	"github.com/open-policy-agent/opa/bundle"
 )
 
 type LibrarySpec struct {
@@ -22,7 +23,7 @@ type SystemSpec struct {
 
 type Builder struct {
 	systemSpec   *SystemSpec
-	librarySpecs []LibrarySpec
+	librarySpecs []*LibrarySpec
 	output       io.Writer
 }
 
@@ -40,14 +41,14 @@ func (b *Builder) WithSystemSpec(ss *SystemSpec) *Builder {
 	return b
 }
 
-func (b *Builder) WithLibrarySpecs(librarySpecs []LibrarySpec) *Builder {
+func (b *Builder) WithLibrarySpecs(librarySpecs []*LibrarySpec) *Builder {
 	b.librarySpecs = librarySpecs
 	return b
 }
 
 func (b *Builder) Build(ctx context.Context) error {
 
-	toBuild := map[string]struct{}{b.systemSpec.Repo: struct{}{}}
+	toBuild := map[string]struct{}{b.systemSpec.Repo: {}}
 	toProcess, err := listRegoFilesRecursive(b.systemSpec.Repo)
 	if err != nil {
 		return err
@@ -66,10 +67,10 @@ func (b *Builder) Build(ctx context.Context) error {
 			return err
 		}
 
-		var inner error
+		var errInner error
 
 		ast.WalkRefs(module, func(r ast.Ref) bool {
-			if inner != nil {
+			if errInner != nil {
 				return true
 			}
 			p := r.ConstantPrefix()
@@ -78,11 +79,11 @@ func (b *Builder) Build(ctx context.Context) error {
 					continue
 				}
 				for _, root := range l.Roots {
-					if root.HasPrefix(p) {
+					if root.HasPrefix(p) || p.HasPrefix(root) {
 						toBuild[l.Repo] = struct{}{}
 						files, err := listRegoFilesRecursive(l.Repo)
 						if err != nil {
-							inner = err
+							errInner = err
 						}
 						toProcess = append(toProcess, files...)
 						break
@@ -100,25 +101,51 @@ func (b *Builder) Build(ctx context.Context) error {
 
 	sort.Strings(sortedSrcs)
 
-	// XXX(tsandall): stopped here for now -- need to replace this with code that manually contructs an github.com/open-policy-agent/opa/bundle.
-	return compile.New().WithPaths(sortedSrcs...).WithOutput(b.output).Build(ctx)
+	// NOTE(tsandall): we want control over the filenames in the emitted bundle
+	// so that we don't include information about the filesystem where the build
+	// ran... the upstream compile package doesn't provide this control at the
+	// moment. Once upstream supports that control, we could replace this in
+	// favour of the compile package which would give us support for
+	// optimization levels, other targets, etc.
+	var result bundle.Bundle
+	result.Data = map[string]interface{}{} // TODO(tsandall): add data
+
+	for _, srcDir := range sortedSrcs {
+
+		err := walkRegoFilesRecursive(srcDir, func(path string, _ os.FileInfo) error {
+			bs, err := os.ReadFile(path)
+			if err != nil {
+				return err
+			}
+			result.Modules = append(result.Modules, bundle.ModuleFile{
+				Path: strings.TrimPrefix(path, srcDir),
+				Raw:  bs,
+			})
+			return nil
+		})
+		if err != nil {
+			return err
+		}
+	}
+
+	return bundle.Write(b.output, result)
 }
 
-func listRegoFilesRecursive(root string) ([]string, error) {
+func listRegoFilesRecursive(roots ...string) ([]string, error) {
 	var files []string
-	err := walkFiles(root, func(path string, fi os.FileInfo) error {
-		if filepath.Ext(path) == ".rego" {
+	for _, root := range roots {
+		err := walkRegoFilesRecursive(root, func(path string, fi os.FileInfo) error {
 			files = append(files, path)
+			return nil
+		})
+		if err != nil {
+			return nil, err
 		}
-		return nil
-	})
-	if err != nil {
-		return nil, err
 	}
 	return files, nil
 }
 
-func walkFiles(root string, fn func(path string, fi os.FileInfo) error) error {
+func walkRegoFilesRecursive(root string, fn func(path string, fi os.FileInfo) error) error {
 	return filepath.Walk(root, func(path string, fi os.FileInfo, err error) error {
 		if err != nil {
 			return err
@@ -126,9 +153,9 @@ func walkFiles(root string, fn func(path string, fi os.FileInfo) error) error {
 		if fi.IsDir() {
 			return nil
 		}
+		if filepath.Ext(path) != ".rego" {
+			return nil
+		}
 		return fn(path, fi)
 	})
-}
-
-type compiler struct {
 }

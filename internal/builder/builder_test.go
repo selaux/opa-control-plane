@@ -7,8 +7,10 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
+	"github.com/open-policy-agent/opa/ast"
 	"github.com/open-policy-agent/opa/bundle"
 
 	"github.com/tsandall/lighthouse/internal/builder"
@@ -25,9 +27,37 @@ func TestBuilder(t *testing.T) {
 		{
 			note: "trivial case",
 			systemFiles: map[string]string{
-				"x/x.rego": `package x
-
+				"/x/x.rego": `package x
 				p := 7`,
+			},
+			exp: map[string]string{
+				"/x/x.rego": `package x
+				p := 7`,
+			},
+		},
+		{
+			note: "library deps",
+			systemFiles: map[string]string{
+				"/x/x.rego": `package x
+				p := data.lib0.q`,
+			},
+			libFiles: []map[string]string{{
+				"lib0.rego": `package lib0
+				q := data.lib2.r`,
+			}, {
+				"libUnused.rego": `package libUnused
+				s := 42`,
+			}, {
+				"lib2.rego": `package lib2
+				r := 42`,
+			}},
+			exp: map[string]string{
+				"/x/x.rego": `package x
+				p := data.lib0.q`,
+				"/lib0.rego": `package lib0
+				q := data.lib2.r`,
+				"/lib2.rego": `package lib2
+				r := 42`,
 			},
 		},
 	}
@@ -36,15 +66,35 @@ func TestBuilder(t *testing.T) {
 
 		allFiles := map[string]string{}
 		for f, src := range tc.systemFiles {
-			allFiles[filepath.Join("system", f)] = src
+			allFiles[filepath.Join("system", f)] = trimLeadingWhitespace(src)
+		}
+
+		for i, srcs := range tc.libFiles {
+			for f, src := range srcs {
+				allFiles[filepath.Join(fmt.Sprintf("lib%d", i), f)] = trimLeadingWhitespace(src)
+			}
+		}
+
+		for f, src := range tc.exp {
+			tc.exp[f] = trimLeadingWhitespace(src)
 		}
 
 		withTempFS(allFiles, func(root string) {
 
 			buf := bytes.NewBuffer(nil)
 
+			var libSpecs []*builder.LibrarySpec
+
+			for i := range tc.libFiles {
+				libSpecs = append(libSpecs, &builder.LibrarySpec{
+					Repo:  filepath.Join(root, fmt.Sprintf("lib%d", i)),
+					Roots: []ast.Ref{ast.MustParseRef(fmt.Sprintf("data.lib%d", i))},
+				})
+			}
+
 			b := builder.New().
 				WithSystemSpec(&builder.SystemSpec{Repo: filepath.Join(root, "system")}).
+				WithLibrarySpecs(libSpecs).
 				WithOutput(buf)
 
 			err := b.Build(context.Background())
@@ -57,14 +107,34 @@ func TestBuilder(t *testing.T) {
 				log.Fatal(err)
 			}
 
+			fileMap := map[string]string{}
+
 			for _, mf := range bundle.Modules {
-				fmt.Println(string(mf.Raw))
+				fileMap[mf.Path] = string(mf.Raw)
+			}
+
+			if len(fileMap) != len(tc.exp) {
+				t.Fatalf("expected %d files, got %d", len(tc.exp), len(fileMap))
+			}
+
+			for path, src := range tc.exp {
+				if fileMap[path] != src {
+					t.Fatalf("expected %q, got %q", src, fileMap[path])
+				}
 			}
 
 		})
 
 	}
 
+}
+
+func trimLeadingWhitespace(input string) string {
+	lines := strings.Split(input, "\n")
+	for i, line := range lines {
+		lines[i] = strings.TrimLeft(line, " \t")
+	}
+	return strings.Join(lines, "\n")
 }
 
 /* copied from https://github.com/open-policy-agent/opa/blob/main/v1/util/test/tempfs.go */
