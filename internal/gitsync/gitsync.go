@@ -30,7 +30,6 @@ func New(path string, config config.Git) *Synchronizer {
 
 // Execute performs the synchronization of the configured Git repository. If the repository does not exist
 // on disk, clone it. If it does exist, pull the latest changes and rebase the local branch onto the remote branch.
-// TODO: Improve the error handling and to recover from common errors (say, if someone rewrote history on the remote).
 func (s *Synchronizer) Execute() error {
 	var repository *git.Repository
 
@@ -64,6 +63,7 @@ func (s *Synchronizer) Execute() error {
 	err = w.Pull(&git.PullOptions{
 		RemoteName: "origin",
 		Auth:       authMethod,
+		Force:      true,
 	})
 	if err != nil && err != git.NoErrAlreadyUpToDate {
 		return err
