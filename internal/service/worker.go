@@ -21,7 +21,7 @@ var (
 type SystemWorker struct {
 	synchronizers []*gitsync.Synchronizer
 	system        *builder.SystemSpec
-	libraries     []builder.LibrarySpec
+	libraries     []*builder.LibrarySpec
 	storage       s3.ObjectStorage
 }
 
