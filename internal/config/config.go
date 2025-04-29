@@ -62,8 +62,9 @@ func (r *Root) ValidateAndInjectDefaults() (errs []error) {
 
 // System defines the configuration for a Lighthouse System.
 type System struct {
-	Name string `yaml:"name"`
-	Git  Git    `yaml:"git"`
+	Name          string        `yaml:"name"`
+	Git           Git           `yaml:"git"`
+	ObjectStorage ObjectStorage `yaml:"object_storage"`
 }
 
 // Git defines the Git synchronization configuration used by Lighthouse
@@ -112,25 +113,31 @@ func Parse(r io.Reader) (root *Root, warnings []error, err error) {
 }
 
 type ObjectStorage struct {
-	Provider string `yaml:"provider"` // "aws" for Amazon S3, "gcp" for Google Cloud Storage, "azure" for Azure Blob Storage
+	AmazonS3         *AmazonS3         `yaml:"aws,omitempty"`
+	GCPCloudStorage  *GCPCloudStorage  `yaml:"gcp,omitempty"`
+	AzureBlobStorage *AzureBlobStorage `yaml:"azure,omitempty"`
 }
 
 // AmazonS3 defines the configuration for an Amazon S3-compatible object storage.
 type AmazonS3 struct {
-	Provider string `yaml:"provider"` // "aws"
-	Bucket   string `yaml:"bucket"`
+	Bucket          string `yaml:"bucket"`
+	Key             string `yaml:"key,omit"`
+	Region          string `yaml:"region,omitempty"`
+	AccessKeyId     string `yaml:"access_key_id,omitempty"`
+	SecretAccessKey string `yaml:"secret_access_key,omitempty"`
+	SessionToken    string `yaml:"session_token,omitempty"`
 }
 
 // GCPCloudStorage defines the configuration for a Google Cloud Storage bucket.
 type GCPCloudStorage struct {
-	Provider string `yaml:"provider"` // "gcp"
-	Project  string `yaml:"project"`
-	Bucket   string `yaml:"bucket"`
+	Project string `yaml:"project"`
+	Bucket  string `yaml:"bucket"`
+	Object  string `yaml:"object"`
 }
 
 // AzureBlobStorage defines the configuration for an Azure Blob Storage container.
 type AzureBlobStorage struct {
-	Provider   string `yaml:"provider"` // "azure"
 	AccountURL string `yaml:"account_url"`
 	Container  string `yaml:"container"`
+	Path       string `yaml:"path"`
 }

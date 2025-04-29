@@ -11,7 +11,6 @@ import (
 	"github.com/johannesboyne/gofakes3"
 	"github.com/johannesboyne/gofakes3/backend/s3mem"
 	"github.com/tsandall/lighthouse/internal/config"
-	"gopkg.in/yaml.v3"
 )
 
 func TestS3(t *testing.T) {
@@ -31,23 +30,20 @@ func TestS3(t *testing.T) {
 
 	// Upload a bundle to the mock S3 service.
 
-	cfg := config.AmazonS3{
-		Provider: "aws",
-		Bucket:   "test",
+	cfg := config.ObjectStorage{
+		AmazonS3: &config.AmazonS3{
+			Bucket: "test",
+			Key:    "a/b/c",
+		},
 	}
 
-	data, err := yaml.Marshal(cfg)
-	if err != nil {
-		t.Fatalf("failed to marshal config: %v", err)
-	}
-
-	storage, err := New(ctx, data, ts.URL)
+	storage, err := New(ctx, cfg, ts.URL)
 	if err != nil {
 		t.Fatalf("failed to create storage: %v", err)
 	}
 
 	bundle := bytes.NewBuffer([]byte("bundle content"))
-	err = storage.Upload(ctx, "a/b/c", bundle)
+	err = storage.Upload(ctx, bundle)
 	if err != nil {
 		t.Fatalf("expected no error while uploading bundle: %v", err)
 	}

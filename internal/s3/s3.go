@@ -10,10 +10,10 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/feature/s3/manager"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/tsandall/lighthouse/internal/config"
-	"gopkg.in/yaml.v3"
 )
 
 var (
@@ -24,42 +24,49 @@ var (
 
 type (
 	ObjectStorage interface {
-		Upload(ctx context.Context, key string, body io.Reader) error
+		Upload(ctx context.Context, body io.Reader) error
 	}
 
 	AmazonS3 struct {
 		bucket   string
+		key      string
 		uploader *manager.Uploader
 	}
 
 	GCPCloudStorage struct {
 		project string
 		bucket  string
+		object  string
 		client  *storage.Client
 	}
 
 	AzureBlobStorage struct {
 		container string
+		path      string
 		client    *azblob.Client
 	}
 )
 
 // New creates a new S3 client based on the provided configuration.
-func New(ctx context.Context, data []byte, localMockURL string) (ObjectStorage, error) {
-	var commonCfg config.ObjectStorage
-	err := yaml.Unmarshal(data, &commonCfg)
-	if err != nil {
-		return nil, err
-	}
+func New(ctx context.Context, config config.ObjectStorage, localMockURL string) (ObjectStorage, error) {
+	switch {
+	case config.AmazonS3 != nil:
+		var options []func(*awsconfig.LoadOptions) error
 
-	switch commonCfg.Provider {
-	case "aws":
-		var parsedCfg config.AmazonS3
-		if err := yaml.Unmarshal(data, &parsedCfg); err != nil {
-			return nil, err
+		if region := config.AmazonS3.Region; region != "" {
+			options = append(options, awsconfig.WithRegion(region))
 		}
 
-		awsCfg, err := awsconfig.LoadDefaultConfig(ctx)
+		if config.AmazonS3.AccessKeyId != "" || config.AmazonS3.SecretAccessKey != "" || config.AmazonS3.SessionToken != "" {
+			options = append(options, awsconfig.WithCredentialsProvider(credentials.StaticCredentialsProvider{
+				Value: aws.Credentials{
+					AccessKeyID: config.AmazonS3.AccessKeyId, SecretAccessKey: config.AmazonS3.SecretAccessKey, SessionToken: config.AmazonS3.SessionToken,
+					Source: "configurated credentials",
+				},
+			}))
+		}
+
+		awsCfg, err := awsconfig.LoadDefaultConfig(ctx, options...)
 		if err != nil {
 			return nil, err
 		}
@@ -71,35 +78,25 @@ func New(ctx context.Context, data []byte, localMockURL string) (ObjectStorage, 
 			}
 		})
 
-		return &AmazonS3{bucket: parsedCfg.Bucket, uploader: manager.NewUploader(client)}, nil
-	case "gcp":
-		var parsedCfg config.GCPCloudStorage
-		if err := yaml.Unmarshal(data, &parsedCfg); err != nil {
-			return nil, err
-		}
-
+		return &AmazonS3{bucket: config.AmazonS3.Bucket, key: config.AmazonS3.Key, uploader: manager.NewUploader(client)}, nil
+	case config.GCPCloudStorage != nil:
 		client, err := storage.NewClient(ctx)
 		if err != nil {
 			return nil, err
 		}
 
-		return &GCPCloudStorage{project: parsedCfg.Project, bucket: parsedCfg.Bucket, client: client}, nil
-	case "azure":
-		var parsedCfg config.AzureBlobStorage
-		if err := yaml.Unmarshal(data, &parsedCfg); err != nil {
-			return nil, err
-		}
-
+		return &GCPCloudStorage{project: config.GCPCloudStorage.Project, bucket: config.GCPCloudStorage.Bucket, object: config.GCPCloudStorage.Object, client: client}, nil
+	case config.AzureBlobStorage != nil:
 		credential, err := azidentity.NewDefaultAzureCredential(nil)
 		if err != nil {
 			return nil, err
 		}
-		client, err := azblob.NewClient(parsedCfg.AccountURL, credential, nil)
+		client, err := azblob.NewClient(config.AzureBlobStorage.AccountURL, credential, nil)
 		if err != nil {
 			return nil, err
 		}
 
-		return &AzureBlobStorage{container: parsedCfg.Container, client: client}, nil
+		return &AzureBlobStorage{container: config.AzureBlobStorage.Container, path: config.AzureBlobStorage.Path, client: client}, nil
 	default:
 		return nil, ErrUnsupportedProvider
 	}
@@ -119,17 +116,17 @@ func (e *Error) Error() string {
 }
 
 // Upload uploads a file to the S3-compatible storage.
-func (s *AmazonS3) Upload(ctx context.Context, key string, body io.Reader) error {
+func (s *AmazonS3) Upload(ctx context.Context, body io.Reader) error {
 	_, err := s.uploader.Upload(ctx, &s3.PutObjectInput{
 		Bucket: aws.String(s.bucket),
-		Key:    aws.String(key),
+		Key:    aws.String(s.key),
 		Body:   body,
 	})
 	return err
 }
 
-func (s *GCPCloudStorage) Upload(ctx context.Context, key string, body io.Reader) error {
-	w := s.client.Bucket(s.bucket).Object(key).NewWriter(ctx)
+func (s *GCPCloudStorage) Upload(ctx context.Context, body io.Reader) error {
+	w := s.client.Bucket(s.bucket).Object(s.object).NewWriter(ctx)
 	if _, err := io.Copy(w, body); err != nil {
 		return err
 	}
@@ -137,7 +134,7 @@ func (s *GCPCloudStorage) Upload(ctx context.Context, key string, body io.Reader
 	return w.Close()
 }
 
-func (s *AzureBlobStorage) Upload(ctx context.Context, key string, body io.Reader) error {
-	_, err := s.client.UploadStream(ctx, s.container, key, body, nil)
+func (s *AzureBlobStorage) Upload(ctx context.Context, body io.Reader) error {
+	_, err := s.client.UploadStream(ctx, s.container, s.path, body, nil)
 	return err
 }
