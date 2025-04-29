@@ -16,8 +16,12 @@ var (
 	successDelay = 1 * time.Minute
 )
 
-// Each SystemWorker is responsible for synchronizing a system's git repository, constructing a bundle from the system and its libraries, and uploading the bundle to an object storage service.
-// It uses a git synchronizer to pull the latest changes from the system's repository, constructs a bundle using the builder package, and uploads the resulting bundle to an S3-compatible object storage service.
+// Each SystemWorker is responsible for synchronizing a system's git repository,
+// constructing a bundle from the system and its libraries, and uploading the
+// bundle to an object storage service. It uses a git synchronizer to pull the
+// latest changes from the system's repository, constructs a bundle using the
+// builder package, and uploads the resulting bundle to an S3-compatible object
+// storage service.
 type SystemWorker struct {
 	synchronizers []*gitsync.Synchronizer
 	system        *builder.SystemSpec
@@ -30,7 +34,23 @@ func NewSystemWorker() *SystemWorker {
 	return &SystemWorker{}
 }
 
-// Execute runs a system synchronization iteration: git sync, bundle construct and then push bundles to object storage.
+func (worker *SystemWorker) WithSynchronizers(synchronizers []*gitsync.Synchronizer) *SystemWorker {
+	worker.synchronizers = synchronizers
+	return worker
+}
+
+func (worker *SystemWorker) WithSystem(system *builder.SystemSpec) *SystemWorker {
+	worker.system = system
+	return worker
+}
+
+func (worker *SystemWorker) WithLibraries(libraries []*builder.LibrarySpec) *SystemWorker {
+	worker.libraries = libraries
+	return worker
+}
+
+// Execute runs a system synchronization iteration: git sync, bundle construct
+// and then push bundles to object storage.
 func (w *SystemWorker) Execute() time.Time {
 	ctx := context.Background()
 

@@ -2,23 +2,31 @@ package service
 
 import (
 	"context"
+	"crypto/md5"
 	"database/sql"
+	"encoding/hex"
 	"log"
 	"path"
 	"sort"
 
 	_ "github.com/mattn/go-sqlite3"
+	"github.com/tsandall/lighthouse/internal/builder"
 	"github.com/tsandall/lighthouse/internal/config"
+	"github.com/tsandall/lighthouse/internal/gitsync"
+	"github.com/tsandall/lighthouse/internal/pool"
 )
 
 type Service struct {
 	configFile     string
 	persistenceDir string
 	db             *sql.DB
+	pool           *pool.Pool
 }
 
 func New() *Service {
-	return &Service{}
+	return &Service{
+		pool: pool.New(10),
+	}
 }
 
 func (s *Service) WithPersistenceDir(d string) *Service {
@@ -47,11 +55,31 @@ func (s *Service) Run(ctx context.Context) error {
 		return err
 	}
 
-	// TODO: start a worker per system to process bundles
+	s.launchWorkers()
 
 	_ = <-ctx.Done()
 
 	return nil
+}
+
+func (s *Service) launchWorkers() {
+
+	result, err := s.listSystemsWithGitCredentials()
+	if err != nil {
+		log.Println("error listing systems:", err)
+	}
+
+	for _, system := range result {
+		systemRepoDir := path.Join(s.persistenceDir, "repos", md5sum(system.Name))
+		ss := builder.SystemSpec{
+			Repo: systemRepoDir,
+		}
+		syncs := []*gitsync.Synchronizer{
+			gitsync.New(systemRepoDir, system.Git),
+		}
+		w := NewSystemWorker().WithSystem(&ss).WithSynchronizers(syncs)
+		s.pool.Add(w.Execute)
+	}
 }
 
 func (s *Service) loadConfig(_ context.Context) error {
@@ -76,7 +104,77 @@ func (s *Service) loadConfig(_ context.Context) error {
 
 	return nil
 }
+func (s *Service) listSystemsWithGitCredentials() ([]*config.System, error) {
+	rows, err := s.db.Query(`SELECT
+        systems.id AS system_id,
+        systems.repo,
+        systems.ref,
+        systems.gitcommit,
+        systems.path,
+        secrets.id AS secret_id,
+        secrets.value AS secret_value,
+        systems_secrets.usage_type AS secret_usage_type
+    FROM
+        systems
+    LEFT JOIN
+        systems_secrets ON systems.id = systems_secrets.system_id
+    LEFT JOIN
+        secrets ON systems_secrets.secret_id = secrets.id
+    ORDER BY
+        systems.id, systems_secrets.usage_type;`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
 
+	systemMap := make(map[string]*config.System)
+
+	for rows.Next() {
+		var systemID, repo, secretID, secretValue, usageType string
+		var ref, gitCommit, path *string
+		if err := rows.Scan(&systemID, &repo, &ref, &gitCommit, &path, &secretID, &secretValue, &usageType); err != nil {
+			return nil, err
+		}
+
+		system, exists := systemMap[systemID]
+		if !exists {
+			system = &config.System{
+				Name: systemID,
+				Git: config.Git{
+					Repo: repo,
+				},
+			}
+			if ref != nil {
+				system.Git.Reference = ref
+			}
+			if gitCommit != nil {
+				system.Git.Commit = gitCommit
+			}
+			if path != nil {
+				system.Git.Path = path
+			}
+			systemMap[systemID] = system
+		}
+
+		if secretID != "" && secretValue != "" {
+			switch usageType {
+			case "http":
+				system.Git.Credentials.HTTP = &secretID
+			case "ssh_passphrase":
+				system.Git.Credentials.SSHPassphrase = &secretID
+			case "ssh_private_key":
+				system.Git.Credentials.SSHPrivateKey = &secretID
+			}
+		}
+	}
+
+	var systems []*config.System
+	for _, system := range systemMap {
+		systems = append(systems, system)
+	}
+
+	return systems, nil
+}
 func (s *Service) loadSystems(root *config.Root) error {
 
 	var names []string
@@ -157,4 +255,10 @@ func (s *Service) initDb() {
 			log.Fatal(err)
 		}
 	}
+}
+
+func md5sum(s string) string {
+	h := md5.New()
+	h.Write([]byte(s))
+	return hex.EncodeToString(h.Sum(nil))
 }
