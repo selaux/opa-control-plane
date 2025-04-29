@@ -2,7 +2,6 @@ package pool
 
 import (
 	"slices"
-	"sort"
 	"sync"
 	"time"
 )
@@ -50,12 +49,10 @@ func (p *Pool) enqueue(t *task) {
 	defer p.mu.Unlock()
 
 	// Maintain the tasks in deadline order.
-	i := sort.Search(len(p.tasks), func(i int) bool {
-		x := p.tasks[i]
-		return x.deadline.After(t.deadline) || x.deadline.Equal(t.deadline)
+	p.tasks = append(p.tasks, t)
+	slices.SortFunc(p.tasks, func(a, b *task) int {
+		return a.deadline.Compare(b.deadline)
 	})
-
-	slices.Insert(p.tasks, i, t)
 
 	// Wake up any waiting goroutine.
 	if p.wait != nil {
@@ -102,7 +99,7 @@ func (p *Pool) dequeue() *task {
 	}
 
 	t := p.tasks[0]
-	p.tasks = p.tasks[1:]
+	p.tasks = slices.Delete(p.tasks, 0, 1)
 	return t
 }
 
