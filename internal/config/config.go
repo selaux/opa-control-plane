@@ -123,7 +123,7 @@ type GitCredentials struct {
 // for Git synchronization, datasources, etc. If the value is unset it indicates
 // the Secret has not been configured completely.
 type Secret struct {
-	Name  string  `yaml:"name"`
+	Name  string  `yaml:"name,omitempty"` // Secret consists of a pair of strings, a name and a value. For example, they may hold a user name and password for HTTP basic auth.
 	Value *string `yaml:"value,omitempty"`
 }
 

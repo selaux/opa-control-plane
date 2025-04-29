@@ -151,22 +151,31 @@ func main() {
 	}
 
 	secretsById := map[string]*v1Secret{}
-	for _, secret := range secretsById {
+	for _, secret := range secrets {
 		secretsById[secret.Id] = secret
 	}
 
 	for _, sc := range output.Systems {
 		if sc.Git.Credentials.HTTP != nil {
 			id := *sc.Git.Credentials.HTTP
-			output.Secrets[id] = &config.Secret{Name: id}
+			output.Secrets[id] = &config.Secret{
+				Name: secretsById[id].Name,
+				// TODO: Secret.
+			}
 		}
 		if sc.Git.Credentials.SSHPassphrase != nil {
 			id := *sc.Git.Credentials.SSHPassphrase
-			output.Secrets[id] = &config.Secret{Name: id}
+			output.Secrets[id] = &config.Secret{
+				Name: secretsById[id].Name,
+				// TODO: Secret.
+			}
 		}
 		if sc.Git.Credentials.SSHPrivateKey != nil {
 			id := *sc.Git.Credentials.SSHPrivateKey
-			output.Secrets[id] = &config.Secret{Name: id}
+			output.Secrets[id] = &config.Secret{
+				Name: secretsById[id].Name,
+				// TODO: Secret.
+			}
 		}
 	}
 
