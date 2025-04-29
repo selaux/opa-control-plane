@@ -69,15 +69,17 @@ type System struct {
 // Git defines the Git synchronization configuration used by Lighthouse
 // resources like Systems, Stacks, and Libraries.
 type Git struct {
-	Repo        string  `yaml:"repo"`
-	Reference   *string `yaml:"reference,omitempty"`
-	Commit      *string `yaml:"commit,omitempty"`
-	Path        *string `yaml:"path,omitempty"`
-	Credentials struct {
-		HTTP          *string `yaml:"http,omitempty"`
-		SSHPrivateKey *string `yaml:"ssh_private_key,omitempty"`
-		SSHPassphrase *string `yaml:"ssh_passphrase,omitempty"`
-	} `yaml:"credentials"`
+	Repo        string         `yaml:"repo"`
+	Reference   *string        `yaml:"reference,omitempty"`
+	Commit      *string        `yaml:"commit,omitempty"`
+	Path        *string        `yaml:"path,omitempty"`
+	Credentials GitCredentials `yaml:"credentials"`
+}
+
+type GitCredentials struct {
+	HTTP          *string `yaml:"http,omitempty"`
+	SSHPrivateKey *string `yaml:"ssh_private_key,omitempty"`
+	SSHPassphrase *string `yaml:"ssh_passphrase,omitempty"`
 }
 
 // Secret defines the configuration for secrets/tokens used by Lighthouse
