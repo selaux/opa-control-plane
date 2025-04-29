@@ -30,7 +30,6 @@ type SystemWorker struct {
 }
 
 func NewSystemWorker() *SystemWorker {
-	// TODO: Initialize the worker with actual system and library specs, and an object storage client.
 	return &SystemWorker{}
 }
 
@@ -46,6 +45,11 @@ func (worker *SystemWorker) WithSystem(system *builder.SystemSpec) *SystemWorker
 
 func (worker *SystemWorker) WithLibraries(libraries []*builder.LibrarySpec) *SystemWorker {
 	worker.libraries = libraries
+	return worker
+}
+
+func (worker *SystemWorker) WithStorage(storage s3.ObjectStorage) *SystemWorker {
+	worker.storage = storage
 	return worker
 }
 
