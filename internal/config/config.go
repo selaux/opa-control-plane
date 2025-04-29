@@ -121,7 +121,7 @@ type ObjectStorage struct {
 // AmazonS3 defines the configuration for an Amazon S3-compatible object storage.
 type AmazonS3 struct {
 	Bucket          string `yaml:"bucket"`
-	Key             string `yaml:"key,omit"`
+	Key             string `yaml:"key"`
 	Region          string `yaml:"region,omitempty"`
 	AccessKeyId     string `yaml:"access_key_id,omitempty"`
 	SecretAccessKey string `yaml:"secret_access_key,omitempty"`
