@@ -9,6 +9,9 @@ import (
 
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
+	"github.com/go-git/go-git/v5/plumbing/transport"
+	"github.com/go-git/go-git/v5/plumbing/transport/http"
+	"github.com/go-git/go-git/v5/plumbing/transport/ssh"
 	"github.com/tsandall/lighthouse/internal/config"
 )
 
@@ -31,11 +34,16 @@ func New(path string, config config.Git) *Synchronizer {
 func (s *Synchronizer) Execute() error {
 	var repository *git.Repository
 
-	// TODO: Authentication.
+	authMethod, err := s.auth()
+	if err != nil {
+		// TODO: Validate the config earlier.
+		return err
+	}
 
 	if _, err := os.Stat(s.path); os.IsNotExist(err) {
 		repository, err = git.PlainClone(s.path, false, &git.CloneOptions{
 			URL:               s.config.Repo,
+			Auth:              authMethod,
 			RecurseSubmodules: git.DefaultSubmoduleRecursionDepth,
 		})
 		if err != nil {
@@ -53,7 +61,10 @@ func (s *Synchronizer) Execute() error {
 		return err
 	}
 
-	err = w.Pull(&git.PullOptions{RemoteName: "origin"})
+	err = w.Pull(&git.PullOptions{
+		RemoteName: "origin",
+		Auth:       authMethod,
+	})
 	if err != nil && err != git.NoErrAlreadyUpToDate {
 		return err
 	}
@@ -77,4 +88,19 @@ func (s *Synchronizer) Execute() error {
 	}
 
 	return nil
+}
+
+func (s *Synchronizer) auth() (transport.AuthMethod, error) {
+	if s.config.Credentials.HTTP != nil {
+		return &http.TokenAuth{
+			Token: *s.config.Credentials.HTTP,
+		}, nil
+	} else if s.config.Credentials.SSHUserName != nil && s.config.Credentials.SSHPrivateKey != nil && s.config.Credentials.SSHPassphrase != nil {
+		return ssh.NewPublicKeys(*s.config.Credentials.SSHUserName,
+			[]byte(*s.config.Credentials.SSHPrivateKey),
+			*s.config.Credentials.SSHPassphrase,
+		)
+	}
+
+	return nil, errors.New("no authentication method configured for git synchronization")
 }

@@ -79,6 +79,7 @@ type Git struct {
 
 type GitCredentials struct {
 	HTTP          *string `yaml:"http,omitempty"`
+	SSHUserName   *string `yaml:"ssh_username,omitempty"`
 	SSHPrivateKey *string `yaml:"ssh_private_key,omitempty"`
 	SSHPassphrase *string `yaml:"ssh_passphrase,omitempty"`
 }
