@@ -56,6 +56,41 @@ func (r *Root) ValidateAndInjectDefaults() (errs []error) {
 				continue
 			}
 		}
+
+		if system.ObjectStorage.AmazonS3 != nil {
+			accessKeyId := system.ObjectStorage.AmazonS3.AccessKeyId
+			secretAccessKey := system.ObjectStorage.AmazonS3.SecretAccessKey
+			sessionToken := system.ObjectStorage.AmazonS3.SessionToken
+
+			if accessKeyId != "" {
+				_, ok := r.Secrets[accessKeyId]
+				if !ok {
+					errs = append(errs, fmt.Errorf("system %q S3 access key id refers to secret %q that is invalid or undefined", name, accessKeyId))
+					delete(r.Systems, name)
+					continue
+				}
+			}
+
+			if secretAccessKey != "" {
+				_, ok := r.Secrets[secretAccessKey]
+				if !ok {
+					errs = append(errs, fmt.Errorf("system %q S3 secret access key refers to secret %q that is invalid or undefined", name, secretAccessKey))
+					delete(r.Systems, name)
+					continue
+				}
+			}
+
+			if sessionToken != "" {
+				_, ok := r.Secrets[sessionToken]
+				if !ok {
+					errs = append(errs, fmt.Errorf("system %q S3 session token refers to secret %q that is invalid or undefined", name, sessionToken))
+					delete(r.Systems, name)
+					continue
+				}
+			}
+		}
+
+		// TODO: Add validation for GCP and Azure object storage configurations once they are more complete.
 	}
 	return errs
 }
