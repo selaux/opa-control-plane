@@ -47,6 +47,8 @@ func (s *Service) Run(ctx context.Context) error {
 		return err
 	}
 
+	// TODO: start a worker per system to process bundles
+
 	_ = <-ctx.Done()
 
 	return nil
