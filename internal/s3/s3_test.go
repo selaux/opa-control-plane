@@ -5,6 +5,7 @@ import (
 	"context"
 	"io"
 	"net/http/httptest"
+	"os"
 	"testing"
 
 	"github.com/johannesboyne/gofakes3"
@@ -14,6 +15,11 @@ import (
 )
 
 func TestS3(t *testing.T) {
+	// Set mock AWS credentials to avoid IMDS errors.
+	os.Setenv("AWS_ACCESS_KEY_ID", "mock-access-key")
+	os.Setenv("AWS_SECRET_ACCESS_KEY", "mock-secret-key")
+	os.Setenv("AWS_REGION", "us-east-1")
+
 	// Create a mock S3 service with a test bucket.
 
 	mock := s3mem.New()
