@@ -117,17 +117,20 @@ type ObjectStorage struct {
 
 // AmazonS3 defines the configuration for an Amazon S3-compatible object storage.
 type AmazonS3 struct {
-	Bucket string `yaml:"bucket"`
+	Provider string `yaml:"provider"` // "aws"
+	Bucket   string `yaml:"bucket"`
 }
 
 // GCPCloudStorage defines the configuration for a Google Cloud Storage bucket.
 type GCPCloudStorage struct {
-	Project string `yaml:"project"`
-	Bucket  string `yaml:"bucket"`
+	Provider string `yaml:"provider"` // "gcp"
+	Project  string `yaml:"project"`
+	Bucket   string `yaml:"bucket"`
 }
 
 // AzureBlobStorage defines the configuration for an Azure Blob Storage container.
 type AzureBlobStorage struct {
+	Provider   string `yaml:"provider"` // "azure"
 	AccountURL string `yaml:"account_url"`
 	Container  string `yaml:"container"`
 }

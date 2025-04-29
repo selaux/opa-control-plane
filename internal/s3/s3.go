@@ -44,8 +44,8 @@ type (
 	}
 )
 
-// NewS3 creates a new S3 client based on the provided configuration.
-func NewS3(ctx context.Context, data []byte) (ObjectStorage, error) {
+// New creates a new S3 client based on the provided configuration.
+func New(ctx context.Context, data []byte, localMockURL string) (ObjectStorage, error) {
 	var commonCfg config.ObjectStorage
 	err := yaml.Unmarshal(data, &commonCfg)
 	if err != nil {
@@ -63,7 +63,15 @@ func NewS3(ctx context.Context, data []byte) (ObjectStorage, error) {
 		if err != nil {
 			return nil, err
 		}
-		return &AmazonS3{bucket: parsedCfg.Bucket, uploader: manager.NewUploader(s3.NewFromConfig(awsCfg))}, nil
+
+		client := s3.NewFromConfig(awsCfg, func(o *s3.Options) {
+			if localMockURL != "" {
+				o.UsePathStyle = true
+				o.BaseEndpoint = aws.String(localMockURL)
+			}
+		})
+
+		return &AmazonS3{bucket: parsedCfg.Bucket, uploader: manager.NewUploader(client)}, nil
 	case "gcp":
 		var parsedCfg config.GCPCloudStorage
 		if err := yaml.Unmarshal(data, &parsedCfg); err != nil {
