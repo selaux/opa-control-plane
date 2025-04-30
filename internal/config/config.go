@@ -293,6 +293,34 @@ func (a *AzureBlobStorage) Equal(other *AzureBlobStorage) bool {
 	return a.AccountURL == other.AccountURL && a.Container == other.Container && a.Path == other.Path
 }
 
+func EqualLibraries(a, b []*Library) bool {
+	m := make(map[string]*Library, len(a))
+	for _, lib := range a {
+		m[lib.Name] = lib
+	}
+
+	n := make(map[string]*Library, len(b))
+	for _, lib := range b {
+		n[lib.Name] = lib
+	}
+
+	if len(m) != len(n) {
+		return false
+	}
+
+	for id, a := range m {
+		b, ok := n[id]
+		if !ok {
+			return false
+		}
+		if !a.Equal(b) {
+			return false
+		}
+	}
+
+	return true
+}
+
 func stringEqual(a, b *string) bool {
 	if a == b {
 		return true

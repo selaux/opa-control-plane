@@ -103,7 +103,7 @@ func (s *Service) launchWorkers(ctx context.Context) {
 		}
 
 		if _, ok := activeSystems[id]; !ok {
-			w.UpdateConfig(nil)
+			w.UpdateConfig(nil, nil)
 		}
 	}
 
@@ -112,7 +112,7 @@ func (s *Service) launchWorkers(ctx context.Context) {
 
 	for _, system := range systems {
 		if w, ok := s.workers[system.Name]; ok {
-			w.UpdateConfig(system) // TODO(tsandall): add support for config updates in response to library changes
+			w.UpdateConfig(system, libraries)
 			continue
 		}
 
@@ -140,7 +140,7 @@ func (s *Service) launchWorkers(ctx context.Context) {
 			continue
 		}
 
-		w := NewSystemWorker(system).
+		w := NewSystemWorker(system, libraries).
 			WithSystem(ss).
 			WithLibraries(ls).
 			WithSynchronizers(syncs).

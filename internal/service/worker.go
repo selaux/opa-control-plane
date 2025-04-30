@@ -24,17 +24,18 @@ var (
 // builder package, and uploads the resulting bundle to an S3-compatible object
 // storage service.
 type SystemWorker struct {
-	config        *config.System
-	synchronizers []*gitsync.Synchronizer
-	system        *builder.SystemSpec
-	libraries     []*builder.LibrarySpec
-	storage       s3.ObjectStorage
-	changed       chan struct{}
-	done          chan struct{}
+	systemConfig   *config.System
+	libraryConfigs []*config.Library
+	synchronizers  []*gitsync.Synchronizer
+	system         *builder.SystemSpec
+	libraries      []*builder.LibrarySpec
+	storage        s3.ObjectStorage
+	changed        chan struct{}
+	done           chan struct{}
 }
 
-func NewSystemWorker(config *config.System) *SystemWorker {
-	return &SystemWorker{config: config, done: make(chan struct{})}
+func NewSystemWorker(system *config.System, libraries []*config.Library) *SystemWorker {
+	return &SystemWorker{systemConfig: system, libraryConfigs: libraries, done: make(chan struct{})}
 }
 
 func (worker *SystemWorker) WithSynchronizers(synchronizers []*gitsync.Synchronizer) *SystemWorker {
@@ -66,8 +67,8 @@ func (worker *SystemWorker) Done() bool {
 	}
 }
 
-func (worker *SystemWorker) UpdateConfig(config *config.System) {
-	if config == nil || !worker.config.Equal(config) {
+func (worker *SystemWorker) UpdateConfig(system *config.System, libraries []*config.Library) {
+	if system == nil || !worker.systemConfig.Equal(system) || !config.EqualLibraries(worker.libraryConfigs, libraries) {
 		select {
 		case <-worker.changed:
 		default:
