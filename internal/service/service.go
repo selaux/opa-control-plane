@@ -181,6 +181,7 @@ func (s *Service) listSystemsWithGitCredentials() ([]*config.System, error) {
         systems.ref,
         systems.gitcommit,
         systems.path,
+		systems.s3url,
 		systems.s3region,
 		systems.s3bucket,
 		systems.s3key,
@@ -204,8 +205,8 @@ func (s *Service) listSystemsWithGitCredentials() ([]*config.System, error) {
 	for rows.Next() {
 		var systemId, repo, secretId, secretRefType, secretValue string
 		var ref, gitCommit, path *string
-		var s3region, s3bucket, s3key *string
-		if err := rows.Scan(&systemId, &repo, &ref, &gitCommit, &path, &s3region, &s3bucket, &s3key, &secretId, &secretRefType, &secretValue); err != nil {
+		var s3url, s3region, s3bucket, s3key *string
+		if err := rows.Scan(&systemId, &repo, &ref, &gitCommit, &path, &s3url, &s3region, &s3bucket, &s3key, &secretId, &secretRefType, &secretValue); err != nil {
 			return nil, err
 		}
 
@@ -234,6 +235,9 @@ func (s *Service) listSystemsWithGitCredentials() ([]*config.System, error) {
 					Region: *s3region,
 					Bucket: *s3bucket,
 					Key:    *s3key,
+				}
+				if s3url != nil {
+					system.ObjectStorage.AmazonS3.URL = *s3url
 				}
 			}
 		}
@@ -348,14 +352,15 @@ func (s *Service) loadSystems(root *config.Root) error {
 
 	for _, name := range names {
 		system := root.Systems[name]
-		s3region, s3bucket, s3key := "", "", ""
+		var s3url, s3region, s3bucket, s3key string
 		if system.ObjectStorage.AmazonS3 != nil {
+			s3url = system.ObjectStorage.AmazonS3.URL
 			s3region = system.ObjectStorage.AmazonS3.Region
 			s3bucket = system.ObjectStorage.AmazonS3.Bucket
 			s3key = system.ObjectStorage.AmazonS3.Key
 		}
-		if _, err := s.db.Exec(`INSERT OR REPLACE INTO systems (id, repo, ref, gitcommit, path, s3region, s3bucket, s3key) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-			system.Name, system.Git.Repo, system.Git.Reference, system.Git.Commit, system.Git.Path, s3region, s3bucket, s3key); err != nil {
+		if _, err := s.db.Exec(`INSERT OR REPLACE INTO systems (id, repo, ref, gitcommit, path, s3url, s3region, s3bucket, s3key) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			system.Name, system.Git.Repo, system.Git.Reference, system.Git.Commit, system.Git.Path, s3url, s3region, s3bucket, s3key); err != nil {
 			return err
 		}
 
@@ -428,6 +433,7 @@ func (s *Service) initDb() {
 			ref TEXT,
 			gitcommit TEXT,
 			path TEXT,
+			s3url TEXT,
 			s3region TEXT,
 			s3bucket TEXT,
 			s3key TEXT
