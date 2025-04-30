@@ -67,18 +67,13 @@ func (worker *SystemWorker) Done() bool {
 }
 
 func (worker *SystemWorker) UpdateConfig(config *config.System) {
-	if config == nil || !worker.equalConfig(config) {
+	if config == nil || !worker.config.Equal(config) {
 		select {
 		case <-worker.changed:
 		default:
 			close(worker.changed)
 		}
 	}
-}
-
-func (worker *SystemWorker) equalConfig(config *config.System) bool {
-	// TODO: Implement a comparison logic to check if the new config is different from the current one.
-	return true
 }
 
 // Execute runs a system synchronization iteration: git sync, bundle construct

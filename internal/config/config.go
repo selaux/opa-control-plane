@@ -56,6 +56,18 @@ type System struct {
 	ObjectStorage ObjectStorage `yaml:"object_storage"`
 }
 
+func (s *System) Equal(other *System) bool {
+	if s == other {
+		return true
+	}
+
+	if s == nil || other == nil {
+		return false
+	}
+
+	return s.Name == other.Name && s.Git.Equal(&other.Git) && s.ObjectStorage.Equal(&other.ObjectStorage)
+}
+
 // Git defines the Git synchronization configuration used by Lighthouse
 // resources like Systems, Stacks, and Libraries.
 type Git struct {
@@ -64,6 +76,18 @@ type Git struct {
 	Commit      *string    `yaml:"commit,omitempty"`
 	Path        *string    `yaml:"path,omitempty"`
 	Credentials *SecretRef `yaml:"credentials,omitempty"`
+}
+
+func (g *Git) Equal(other *Git) bool {
+	if g == other {
+		return true
+	}
+
+	if g == nil || other == nil {
+		return false
+	}
+
+	return stringEqual(g.Reference, other.Reference) && stringEqual(g.Commit, other.Commit) && stringEqual(g.Path, other.Path) && g.Credentials.Equal(other.Credentials)
 }
 
 type SecretRef struct {
@@ -90,6 +114,18 @@ func (s *SecretRef) UnmarshalYAML(n *yaml.Node) error {
 		return n.Decode(&s.Name)
 	}
 	return fmt.Errorf("expected scalar node, got %v", n.Kind)
+}
+
+func (s *SecretRef) Equal(other *SecretRef) bool {
+	if s == other {
+		return true
+	}
+
+	if s == nil || other == nil {
+		return false
+	}
+
+	return s.Name == other.Name // No need to compare values, as they are resolved at runtime
 }
 
 // Secret defines the configuration for secrets/tokens used by Lighthouse
@@ -143,6 +179,18 @@ type ObjectStorage struct {
 	AzureBlobStorage *AzureBlobStorage `yaml:"azure,omitempty"`
 }
 
+func (o *ObjectStorage) Equal(other *ObjectStorage) bool {
+	if o == other {
+		return true
+	}
+
+	if o == nil || other == nil {
+		return false
+	}
+
+	return o.AmazonS3.Equal(other.AmazonS3) && o.GCPCloudStorage.Equal(other.GCPCloudStorage) && o.AzureBlobStorage.Equal(other.AzureBlobStorage)
+}
+
 // AmazonS3 defines the configuration for an Amazon S3-compatible object storage.
 type AmazonS3 struct {
 	Bucket      string     `yaml:"bucket"`
@@ -163,4 +211,52 @@ type AzureBlobStorage struct {
 	AccountURL string `yaml:"account_url"`
 	Container  string `yaml:"container"`
 	Path       string `yaml:"path"`
+}
+
+func (a *AmazonS3) Equal(other *AmazonS3) bool {
+	if a == other {
+		return true
+	}
+
+	if a == nil || other == nil {
+		return false
+	}
+
+	return a.Bucket == other.Bucket && a.Key == other.Key && a.Region == other.Region && a.Credentials.Equal(other.Credentials)
+}
+
+func (g *GCPCloudStorage) Equal(other *GCPCloudStorage) bool {
+	if g == other {
+		return true
+	}
+
+	if g == nil || other == nil {
+		return false
+	}
+
+	return g.Project == other.Project && g.Bucket == other.Bucket && g.Object == other.Object
+}
+
+func (a *AzureBlobStorage) Equal(other *AzureBlobStorage) bool {
+	if a == other {
+		return true
+	}
+
+	if a == nil || other == nil {
+		return false
+	}
+
+	return a.AccountURL == other.AccountURL && a.Container == other.Container && a.Path == other.Path
+}
+
+func stringEqual(a, b *string) bool {
+	if a == b {
+		return true
+	}
+
+	if a == nil || b == nil {
+		return false
+	}
+
+	return *a == *b
 }
