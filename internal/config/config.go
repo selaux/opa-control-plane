@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"reflect"
 
 	"gopkg.in/yaml.v3"
 )
@@ -125,7 +126,11 @@ func (s *SecretRef) Equal(other *SecretRef) bool {
 		return false
 	}
 
-	return s.Name == other.Name // No need to compare values, as they are resolved at runtime
+	if s.Name != other.Name {
+		return false
+	}
+
+	return s.value.Equal(other.value)
 }
 
 // Secret defines the configuration for secrets/tokens used by Lighthouse
@@ -151,6 +156,18 @@ func (s *Secret) UnmarshalYAML(n *yaml.Node) error {
 		return n.Decode(&s.Value)
 	}
 	return fmt.Errorf("expected mapping node, got %v", n.Kind)
+}
+
+func (s *Secret) Equal(other *Secret) bool {
+	if s == other {
+		return true
+	}
+
+	if s == nil || other == nil {
+		return false
+	}
+
+	return s.Name == other.Name && reflect.DeepEqual(s.Value, other.Value)
 }
 
 func ParseFile(filename string) (root *Root, err error) {
