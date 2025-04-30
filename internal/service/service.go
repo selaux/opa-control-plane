@@ -194,7 +194,7 @@ func (s *Service) listSystemsWithGitCredentials() ([]*config.System, error) {
         systems_secrets ON systems.id = systems_secrets.system_id
     LEFT JOIN
         secrets ON systems_secrets.secret_id = secrets.id
-	WHERE systems_secrets.ref_type = 'git_credentials' OR systems_secrets.ref_type = 'aws'`)
+	WHERE systems_secrets.ref_type = 'git_credentials' OR systems_secrets.ref_type IS NULL OR systems_secrets.ref_type = 'aws'`)
 	if err != nil {
 		return nil, err
 	}
@@ -203,7 +203,8 @@ func (s *Service) listSystemsWithGitCredentials() ([]*config.System, error) {
 	systemMap := make(map[string]*config.System)
 
 	for rows.Next() {
-		var systemId, repo, secretId, secretRefType, secretValue string
+		var systemId, repo string
+		var secretId, secretRefType, secretValue *string
 		var ref, gitCommit, path *string
 		var s3url, s3region, s3bucket, s3key *string
 		if err := rows.Scan(&systemId, &repo, &ref, &gitCommit, &path, &s3url, &s3region, &s3bucket, &s3key, &secretId, &secretRefType, &secretValue); err != nil {
@@ -242,13 +243,13 @@ func (s *Service) listSystemsWithGitCredentials() ([]*config.System, error) {
 			}
 		}
 
-		if secretId != "" {
-			s := config.Secret{Name: secretId}
-			if err := json.Unmarshal([]byte(secretValue), &s.Value); err != nil {
+		if secretId != nil {
+			s := config.Secret{Name: *secretId}
+			if err := json.Unmarshal([]byte(*secretValue), &s.Value); err != nil {
 				return nil, err
 			}
 
-			switch secretRefType {
+			switch *secretRefType {
 			case "git_credentials":
 				system.Git.Credentials = s.Ref()
 			case "aws":
