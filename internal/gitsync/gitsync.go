@@ -39,11 +39,19 @@ func (s *Synchronizer) Execute() error {
 		return err
 	}
 
+	var referenceName plumbing.ReferenceName
+	if s.config.Reference != nil {
+		referenceName = plumbing.ReferenceName(*s.config.Reference)
+	}
+
 	if _, err := os.Stat(s.path); os.IsNotExist(err) {
 		repository, err = git.PlainClone(s.path, false, &git.CloneOptions{
 			URL:               s.config.Repo,
 			Auth:              authMethod,
 			RecurseSubmodules: git.DefaultSubmoduleRecursionDepth,
+			ReferenceName:     referenceName,
+			SingleBranch:      true,
+			NoCheckout:        true, // We will checkout later
 		})
 		if err != nil {
 			return err
@@ -61,9 +69,11 @@ func (s *Synchronizer) Execute() error {
 	}
 
 	err = w.Pull(&git.PullOptions{
-		RemoteName: "origin",
-		Auth:       authMethod,
-		Force:      true,
+		RemoteName:    "origin",
+		ReferenceName: referenceName,
+		Auth:          authMethod,
+		Force:         true,
+		SingleBranch:  true,
 	})
 	if err != nil && err != git.NoErrAlreadyUpToDate {
 		return err
@@ -83,11 +93,7 @@ func (s *Synchronizer) Execute() error {
 		return errors.New("either reference or commit must be set in git configuration")
 	}
 
-	if err != nil {
-		return err
-	}
-
-	return nil
+	return err
 }
 
 func (s *Synchronizer) auth() (transport.AuthMethod, error) {
