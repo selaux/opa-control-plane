@@ -45,6 +45,11 @@ func (p *Pool) work() {
 }
 
 func (p *Pool) enqueue(t *task) {
+	if t.deadline.IsZero() {
+		// Task requested removal from the pool.
+		return
+	}
+
 	p.mu.Lock()
 	defer p.mu.Unlock()
 

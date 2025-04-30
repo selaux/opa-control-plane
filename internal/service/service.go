@@ -8,6 +8,7 @@ import (
 	"log"
 	"path"
 	"sort"
+	"time"
 
 	_ "github.com/mattn/go-sqlite3"
 	"github.com/tsandall/lighthouse/internal/builder"
@@ -16,16 +17,20 @@ import (
 	"github.com/tsandall/lighthouse/internal/pool"
 )
 
+const reconfigurationInterval = 15 * time.Second
+
 type Service struct {
 	configFile     string
 	persistenceDir string
 	db             *sql.DB
 	pool           *pool.Pool
+	workers        map[string]*SystemWorker
 }
 
 func New() *Service {
 	return &Service{
-		pool: pool.New(10),
+		pool:    pool.New(10),
+		workers: make(map[string]*SystemWorker),
 	}
 }
 
@@ -55,9 +60,18 @@ func (s *Service) Run(ctx context.Context) error {
 		return err
 	}
 
-	s.launchWorkers()
+	// Launch new workers for new systems and systems with updated configuration until it is time to shutdown.
 
-	_ = <-ctx.Done()
+shutdown:
+	for {
+		s.launchWorkers()
+
+		select {
+		case <-time.After(reconfigurationInterval):
+		case <-ctx.Done():
+			break shutdown
+		}
+	}
 
 	return nil
 }
@@ -69,7 +83,34 @@ func (s *Service) launchWorkers() {
 		log.Println("error listing systems:", err)
 	}
 
+	activeSystems := make(map[string]struct{})
 	for _, system := range result {
+		activeSystems[system.Name] = struct{}{}
+	}
+
+	// Remove any worker already shutdown from bookkeeping, as well as initiate shutdown for any system (worker) not in the current configuration.
+	for id, w := range s.workers {
+		if w.Done() {
+			delete(s.workers, id)
+			continue
+		}
+
+		if _, ok := activeSystems[id]; !ok {
+			w.UpdateConfig(nil)
+		}
+	}
+
+	// Start any new workers for systems that are in the current configuration but not yet running. Inform any existing workers of the current configuration, which
+	// will cause them to shutdown if configuration has changed.
+
+	for _, system := range result {
+		if w, ok := s.workers[system.Name]; ok {
+			w.UpdateConfig(system)
+			continue
+		}
+
+		log.Println("(re)starting worker for system:", system.Name)
+
 		systemRepoDir := path.Join(s.persistenceDir, "repos", md5sum(system.Name))
 		ss := builder.SystemSpec{
 			Repo: systemRepoDir,
@@ -77,11 +118,15 @@ func (s *Service) launchWorkers() {
 		syncs := []*gitsync.Synchronizer{
 			gitsync.New(systemRepoDir, system.Git),
 		}
-		w := NewSystemWorker().WithSystem(&ss).WithSynchronizers(syncs)
+		w := NewSystemWorker(system).WithSystem(&ss).WithSynchronizers(syncs)
 		s.pool.Add(w.Execute)
+
+		s.workers[system.Name] = w
 	}
+
 }
 
+// loadConfig loads the configuration from the configuration file into the database.
 func (s *Service) loadConfig(_ context.Context) error {
 
 	root, warnings, err := config.ParseFile(s.configFile)

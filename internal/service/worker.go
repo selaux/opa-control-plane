@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/tsandall/lighthouse/internal/builder"
+	"github.com/tsandall/lighthouse/internal/config"
 	"github.com/tsandall/lighthouse/internal/gitsync"
 	"github.com/tsandall/lighthouse/internal/s3"
 )
@@ -23,14 +24,17 @@ var (
 // builder package, and uploads the resulting bundle to an S3-compatible object
 // storage service.
 type SystemWorker struct {
+	config        *config.System
 	synchronizers []*gitsync.Synchronizer
 	system        *builder.SystemSpec
 	libraries     []*builder.LibrarySpec
 	storage       s3.ObjectStorage
+	changed       chan struct{}
+	done          chan struct{}
 }
 
-func NewSystemWorker() *SystemWorker {
-	return &SystemWorker{}
+func NewSystemWorker(config *config.System) *SystemWorker {
+	return &SystemWorker{config: config, done: make(chan struct{})}
 }
 
 func (worker *SystemWorker) WithSynchronizers(synchronizers []*gitsync.Synchronizer) *SystemWorker {
@@ -53,10 +57,44 @@ func (worker *SystemWorker) WithStorage(storage s3.ObjectStorage) *SystemWorker 
 	return worker
 }
 
+func (worker *SystemWorker) Done() bool {
+	select {
+	case <-worker.done:
+		return true
+	default:
+		return false
+	}
+}
+
+func (worker *SystemWorker) UpdateConfig(config *config.System) {
+	if config == nil || !worker.equalConfig(config) {
+		select {
+		case <-worker.changed:
+		default:
+			close(worker.changed)
+		}
+	}
+}
+
+func (worker *SystemWorker) equalConfig(config *config.System) bool {
+	// TODO: Implement a comparison logic to check if the new config is different from the current one.
+	return true
+}
+
 // Execute runs a system synchronization iteration: git sync, bundle construct
 // and then push bundles to object storage.
 func (w *SystemWorker) Execute() time.Time {
 	ctx := context.Background()
+
+	// If a configuration change was requested, request the worker to be removed from the pool and signal this worker being done.
+
+	select {
+	case <-w.changed:
+		close(w.done)
+		var zero time.Time
+		return zero
+	default:
+	}
 
 	for _, synchronizer := range w.synchronizers {
 		err := synchronizer.Execute()
