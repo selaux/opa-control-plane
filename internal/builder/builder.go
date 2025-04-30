@@ -48,6 +48,20 @@ func (b *Builder) WithLibrarySpecs(librarySpecs []*LibrarySpec) *Builder {
 
 func (b *Builder) Build(ctx context.Context) error {
 
+	// NOTE(tsandall): if roots cannot be computed for any library then we will bail
+	// this means that libraries must be syntactically valid when synched otherwise
+	// all builds will stop.
+	// TODO(tsandall): precompute if this becomes a bottleneck
+	for i := range b.librarySpecs {
+		if b.librarySpecs[i].Roots == nil {
+			var err error
+			b.librarySpecs[i].Roots, err = getRootsForRepo(b.librarySpecs[i].Repo)
+			if err != nil {
+				return err
+			}
+		}
+	}
+
 	toBuild := map[string]struct{}{b.systemSpec.Repo: {}}
 	toProcess, err := listRegoFilesRecursive(b.systemSpec.Repo)
 	if err != nil {
@@ -158,4 +172,32 @@ func walkRegoFilesRecursive(root string, fn func(path string, fi os.FileInfo) er
 		}
 		return fn(path, fi)
 	})
+}
+
+func getRootsForRepo(dir string) ([]ast.Ref, error) {
+	set := ast.NewSet()
+
+	err := walkRegoFilesRecursive(dir, func(path string, _ os.FileInfo) error {
+
+		bs, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+
+		module, err := ast.ParseModule(path, string(bs))
+		if err != nil {
+			return err
+		}
+
+		set.Add(ast.NewTerm(module.Package.Path))
+		return nil
+	})
+
+	sl := set.Slice()
+	result := make([]ast.Ref, len(sl))
+	for i := range sl {
+		result[i] = sl[i].Value.(ast.Ref)
+	}
+
+	return result, err
 }

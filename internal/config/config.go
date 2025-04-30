@@ -14,8 +14,9 @@ import (
 
 // Root is the top-level configuration structure used by Lighthouse.
 type Root struct {
-	Systems map[string]*System `yaml:"systems"`
-	Secrets map[string]*Secret `yaml:"secrets"`
+	Systems   map[string]*System  `yaml:"systems"`
+	Libraries map[string]*Library `yaml:"libraries"`
+	Secrets   map[string]*Secret  `yaml:"secrets"`
 }
 
 // UnmarshalYAML implements the yaml.Marshaler interface for the Root struct. This
@@ -46,6 +47,13 @@ func (r *Root) UnmarshalYAML(node *yaml.Node) error {
 		// TODO: Handle other object storage types (GCP, Azure) similarly
 	}
 
+	for name, library := range raw.Libraries {
+		library.Name = name
+		if library.Git.Credentials != nil {
+			library.Git.Credentials.value = raw.Secrets[library.Git.Credentials.Name]
+		}
+	}
+
 	*r = Root(raw) // Assign the unmarshaled data back to the original struct
 	return nil
 }
@@ -67,6 +75,24 @@ func (s *System) Equal(other *System) bool {
 	}
 
 	return s.Name == other.Name && s.Git.Equal(&other.Git) && s.ObjectStorage.Equal(&other.ObjectStorage)
+}
+
+// Library defines the configuration for a Lighthouse Library.
+type Library struct {
+	Name string `yaml:"-"`
+	Git  Git    `yaml:"git"`
+}
+
+func (s *Library) Equal(other *Library) bool {
+	if s == other {
+		return true
+	}
+
+	if s == nil || other == nil {
+		return false
+	}
+
+	return s.Name == other.Name && s.Git.Equal(&other.Git)
 }
 
 // Git defines the Git synchronization configuration used by Lighthouse

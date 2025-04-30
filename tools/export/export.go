@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"time"
 
 	"gopkg.in/yaml.v3"
 
@@ -93,15 +94,54 @@ func mapV1SystemToSystemAndSecretConfig(v1 *v1System, secretsById map[string]*v1
 			}
 		}
 		system.Git.Credentials = &config.SecretRef{Name: secret.Name}
-	} else if v1.SourceControl.Origin.SSHCredentials.PrivateKey != "" {
-		secret.Name = v1.SourceControl.Origin.SSHCredentials.PrivateKey
-		secret.Value = map[string]interface{}{
-			"type": "ssh_private_key",
-		}
-		system.Git.Credentials = &config.SecretRef{Name: secret.Name}
+	} else {
+		return nil, nil, fmt.Errorf("non-http auth credentials not supported yet")
 	}
 
 	return &system, &secret, nil
+}
+
+func mapV1LibraryToLibraryAndSecretConfig(v1 *v1Library, secretsById map[string]*v1Secret) (*config.Library, *config.Secret, error) {
+
+	if v1.SourceControl.UseWorkspaceSettings {
+		return nil, nil, fmt.Errorf("workspace source control not supported yet")
+	}
+
+	var library config.Library
+	var secret config.Secret
+
+	library.Name = v1.Id
+
+	if v1.SourceControl.LibraryOrigin.URL == "" {
+		return nil, nil, fmt.Errorf("not git backed")
+	}
+
+	library.Git.Repo = v1.SourceControl.LibraryOrigin.URL
+
+	if v1.SourceControl.LibraryOrigin.Commit != "" {
+		library.Git.Commit = &v1.SourceControl.LibraryOrigin.Commit
+	} else if v1.SourceControl.LibraryOrigin.Reference != "" {
+		library.Git.Reference = &v1.SourceControl.LibraryOrigin.Reference
+	} else {
+		return nil, nil, fmt.Errorf("missing commit and reference")
+	}
+
+	if v1.SourceControl.LibraryOrigin.Path != "" {
+		library.Git.Path = &v1.SourceControl.LibraryOrigin.Path
+	}
+
+	if v1.SourceControl.LibraryOrigin.Credentials != "" {
+		secret.Name = v1.SourceControl.LibraryOrigin.Credentials
+		if s, ok := secretsById[v1.SourceControl.LibraryOrigin.Credentials]; ok {
+			secret.Value = map[string]interface{}{
+				"type":     "http_basic_auth",
+				"username": s.Name,
+			}
+		}
+		library.Git.Credentials = &config.SecretRef{Name: secret.Name}
+	}
+
+	return &library, &secret, nil
 }
 
 func main() {
@@ -123,10 +163,12 @@ func main() {
 	}
 
 	output := config.Root{
-		Systems: map[string]*config.System{},
-		Secrets: map[string]*config.Secret{},
+		Systems:   map[string]*config.System{},
+		Secrets:   map[string]*config.Secret{},
+		Libraries: map[string]*config.Library{},
 	}
 
+	log.Println("Fetching v1/systems...")
 	resp, err := c.Get("v1/systems")
 	if err != nil {
 		log.Fatal(err)
@@ -138,6 +180,23 @@ func main() {
 		log.Fatal(err)
 	}
 
+	log.Printf("Received %d systems.", len(systems))
+
+	log.Println("Fetching v1/libraries...")
+	resp, err = c.Get("v1/libraries")
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	var libraries []*v1Library
+	err = resp.Decode(&libraries)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	log.Printf("Received %d libraries.", len(libraries))
+
+	log.Println("Fetching v1/secrets...")
 	resp, err = c.Get("v1/secrets")
 	if err != nil {
 		log.Fatal(err)
@@ -149,6 +208,8 @@ func main() {
 		log.Fatal(err)
 	}
 
+	log.Printf("Received %d secrets.", len(secrets))
+
 	secretsById := map[string]*v1Secret{}
 	for _, secret := range secrets {
 		secretsById[secret.Id] = secret
@@ -157,13 +218,27 @@ func main() {
 	for _, system := range systems {
 		sc, secret, err := mapV1SystemToSystemAndSecretConfig(system, secretsById)
 		if err != nil {
-			log.Printf("skipping system %q: %v", system.Name, err)
+			log.Printf("Skipping system %q: %v.", system.Name, err)
 			continue
 		}
 
 		output.Systems[sc.Name] = sc
 		output.Secrets[secret.Name] = secret
 	}
+
+	for _, library := range libraries {
+		lc, secret, err := mapV1LibraryToLibraryAndSecretConfig(library, secretsById)
+		if err != nil {
+			log.Printf("Skipping library %q: %v.", library.Id, err)
+			continue
+		}
+
+		output.Libraries[lc.Name] = lc
+		output.Secrets[secret.Name] = secret
+	}
+
+	log.Printf("Finished downloading resources from DAS. Dumping configuration.\n\n")
+	fmt.Printf("# Generated from %v at %v.\n", *urlFlag, time.Now().UTC().Format(time.RFC3339))
 
 	bs, err := yaml.Marshal(output)
 	if err != nil {
@@ -190,7 +265,6 @@ type v1Library struct {
 	Id            string `json:"id"`
 	SourceControl *struct {
 		UseWorkspaceSettings bool            `json:"use_workspace_settings"`
-		Origin               v1GitRepoConfig `json:"origin"`
 		LibraryOrigin        v1GitRepoConfig `json:"library_origin"`
 	} `json:"source_control"`
 }

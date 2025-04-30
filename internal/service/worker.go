@@ -94,7 +94,7 @@ func (w *SystemWorker) Execute() time.Time {
 	for _, synchronizer := range w.synchronizers {
 		err := synchronizer.Execute()
 		if err != nil {
-			log.Println("failed to synchronize system repository:", err)
+			log.Println("failed to synchronize repository:", err)
 			return time.Now().Add(errorDelay)
 		}
 	}
