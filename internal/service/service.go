@@ -16,6 +16,7 @@ import (
 	"github.com/tsandall/lighthouse/internal/config"
 	"github.com/tsandall/lighthouse/internal/gitsync"
 	"github.com/tsandall/lighthouse/internal/pool"
+	"github.com/tsandall/lighthouse/internal/s3"
 )
 
 const reconfigurationInterval = 15 * time.Second
@@ -65,7 +66,7 @@ func (s *Service) Run(ctx context.Context) error {
 
 shutdown:
 	for {
-		s.launchWorkers()
+		s.launchWorkers(ctx)
 
 		select {
 		case <-time.After(reconfigurationInterval):
@@ -77,7 +78,7 @@ shutdown:
 	return nil
 }
 
-func (s *Service) launchWorkers() {
+func (s *Service) launchWorkers(ctx context.Context) {
 
 	result, err := s.listSystemsWithGitCredentials()
 	if err != nil {
@@ -119,12 +120,17 @@ func (s *Service) launchWorkers() {
 		syncs := []*gitsync.Synchronizer{
 			gitsync.New(systemRepoDir, system.Git),
 		}
-		w := NewSystemWorker(system).WithSystem(&ss).WithSynchronizers(syncs)
+		storage, err := s3.New(ctx, system.ObjectStorage, "")
+		if err != nil {
+			log.Println("error creating object storage client:", err)
+			continue
+		}
+
+		w := NewSystemWorker(system).WithSystem(&ss).WithSynchronizers(syncs).WithStorage(storage)
 		s.pool.Add(w.Execute)
 
 		s.workers[system.Name] = w
 	}
-
 }
 
 // loadConfig loads the configuration from the configuration file into the database.

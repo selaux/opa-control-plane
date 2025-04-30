@@ -117,9 +117,11 @@ func (w *SystemWorker) Execute() time.Time {
 		return time.Now().Add(errorDelay)
 	}
 
-	if err := w.storage.Upload(ctx, buffer); err != nil {
-		log.Println("failed to upload system bundle:", err)
-		return time.Now().Add(errorDelay)
+	if w.storage != nil {
+		if err := w.storage.Upload(ctx, buffer); err != nil {
+			log.Println("failed to upload system bundle:", err)
+			return time.Now().Add(errorDelay)
+		}
 	}
 
 	return time.Now().Add(successDelay)
