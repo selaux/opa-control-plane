@@ -158,7 +158,11 @@ func (s *Service) listSystemsWithGitCredentials() ([]*config.System, error) {
         systems.ref,
         systems.gitcommit,
         systems.path,
+		systems.s3region,
+		systems.s3bucket,
+		systems.s3key,
         secrets.id AS secret_id,
+		systems_secrets.ref_type as secret_ref_type,
         secrets.value AS secret_value
     FROM
         systems
@@ -166,7 +170,7 @@ func (s *Service) listSystemsWithGitCredentials() ([]*config.System, error) {
         systems_secrets ON systems.id = systems_secrets.system_id
     LEFT JOIN
         secrets ON systems_secrets.secret_id = secrets.id
-	WHERE systems_secrets.ref_type = 'git_credentials'`)
+	WHERE systems_secrets.ref_type = 'git_credentials' OR systems_secrets.ref_type = 'aws'`)
 	if err != nil {
 		return nil, err
 	}
@@ -175,9 +179,10 @@ func (s *Service) listSystemsWithGitCredentials() ([]*config.System, error) {
 	systemMap := make(map[string]*config.System)
 
 	for rows.Next() {
-		var systemId, repo, secretId, secretValue string
+		var systemId, repo, secretId, secretRefType, secretValue string
 		var ref, gitCommit, path *string
-		if err := rows.Scan(&systemId, &repo, &ref, &gitCommit, &path, &secretId, &secretValue); err != nil {
+		var s3region, s3bucket, s3key *string
+		if err := rows.Scan(&systemId, &repo, &ref, &gitCommit, &path, &s3region, &s3bucket, &s3key, &secretId, &secretRefType, &secretValue); err != nil {
 			return nil, err
 		}
 
@@ -189,6 +194,8 @@ func (s *Service) listSystemsWithGitCredentials() ([]*config.System, error) {
 					Repo: repo,
 				},
 			}
+			systemMap[systemId] = system
+
 			if ref != nil {
 				system.Git.Reference = ref
 			}
@@ -199,15 +206,29 @@ func (s *Service) listSystemsWithGitCredentials() ([]*config.System, error) {
 				system.Git.Path = path
 			}
 
-			if secretId != "" {
-				s := config.Secret{Name: secretId}
-				if err := json.Unmarshal([]byte(secretValue), &s.Value); err != nil {
-					return nil, err
+			if s3region != nil && s3bucket != nil && s3key != nil {
+				system.ObjectStorage.AmazonS3 = &config.AmazonS3{
+					Region: *s3region,
+					Bucket: *s3bucket,
+					Key:    *s3key,
 				}
-				system.Git.Credentials = s.Ref()
+			}
+		}
+
+		if secretId != "" {
+			s := config.Secret{Name: secretId}
+			if err := json.Unmarshal([]byte(secretValue), &s.Value); err != nil {
+				return nil, err
 			}
 
-			systemMap[systemId] = system
+			switch secretRefType {
+			case "git_credentials":
+				system.Git.Credentials = s.Ref()
+			case "aws":
+				if system.ObjectStorage.AmazonS3 != nil {
+					system.ObjectStorage.AmazonS3.Credentials = s.Ref()
+				}
+			}
 		}
 	}
 
@@ -229,12 +250,25 @@ func (s *Service) loadSystems(root *config.Root) error {
 
 	for _, name := range names {
 		system := root.Systems[name]
-		if _, err := s.db.Exec(`INSERT OR REPLACE INTO systems (id, repo, ref, gitcommit, path) VALUES (?, ?, ?, ?, ?)`, system.Name, system.Git.Repo, system.Git.Reference, system.Git.Commit, system.Git.Path); err != nil {
+		s3region, s3bucket, s3key := "", "", ""
+		if system.ObjectStorage.AmazonS3 != nil {
+			s3region = system.ObjectStorage.AmazonS3.Region
+			s3bucket = system.ObjectStorage.AmazonS3.Bucket
+			s3key = system.ObjectStorage.AmazonS3.Key
+		}
+		if _, err := s.db.Exec(`INSERT OR REPLACE INTO systems (id, repo, ref, gitcommit, path, s3region, s3bucket, s3key) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+			system.Name, system.Git.Repo, system.Git.Reference, system.Git.Commit, system.Git.Path, s3region, s3bucket, s3key); err != nil {
 			return err
 		}
 
 		if system.Git.Credentials != nil {
 			s.db.Exec(`INSERT OR REPLACE INTO systems_secrets (system_id, secret_id, ref_type) VALUES (?, ?, ?)`, system.Name, system.Git.Credentials.Name, "git_credentials")
+		}
+
+		if system.ObjectStorage.AmazonS3 != nil {
+			if system.ObjectStorage.AmazonS3.Credentials != nil {
+				s.db.Exec(`INSERT OR REPLACE INTO systems_secrets (system_id, secret_id, ref_type) VALUES (?, ?, ?)`, system.Name, system.ObjectStorage.AmazonS3.Credentials.Name, "aws")
+			}
 		}
 	}
 
@@ -272,7 +306,10 @@ func (s *Service) initDb() {
 			repo TEXT NOT NULL,
 			ref TEXT,
 			gitcommit TEXT,
-			path TEXT
+			path TEXT,
+			s3region TEXT,
+			s3bucket TEXT,
+			s3key TEXT
 		);`,
 		`CREATE TABLE IF NOT EXISTS secrets (
 			id TEXT PRIMARY KEY,

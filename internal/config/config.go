@@ -39,6 +39,10 @@ func (r *Root) UnmarshalYAML(node *yaml.Node) error {
 		if system.Git.Credentials != nil {
 			system.Git.Credentials.value = raw.Secrets[system.Git.Credentials.Name]
 		}
+		if system.ObjectStorage.AmazonS3 != nil && system.ObjectStorage.AmazonS3.Credentials != nil {
+			system.ObjectStorage.AmazonS3.Credentials.value = raw.Secrets[system.ObjectStorage.AmazonS3.Credentials.Name]
+		}
+		// TODO: Handle other object storage types (GCP, Azure) similarly
 	}
 
 	*r = Root(raw) // Assign the unmarshaled data back to the original struct
@@ -141,12 +145,10 @@ type ObjectStorage struct {
 
 // AmazonS3 defines the configuration for an Amazon S3-compatible object storage.
 type AmazonS3 struct {
-	Bucket          string `yaml:"bucket"`
-	Key             string `yaml:"key"`
-	Region          string `yaml:"region,omitempty"`
-	AccessKeyId     string `yaml:"access_key_id,omitempty"`
-	SecretAccessKey string `yaml:"secret_access_key,omitempty"`
-	SessionToken    string `yaml:"session_token,omitempty"`
+	Bucket      string     `yaml:"bucket"`
+	Key         string     `yaml:"key"`
+	Region      string     `yaml:"region,omitempty"`
+	Credentials *SecretRef `yaml:"credentials,omitempty"`
 }
 
 // GCPCloudStorage defines the configuration for a Google Cloud Storage bucket.

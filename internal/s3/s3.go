@@ -3,6 +3,7 @@ package s3
 
 import (
 	"context"
+	"fmt"
 	"io"
 
 	"cloud.google.com/go/storage"
@@ -57,13 +58,12 @@ func New(ctx context.Context, config config.ObjectStorage, localMockURL string) 
 			options = append(options, awsconfig.WithRegion(region))
 		}
 
-		if config.AmazonS3.AccessKeyId != "" || config.AmazonS3.SecretAccessKey != "" || config.AmazonS3.SessionToken != "" {
-			options = append(options, awsconfig.WithCredentialsProvider(credentials.StaticCredentialsProvider{
-				Value: aws.Credentials{
-					AccessKeyID: config.AmazonS3.AccessKeyId, SecretAccessKey: config.AmazonS3.SecretAccessKey, SessionToken: config.AmazonS3.SessionToken,
-					Source: "configurated credentials",
-				},
-			}))
+		option, err := s3auth(config.AmazonS3)
+		if err != nil {
+			return nil, err
+		}
+		if option != nil {
+			options = append(options, option)
 		}
 
 		awsCfg, err := awsconfig.LoadDefaultConfig(ctx, options...)
@@ -99,6 +99,36 @@ func New(ctx context.Context, config config.ObjectStorage, localMockURL string) 
 		return &AzureBlobStorage{container: config.AzureBlobStorage.Container, path: config.AzureBlobStorage.Path, client: client}, nil
 	default:
 		return nil, ErrUnsupportedProvider
+	}
+}
+
+func s3auth(config *config.AmazonS3) (func(*awsconfig.LoadOptions) error, error) {
+	if config.Credentials == nil {
+		return nil, nil
+	}
+
+	secret, err := config.Credentials.Resolve()
+	if err != nil {
+		return nil, err
+	}
+
+	switch secret.Value["type"] {
+	case "aws_auth":
+		accessKeyId, _ := secret.Value["access_key_id"].(string)
+		secretAccessKey, _ := secret.Value["secret_access_key"].(string)
+		sessionToken, _ := secret.Value["session_token"].(string)
+		if accessKeyId != "" || secretAccessKey != "" || sessionToken != "" {
+			return awsconfig.WithCredentialsProvider(credentials.StaticCredentialsProvider{
+				Value: aws.Credentials{
+					AccessKeyID: accessKeyId, SecretAccessKey: secretAccessKey, SessionToken: sessionToken,
+					Source: "configurated credentials",
+				},
+			}), nil
+		}
+
+		return nil, nil
+	default:
+		return nil, fmt.Errorf("unsupported authentication type: %s", secret.Value["type"])
 	}
 }
 
