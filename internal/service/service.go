@@ -284,7 +284,7 @@ LEFT JOIN
 	libraries_secrets ON libraries.id = libraries_secrets.library_id
 LEFT JOIN
 	secrets ON libraries_secrets.secret_id = secrets.id
-WHERE libraries_secrets.ref_type = 'git_credentials'`)
+WHERE libraries_secrets.ref_type = 'git_credentials'`) // TODO: add support for optional credentials
 	if err != nil {
 		return nil, err
 	}
