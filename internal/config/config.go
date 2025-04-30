@@ -240,6 +240,7 @@ type AmazonS3 struct {
 	Key         string     `yaml:"key"`
 	Region      string     `yaml:"region,omitempty"`
 	Credentials *SecretRef `yaml:"credentials,omitempty"`
+	URL         string     `yaml:"url,omitempty"` // for test purposes
 }
 
 // GCPCloudStorage defines the configuration for a Google Cloud Storage bucket.
@@ -265,7 +266,7 @@ func (a *AmazonS3) Equal(other *AmazonS3) bool {
 		return false
 	}
 
-	return a.Bucket == other.Bucket && a.Key == other.Key && a.Region == other.Region && a.Credentials.Equal(other.Credentials)
+	return a.Bucket == other.Bucket && a.Key == other.Key && a.Region == other.Region && a.Credentials.Equal(other.Credentials) && a.URL == other.URL
 }
 
 func (g *GCPCloudStorage) Equal(other *GCPCloudStorage) bool {

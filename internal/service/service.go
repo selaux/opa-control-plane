@@ -134,7 +134,7 @@ func (s *Service) launchWorkers(ctx context.Context) {
 			syncs = append(syncs, gitsync.New(libRepoDir, libraries[i].Git))
 		}
 
-		storage, err := s3.New(ctx, system.ObjectStorage, "")
+		storage, err := s3.New(ctx, system.ObjectStorage)
 		if err != nil {
 			log.Println("error creating object storage client:", err)
 			continue

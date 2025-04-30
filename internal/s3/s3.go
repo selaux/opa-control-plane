@@ -49,7 +49,7 @@ type (
 )
 
 // New creates a new S3 client based on the provided configuration.
-func New(ctx context.Context, config config.ObjectStorage, localMockURL string) (ObjectStorage, error) {
+func New(ctx context.Context, config config.ObjectStorage) (ObjectStorage, error) {
 	switch {
 	case config.AmazonS3 != nil:
 		var options []func(*awsconfig.LoadOptions) error
@@ -72,9 +72,9 @@ func New(ctx context.Context, config config.ObjectStorage, localMockURL string) 
 		}
 
 		client := s3.NewFromConfig(awsCfg, func(o *s3.Options) {
-			if localMockURL != "" {
+			if config.AmazonS3.URL != "" {
 				o.UsePathStyle = true
-				o.BaseEndpoint = aws.String(localMockURL)
+				o.BaseEndpoint = aws.String(config.AmazonS3.URL)
 			}
 		})
 

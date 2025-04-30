@@ -34,10 +34,11 @@ func TestS3(t *testing.T) {
 		AmazonS3: &config.AmazonS3{
 			Bucket: "test",
 			Key:    "a/b/c",
+			URL:    ts.URL,
 		},
 	}
 
-	storage, err := New(ctx, cfg, ts.URL)
+	storage, err := New(ctx, cfg)
 	if err != nil {
 		t.Fatalf("failed to create storage: %v", err)
 	}
