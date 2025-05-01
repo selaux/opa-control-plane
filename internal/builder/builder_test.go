@@ -22,6 +22,7 @@ func TestBuilder(t *testing.T) {
 		note        string
 		systemFiles map[string]string
 		libFiles    []map[string]string
+		fileFiles   map[string]string
 		exp         map[string]string
 	}{
 		{
@@ -60,71 +61,97 @@ func TestBuilder(t *testing.T) {
 				r := 42`,
 			},
 		},
+		{
+			note: "extra files",
+			systemFiles: map[string]string{
+				"/x/x.rego": `package x
+				p := data.lib0.q`,
+			},
+			fileFiles: map[string]string{
+				"foo/file0.rego": `package file0
+				f := 42`,
+			},
+			exp: map[string]string{
+				"/x/x.rego": `package x
+				p := data.lib0.q`,
+				"/foo/file0.rego": `package file0
+				f := 42`,
+			},
+		},
 	}
 
 	for _, tc := range cases {
-
-		allFiles := map[string]string{}
-		for f, src := range tc.systemFiles {
-			allFiles[filepath.Join("system", f)] = trimLeadingWhitespace(src)
-		}
-
-		for i, srcs := range tc.libFiles {
-			for f, src := range srcs {
-				allFiles[filepath.Join(fmt.Sprintf("lib%d", i), f)] = trimLeadingWhitespace(src)
-			}
-		}
-
-		for f, src := range tc.exp {
-			tc.exp[f] = trimLeadingWhitespace(src)
-		}
-
-		tempfs.WithTempFS(allFiles, func(root string) {
-
-			buf := bytes.NewBuffer(nil)
-
-			var libSpecs []*builder.LibrarySpec
-
-			for i := range tc.libFiles {
-				libSpecs = append(libSpecs, &builder.LibrarySpec{
-					Repo:  filepath.Join(root, fmt.Sprintf("lib%d", i)),
-					Roots: []ast.Ref{ast.MustParseRef(fmt.Sprintf("data.lib%d", i))},
-				})
+		t.Run(tc.note, func(b *testing.T) {
+			allFiles := map[string]string{}
+			for f, src := range tc.systemFiles {
+				allFiles[filepath.Join("system", f)] = trimLeadingWhitespace(src)
 			}
 
-			b := builder.New().
-				WithSystemSpec(&builder.SystemSpec{Repo: filepath.Join(root, "system")}).
-				WithLibrarySpecs(libSpecs).
-				WithOutput(buf)
-
-			err := b.Build(context.Background())
-			if err != nil {
-				t.Fatal(err)
-			}
-
-			bundle, err := bundle.NewReader(buf).Read()
-			if err != nil {
-				log.Fatal(err)
-			}
-
-			fileMap := map[string]string{}
-
-			for _, mf := range bundle.Modules {
-				fileMap[mf.Path] = string(mf.Raw)
-			}
-
-			if len(fileMap) != len(tc.exp) {
-				t.Fatalf("expected %d files, got %d", len(tc.exp), len(fileMap))
-			}
-
-			for path, src := range tc.exp {
-				if fileMap[path] != src {
-					t.Fatalf("expected %q, got %q", src, fileMap[path])
+			for i, srcs := range tc.libFiles {
+				for f, src := range srcs {
+					allFiles[filepath.Join(fmt.Sprintf("lib%d", i), f)] = trimLeadingWhitespace(src)
 				}
 			}
 
-		})
+			for f, src := range tc.fileFiles {
+				allFiles[filepath.Join("extra", f)] = trimLeadingWhitespace(src)
+			}
 
+			for f, src := range tc.exp {
+				tc.exp[f] = trimLeadingWhitespace(src)
+			}
+
+			tempfs.WithTempFS(allFiles, func(root string) {
+
+				buf := bytes.NewBuffer(nil)
+
+				var libSpecs []*builder.LibrarySpec
+
+				for i := range tc.libFiles {
+					libSpecs = append(libSpecs, &builder.LibrarySpec{
+						Repo:  filepath.Join(root, fmt.Sprintf("lib%d", i)),
+						Roots: []ast.Ref{ast.MustParseRef(fmt.Sprintf("data.lib%d", i))},
+					})
+				}
+
+				var fileSpecs []*builder.FileSpec
+				if len(tc.fileFiles) > 0 {
+					fileSpecs = append(fileSpecs, &builder.FileSpec{Path: filepath.Join(root, "extra")})
+				}
+
+				b := builder.New().
+					WithSystemSpec(&builder.SystemSpec{Repo: filepath.Join(root, "system")}).
+					WithLibrarySpecs(libSpecs).
+					WithFileSpecs(fileSpecs).
+					WithOutput(buf)
+
+				err := b.Build(context.Background())
+				if err != nil {
+					t.Fatal(err)
+				}
+
+				bundle, err := bundle.NewReader(buf).Read()
+				if err != nil {
+					log.Fatal(err)
+				}
+
+				fileMap := map[string]string{}
+
+				for _, mf := range bundle.Modules {
+					fileMap[mf.Path] = string(mf.Raw)
+				}
+
+				if len(fileMap) != len(tc.exp) {
+					t.Fatalf("expected %d files, got %d", len(tc.exp), len(fileMap))
+				}
+
+				for path, src := range tc.exp {
+					if fileMap[path] != src {
+						t.Fatalf("expected %q, got %q", src, fileMap[path])
+					}
+				}
+			})
+		})
 	}
 
 }
