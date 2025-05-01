@@ -2,6 +2,7 @@ package builder
 
 import (
 	"context"
+	"encoding/json"
 	"io"
 	"os"
 	"path/filepath"
@@ -21,9 +22,14 @@ type SystemSpec struct {
 	Repo string
 }
 
+type FileSpec struct {
+	Path string // Directory on disk holding files to include in the bundle.
+}
+
 type Builder struct {
 	systemSpec   *SystemSpec
 	librarySpecs []*LibrarySpec
+	fileSpecs    []*FileSpec
 	output       io.Writer
 }
 
@@ -43,6 +49,11 @@ func (b *Builder) WithSystemSpec(ss *SystemSpec) *Builder {
 
 func (b *Builder) WithLibrarySpecs(librarySpecs []*LibrarySpec) *Builder {
 	b.librarySpecs = librarySpecs
+	return b
+}
+
+func (b *Builder) WithFileSpecs(fileSpecs []*FileSpec) *Builder {
+	b.fileSpecs = fileSpecs
 	return b
 }
 
@@ -135,6 +146,41 @@ func (b *Builder) Build(ctx context.Context) error {
 				Path: strings.TrimPrefix(path, srcDir),
 				Raw:  bs,
 			})
+			return nil
+		})
+		if err != nil {
+			return err
+		}
+	}
+
+	for _, spec := range b.fileSpecs {
+		err := filepath.Walk(spec.Path, func(path string, fi os.FileInfo, err error) error {
+			if err != nil {
+				return err
+			}
+			if fi.IsDir() {
+				return nil
+			}
+
+			bs, err := os.ReadFile(path)
+			if err != nil {
+				return err
+			}
+
+			if fi.Name() == ".manifest" {
+				if err := json.Unmarshal(bs, &result.Manifest); err != nil {
+					return err
+				}
+			} else if filepath.Ext(path) == ".rego" {
+				result.Modules = append(result.Modules, bundle.ModuleFile{
+					Path: strings.TrimPrefix(path, spec.Path),
+					Raw:  bs,
+				})
+			} else if filepath.Ext(path) == ".json" {
+				// TODO: OPA bundle package does not support multiple JSON files.
+
+			}
+
 			return nil
 		})
 		if err != nil {

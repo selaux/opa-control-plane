@@ -123,8 +123,11 @@ func (s *Service) launchWorkers(ctx context.Context) {
 			Repo: systemRepoDir,
 		}
 
-		syncs := []*gitsync.Synchronizer{
+		systemFileDir := path.Join(s.persistenceDir, "files", md5sum(system.Name))
+
+		syncs := []Synchronizer{
 			gitsync.New(systemRepoDir, system.Git),
+			NewSQLDataSynchronizer(systemFileDir, s.db, system.Name),
 		}
 
 		ls := make([]*builder.LibrarySpec, len(libraries))
@@ -133,6 +136,8 @@ func (s *Service) launchWorkers(ctx context.Context) {
 			ls[i] = &builder.LibrarySpec{Repo: libRepoDir}
 			syncs = append(syncs, gitsync.New(libRepoDir, libraries[i].Git))
 		}
+
+		fs := []*builder.FileSpec{&builder.FileSpec{Path: systemFileDir}}
 
 		storage, err := s3.New(ctx, system.ObjectStorage)
 		if err != nil {
@@ -143,6 +148,7 @@ func (s *Service) launchWorkers(ctx context.Context) {
 		w := NewSystemWorker(system, libraries).
 			WithSystem(ss).
 			WithLibraries(ls).
+			WithFiles(fs).
 			WithSynchronizers(syncs).
 			WithStorage(storage)
 		s.pool.Add(w.Execute)
@@ -458,6 +464,13 @@ func (s *Service) initDb() {
 			FOREIGN KEY (system_id) REFERENCES systems(id),
 			FOREIGN KEY (secret_id) REFERENCES secrets(id)
 		);`,
+		`CREATE TABLE IF NOT EXISTS systems_data (
+			system_id TEXT NOT NULL,
+			path TEXT NOT NULL,
+			data BLOB NOT NULL,
+			PRIMARY KEY (system_id, path),
+			FOREIGN KEY (system_id) REFERENCES systems(id)
+		);`,
 		`CREATE TABLE IF NOT EXISTS libraries_secrets (
 			library_id TEXT NOT NULL,
 			secret_id TEXT NOT NULL,
@@ -465,6 +478,13 @@ func (s *Service) initDb() {
 			PRIMARY KEY (library_id, secret_id),
 			FOREIGN KEY (library_id) REFERENCES libraries(id),
 			FOREIGN KEY (secret_id) REFERENCES secrets(id)
+		);`,
+		`CREATE TABLE IF NOT EXISTS libraries_data (
+			system_id TEXT NOT NULL,
+			path TEXT NOT NULL,
+			data BLOB NOT NULL,
+			PRIMARY KEY (system_id, path),
+			FOREIGN KEY (system_id) REFERENCES systems(id)
 		);`,
 	}
 

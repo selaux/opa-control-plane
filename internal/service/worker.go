@@ -8,7 +8,6 @@ import (
 
 	"github.com/tsandall/lighthouse/internal/builder"
 	"github.com/tsandall/lighthouse/internal/config"
-	"github.com/tsandall/lighthouse/internal/gitsync"
 	"github.com/tsandall/lighthouse/internal/s3"
 )
 
@@ -26,19 +25,24 @@ var (
 type SystemWorker struct {
 	systemConfig   *config.System
 	libraryConfigs []*config.Library
-	synchronizers  []*gitsync.Synchronizer
+	synchronizers  []Synchronizer
 	system         *builder.SystemSpec
 	libraries      []*builder.LibrarySpec
+	files          []*builder.FileSpec
 	storage        s3.ObjectStorage
 	changed        chan struct{}
 	done           chan struct{}
+}
+
+type Synchronizer interface {
+	Execute() error
 }
 
 func NewSystemWorker(system *config.System, libraries []*config.Library) *SystemWorker {
 	return &SystemWorker{systemConfig: system, libraryConfigs: libraries, done: make(chan struct{})}
 }
 
-func (worker *SystemWorker) WithSynchronizers(synchronizers []*gitsync.Synchronizer) *SystemWorker {
+func (worker *SystemWorker) WithSynchronizers(synchronizers []Synchronizer) *SystemWorker {
 	worker.synchronizers = synchronizers
 	return worker
 }
@@ -50,6 +54,11 @@ func (worker *SystemWorker) WithSystem(system *builder.SystemSpec) *SystemWorker
 
 func (worker *SystemWorker) WithLibraries(libraries []*builder.LibrarySpec) *SystemWorker {
 	worker.libraries = libraries
+	return worker
+}
+
+func (worker *SystemWorker) WithFiles(files []*builder.FileSpec) *SystemWorker {
+	worker.files = files
 	return worker
 }
 
@@ -95,7 +104,7 @@ func (w *SystemWorker) Execute() time.Time {
 	for _, synchronizer := range w.synchronizers {
 		err := synchronizer.Execute()
 		if err != nil {
-			log.Println("failed to synchronize repository:", err)
+			log.Println("failed to synchronize:", err)
 			return time.Now().Add(errorDelay)
 		}
 	}
@@ -105,6 +114,7 @@ func (w *SystemWorker) Execute() time.Time {
 	b := builder.New().
 		WithSystemSpec(w.system).
 		WithLibrarySpecs(w.libraries).
+		WithFileSpecs(w.files).
 		WithOutput(buffer)
 
 	err := b.Build(ctx)
