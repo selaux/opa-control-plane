@@ -178,12 +178,13 @@ func (b *Builder) Build(ctx context.Context) error {
 					Raw:  bs,
 				})
 			} else if filepath.Ext(path) == ".json" {
-				var value interface{}
+				var value map[string]interface{}
 				err := json.Unmarshal(bs, &value)
 				if err != nil {
 					return err
 				}
 
+				path = strings.TrimPrefix(path, spec.Path)
 				dirpath := strings.TrimLeft(filepath.ToSlash(filepath.Dir(path)), "/.")
 
 				var key []string
@@ -191,18 +192,37 @@ func (b *Builder) Build(ctx context.Context) error {
 					key = strings.Split(dirpath, "/")
 				}
 
-				var bundleWithData bundle.Bundle
-				bundleWithData.Data, err = mktree(key, value)
-				if err != nil {
-					return err
+				if len(key) == 0 {
+					// TODO: Not able to merge root and non-root data. Is that ever allowed in bundles?
+					result.Data = value
+					return nil
 				}
 
-				merged, err := bundle.Merge([]*bundle.Bundle{&result, &bundleWithData})
-				if err != nil {
-					return err
-				}
+				m := result.Data
 
-				result = *merged
+				for i := 0; i < len(key); i++ {
+					last := i == len(key)-1
+
+					if last {
+						m[key[i]] = value
+						break
+					}
+
+					var n map[string]interface{}
+					x, ok := m[key[i]]
+					if !ok {
+						n = make(map[string]interface{})
+						m[key[i]] = n
+					} else {
+						n, ok = x.(map[string]interface{})
+						if !ok {
+							n = make(map[string]interface{})
+							m[key[i]] = n
+						}
+					}
+
+					m = n
+				}
 			}
 
 			return nil

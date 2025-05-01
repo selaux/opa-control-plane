@@ -3,6 +3,7 @@ package builder_test
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
 	"path/filepath"
@@ -62,7 +63,7 @@ func TestBuilder(t *testing.T) {
 			},
 		},
 		{
-			note: "extra files",
+			note: "extra files (root)",
 			systemFiles: map[string]string{
 				"/x/x.rego": `package x
 				p := data.lib0.q`,
@@ -70,12 +71,33 @@ func TestBuilder(t *testing.T) {
 			fileFiles: map[string]string{
 				"foo/file0.rego": `package file0
 				f := 42`,
+				"data.json": `{"c":3}`,
 			},
 			exp: map[string]string{
 				"/x/x.rego": `package x
 				p := data.lib0.q`,
 				"/foo/file0.rego": `package file0
 				f := 42`,
+				"/data.json": `{"c":3}`,
+			},
+		},
+		{
+			note: "extra files (non-root)",
+			systemFiles: map[string]string{
+				"/x/x.rego": `package x
+				p := data.lib0.q`,
+			},
+			fileFiles: map[string]string{
+				"foo/file0.rego": `package file0
+				f := 42`,
+				"bar/data.json": `{"a": 1, "b": 2}`,
+			},
+			exp: map[string]string{
+				"/x/x.rego": `package x
+				p := data.lib0.q`,
+				"/foo/file0.rego": `package file0
+				f := 42`,
+				"/data.json": `{"bar":{"a":1,"b":2}}`,
 			},
 		},
 	}
@@ -139,6 +161,11 @@ func TestBuilder(t *testing.T) {
 
 				for _, mf := range bundle.Modules {
 					fileMap[mf.Path] = string(mf.Raw)
+				}
+
+				if len(bundle.Data) > 0 {
+					data, _ := json.Marshal(bundle.Data)
+					fileMap["/data.json"] = string(data)
 				}
 
 				if len(fileMap) != len(tc.exp) {
