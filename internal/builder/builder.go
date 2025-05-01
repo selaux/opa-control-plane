@@ -3,6 +3,7 @@ package builder
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"os"
 	"path/filepath"
@@ -177,8 +178,31 @@ func (b *Builder) Build(ctx context.Context) error {
 					Raw:  bs,
 				})
 			} else if filepath.Ext(path) == ".json" {
-				// TODO: OPA bundle package does not support multiple JSON files.
+				var value interface{}
+				err := json.Unmarshal(bs, &value)
+				if err != nil {
+					return err
+				}
 
+				dirpath := strings.TrimLeft(filepath.ToSlash(filepath.Dir(path)), "/.")
+
+				var key []string
+				if dirpath != "" {
+					key = strings.Split(dirpath, "/")
+				}
+
+				var bundleWithData bundle.Bundle
+				bundleWithData.Data, err = mktree(key, value)
+				if err != nil {
+					return err
+				}
+
+				merged, err := bundle.Merge([]*bundle.Bundle{&result, &bundleWithData})
+				if err != nil {
+					return err
+				}
+
+				result = *merged
 			}
 
 			return nil
@@ -246,4 +270,25 @@ func getRootsForRepo(dir string) ([]ast.Ref, error) {
 	}
 
 	return result, err
+}
+
+func mktree(path []string, value interface{}) (map[string]interface{}, error) {
+	if len(path) == 0 {
+		// For 0 length path the value is the full tree.
+		obj, ok := value.(map[string]interface{})
+		if !ok {
+			return nil, errors.New("root value must be object")
+		}
+		return obj, nil
+	}
+
+	dir := map[string]interface{}{}
+	for i := len(path) - 1; i > 0; i-- {
+		dir[path[i]] = value
+		value = dir
+		dir = map[string]interface{}{}
+	}
+	dir[path[0]] = value
+
+	return dir, nil
 }
