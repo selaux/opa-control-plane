@@ -191,6 +191,9 @@ func doExport(params exportParams) error {
 		Libraries: map[string]*config.Library{},
 	}
 
+	output.Metadata.ExportedFrom = params.url
+	output.Metadata.ExportedAt = time.Now().UTC().Format(time.RFC3339)
+
 	log.Println("Fetching v1/systems...")
 	resp, err := c.Get("v1/systems")
 	if err != nil {
@@ -261,7 +264,6 @@ func doExport(params exportParams) error {
 	}
 
 	log.Printf("Finished downloading resources from DAS. Dumping configuration.\n\n")
-	fmt.Printf("# Generated from %v at %v.\n", params.url, time.Now().UTC().Format(time.RFC3339))
 
 	bs, err := yaml.Marshal(output)
 	if err != nil {

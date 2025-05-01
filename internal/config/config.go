@@ -12,11 +12,20 @@ import (
 
 // Internal configuration data structures for Lighthouse.
 
+// Metadata contains metadata about the configuration file itself. This
+// information is not stored in the database and is only used by the migration
+// tooling.
+type Metadata struct {
+	ExportedFrom string `yaml:"exported_from"`
+	ExportedAt   string `yaml:"exported_at"`
+}
+
 // Root is the top-level configuration structure used by Lighthouse.
 type Root struct {
-	Systems   map[string]*System  `yaml:"systems"`
-	Libraries map[string]*Library `yaml:"libraries"`
-	Secrets   map[string]*Secret  `yaml:"secrets"`
+	Metadata  Metadata            `yaml:"metadata,omitempty"`
+	Systems   map[string]*System  `yaml:"systems,omitempty"`
+	Libraries map[string]*Library `yaml:"libraries,omitempty"`
+	Secrets   map[string]*Secret  `yaml:"secrets,omitempty"`
 }
 
 // UnmarshalYAML implements the yaml.Marshaler interface for the Root struct. This
