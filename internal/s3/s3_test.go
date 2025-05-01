@@ -64,4 +64,18 @@ func TestS3(t *testing.T) {
 	if string(contents) != "bundle content" {
 		t.Fatalf("expected object contents to be 'bundle content', got '%s'", contents)
 	}
+
+	reader, err := storage.Download(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	bs, err := io.ReadAll(reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if string(bs) != "bundle content" {
+		t.Fatalf("expected object contents to be 'bundle content', got '%s'", contents)
+	}
 }

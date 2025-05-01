@@ -26,12 +26,14 @@ var (
 type (
 	ObjectStorage interface {
 		Upload(ctx context.Context, body io.Reader) error
+		Download(ctx context.Context) (io.Reader, error)
 	}
 
 	AmazonS3 struct {
 		bucket   string
 		key      string
 		uploader *manager.Uploader
+		client   *s3.Client
 	}
 
 	GCPCloudStorage struct {
@@ -78,7 +80,7 @@ func New(ctx context.Context, config config.ObjectStorage) (ObjectStorage, error
 			}
 		})
 
-		return &AmazonS3{bucket: config.AmazonS3.Bucket, key: config.AmazonS3.Key, uploader: manager.NewUploader(client)}, nil
+		return &AmazonS3{bucket: config.AmazonS3.Bucket, key: config.AmazonS3.Key, uploader: manager.NewUploader(client), client: client}, nil
 	case config.GCPCloudStorage != nil:
 		client, err := storage.NewClient(ctx)
 		if err != nil {
@@ -155,6 +157,17 @@ func (s *AmazonS3) Upload(ctx context.Context, body io.Reader) error {
 	return err
 }
 
+func (s *AmazonS3) Download(ctx context.Context) (io.Reader, error) {
+	output, err := s.client.GetObject(ctx, &s3.GetObjectInput{
+		Bucket: aws.String(s.bucket),
+		Key:    aws.String(s.key),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to download object from S3: %w", err)
+	}
+	return output.Body, nil
+}
+
 func (s *GCPCloudStorage) Upload(ctx context.Context, body io.Reader) error {
 	w := s.client.Bucket(s.bucket).Object(s.object).NewWriter(ctx)
 	if _, err := io.Copy(w, body); err != nil {
@@ -164,7 +177,15 @@ func (s *GCPCloudStorage) Upload(ctx context.Context, body io.Reader) error {
 	return w.Close()
 }
 
+func (s *GCPCloudStorage) Download(ctx context.Context) (io.Reader, error) {
+	return nil, fmt.Errorf("not implemented")
+}
+
 func (s *AzureBlobStorage) Upload(ctx context.Context, body io.Reader) error {
 	_, err := s.client.UploadStream(ctx, s.container, s.path, body, nil)
 	return err
+}
+
+func (s *AzureBlobStorage) Download(ctx context.Context) (io.Reader, error) {
+	return nil, fmt.Errorf("not implemented")
 }
