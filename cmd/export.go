@@ -61,7 +61,7 @@ func (r *DASResponse) Decode(x interface{}) error {
 	return decoder.Decode(x)
 }
 
-func (c *DASClient) Get(path string) (*DASResponse, error) {
+func (c *DASClient) Get(path string) (*http.Response, error) {
 	url := fmt.Sprintf("%v/%v", c.url, "/"+strings.TrimPrefix(path, "/"))
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
@@ -77,6 +77,17 @@ func (c *DASClient) Get(path string) (*DASResponse, error) {
 
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("DAS returned unexpected status code (%v) for %v %v", resp.StatusCode, "GET", url)
+	}
+
+	return resp, nil
+
+}
+
+func (c *DASClient) JSON(path string) (*DASResponse, error) {
+
+	resp, err := c.Get(path)
+	if err != nil {
+		return nil, err
 	}
 
 	defer resp.Body.Close()
@@ -195,7 +206,7 @@ func doExport(params exportParams) error {
 	output.Metadata.ExportedAt = time.Now().UTC().Format(time.RFC3339)
 
 	log.Println("Fetching v1/systems...")
-	resp, err := c.Get("v1/systems")
+	resp, err := c.JSON("v1/systems")
 	if err != nil {
 		return err
 	}
@@ -209,7 +220,7 @@ func doExport(params exportParams) error {
 	log.Printf("Received %d systems.", len(systems))
 
 	log.Println("Fetching v1/libraries...")
-	resp, err = c.Get("v1/libraries")
+	resp, err = c.JSON("v1/libraries")
 	if err != nil {
 		return err
 	}
@@ -223,7 +234,7 @@ func doExport(params exportParams) error {
 	log.Printf("Received %d libraries.", len(libraries))
 
 	log.Println("Fetching v1/secrets...")
-	resp, err = c.Get("v1/secrets")
+	resp, err = c.JSON("v1/secrets")
 	if err != nil {
 		return err
 	}
@@ -275,6 +286,7 @@ func doExport(params exportParams) error {
 }
 
 type v1System struct {
+	Id            string `json:"id"`
 	Name          string `json:"name"`
 	Type          string `json:"type"`
 	SourceControl *struct {
