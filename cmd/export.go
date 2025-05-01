@@ -1,9 +1,8 @@
-package main
+package cmd
 
 import (
 	"bytes"
 	"encoding/json"
-	"flag"
 	"fmt"
 	"log"
 	"net/http"
@@ -13,11 +12,37 @@ import (
 
 	"gopkg.in/yaml.v3"
 
+	"github.com/spf13/cobra"
 	"github.com/tsandall/lighthouse/internal/config"
 )
 
-var urlFlag = flag.String("u", "", "set URL of Styra DAS tenant to export from")
-var styraToken = os.Getenv("STYRA_TOKEN")
+type exportParams struct {
+	url   string
+	token string
+}
+
+func init() {
+
+	var params exportParams
+
+	params.token = os.Getenv("STYRA_TOKEN")
+
+	cmd := &cobra.Command{
+		Use:   "export",
+		Short: "Export configuration from Styra",
+		Run: func(cmd *cobra.Command, args []string) {
+			if err := doExport(params); err != nil {
+				log.Fatal(err)
+			}
+		},
+	}
+
+	cmd.Flags().StringVarP(&params.url, "url", "u", "", "Styra tenant URL (e.g., https://expo.styra.com)")
+
+	RootCommand.AddCommand(
+		cmd,
+	)
+}
 
 type DASClient struct {
 	url    string
@@ -144,21 +169,19 @@ func mapV1LibraryToLibraryAndSecretConfig(v1 *v1Library, secretsById map[string]
 	return &library, &secret, nil
 }
 
-func main() {
+func doExport(params exportParams) error {
 
-	flag.Parse()
-
-	if *urlFlag == "" {
-		log.Fatal("Please set Styra DAS URL with -u flag (e.g., https://example.styra.com)")
+	if params.url == "" {
+		return fmt.Errorf("Please set Styra DAS URL with -u flag (e.g., https://example.styra.com)")
 	}
 
-	if styraToken == "" {
-		log.Fatal("Please set STYRA_TOKEN environment variable to token with WorkspaceViewer permission.")
+	if params.token == "" {
+		return fmt.Errorf("Please set STYRA_TOKEN environment variable to token with WorkspaceViewer permission.")
 	}
 
 	c := DASClient{
-		url:    *urlFlag,
-		token:  styraToken,
+		url:    params.url,
+		token:  params.token,
 		client: http.DefaultClient,
 	}
 
@@ -171,13 +194,13 @@ func main() {
 	log.Println("Fetching v1/systems...")
 	resp, err := c.Get("v1/systems")
 	if err != nil {
-		log.Fatal(err)
+		return err
 	}
 
 	var systems []*v1System
 	err = resp.Decode(&systems)
 	if err != nil {
-		log.Fatal(err)
+		return err
 	}
 
 	log.Printf("Received %d systems.", len(systems))
@@ -185,13 +208,13 @@ func main() {
 	log.Println("Fetching v1/libraries...")
 	resp, err = c.Get("v1/libraries")
 	if err != nil {
-		log.Fatal(err)
+		return err
 	}
 
 	var libraries []*v1Library
 	err = resp.Decode(&libraries)
 	if err != nil {
-		log.Fatal(err)
+		return err
 	}
 
 	log.Printf("Received %d libraries.", len(libraries))
@@ -199,13 +222,13 @@ func main() {
 	log.Println("Fetching v1/secrets...")
 	resp, err = c.Get("v1/secrets")
 	if err != nil {
-		log.Fatal(err)
+		return err
 	}
 
 	var secrets []*v1Secret
 	err = resp.Decode(&secrets)
 	if err != nil {
-		log.Fatal(err)
+		return err
 	}
 
 	log.Printf("Received %d secrets.", len(secrets))
@@ -238,14 +261,15 @@ func main() {
 	}
 
 	log.Printf("Finished downloading resources from DAS. Dumping configuration.\n\n")
-	fmt.Printf("# Generated from %v at %v.\n", *urlFlag, time.Now().UTC().Format(time.RFC3339))
+	fmt.Printf("# Generated from %v at %v.\n", params.url, time.Now().UTC().Format(time.RFC3339))
 
 	bs, err := yaml.Marshal(output)
 	if err != nil {
-		log.Fatal(err)
+		return err
 	}
 
 	fmt.Println(string(bs))
+	return nil
 }
 
 type v1System struct {

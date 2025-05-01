@@ -9,14 +9,14 @@ import (
 	"github.com/tsandall/lighthouse/internal/service"
 )
 
-type params struct {
+type runParams struct {
 	configFile       string
 	persistenceDir   string
 	resetPersistence bool
 }
 
 func init() {
-	var params params
+	var params runParams
 
 	cmd := &cobra.Command{
 		Use:   "run",
