@@ -19,16 +19,17 @@ import (
 )
 
 type compareReport struct {
-	MissingSystems []string                       `json:"missing_systems"`
-	Systems        map[string]compareSystemReport `json:"systems"`
+	MissingSystems []string                       `json:"missing_systems,omitempty"`
+	Systems        map[string]compareSystemReport `json:"systems,omitempty"`
 }
 
 type compareSystemReport struct {
-	Bundle compareBundleReport `json:"bundle"`
+	Error  *string              `json:"error,omitempty"`
+	Bundle *compareBundleReport `json:"bundle,omitempty"`
 }
 
 type compareBundleReport struct {
-	Rego compareRegoReport `json:"rego"`
+	Rego *compareRegoReport `json:"rego,omitempty"`
 }
 
 type compareRegoReport struct {
@@ -97,7 +98,10 @@ func doCompare(params compareParams) error {
 
 	ctx := context.Background()
 
-	styra := DASClient{url: params.styraURL, token: params.styraToken, client: http.DefaultClient}
+	styra := DASClient{
+		url:    url,
+		token:  params.styraToken,
+		client: http.DefaultClient}
 	resp, err := styra.JSON("v1/systems")
 	if err != nil {
 		return err
@@ -128,7 +132,9 @@ func doCompare(params compareParams) error {
 	for _, system := range sortedSystems {
 		s, err := s3.New(ctx, system.ObjectStorage)
 		if err != nil {
-			return err
+			msg := err.Error()
+			result.Systems[system.Name] = compareSystemReport{Error: &msg}
+			continue
 		}
 		r, err := s.Download(ctx)
 		if err != nil {
@@ -168,7 +174,7 @@ func doCompare(params compareParams) error {
 			}
 
 			bundleReport := compareBundle(a, b)
-			result.Systems[system.Name] = compareSystemReport{Bundle: bundleReport}
+			result.Systems[system.Name] = compareSystemReport{Bundle: &bundleReport}
 
 			return nil
 		}()
@@ -189,7 +195,7 @@ func doCompare(params compareParams) error {
 
 func compareBundle(a, b bundle.Bundle) compareBundleReport {
 	r := compareBundleReport{
-		Rego: compareRegoReport{
+		Rego: &compareRegoReport{
 			Diffs: map[string]string{},
 		},
 	}
