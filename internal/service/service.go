@@ -119,10 +119,7 @@ func (s *Service) launchWorkers(ctx context.Context) {
 
 		log.Println("(re)starting worker for system:", system.Name)
 
-		systemRepoDir := path.Join(s.persistenceDir, "repos", md5sum(system.Name))
-		ss := &builder.SystemSpec{
-			Repo: systemRepoDir,
-		}
+		ss := &builder.SystemSpec{}
 
 		systemFileDir := path.Join(s.persistenceDir, "files", md5sum(system.Name))
 
@@ -131,17 +128,18 @@ func (s *Service) launchWorkers(ctx context.Context) {
 		}
 
 		if system.Git.Repo != "" {
-			syncs = append(syncs, gitsync.New(systemRepoDir, system.Git))
+			ss.Repo = path.Join(s.persistenceDir, "repos", md5sum(system.Name))
+			syncs = append(syncs, gitsync.New(ss.Repo, system.Git))
 		}
 
 		// TODO: Handle system datasources.
 
-		ls := make([]*builder.LibrarySpec, len(libraries))
-		for i := range libraries {
-			if libraries[i].Git.Repo != "" {
-				libRepoDir := path.Join(s.persistenceDir, "repos", md5sum(system.Name+"@"+libraries[i].Name))
-				ls[i] = &builder.LibrarySpec{Repo: libRepoDir}
-				syncs = append(syncs, gitsync.New(libRepoDir, libraries[i].Git))
+		var ls []*builder.LibrarySpec
+		for _, l := range libraries {
+			if l.Git.Repo != "" {
+				libRepoDir := path.Join(s.persistenceDir, "repos", md5sum(system.Name+"@"+l.Name))
+				ls = append(ls, &builder.LibrarySpec{Repo: libRepoDir})
+				syncs = append(syncs, gitsync.New(libRepoDir, l.Git))
 			}
 
 			// TODO: Handle library datasources.
@@ -216,7 +214,9 @@ func (s *Service) listSystemsWithGitCredentials() ([]*config.System, error) {
         systems_secrets ON systems.id = systems_secrets.system_id
     LEFT JOIN
         secrets ON systems_secrets.secret_id = secrets.id
-	WHERE systems_secrets.ref_type = 'git_credentials' OR systems_secrets.ref_type IS NULL OR systems_secrets.ref_type = 'aws'`)
+	WHERE (systems.s3bucket IS NOT NULL) AND
+		((systems_secrets.ref_type = 'git_credentials' AND secrets.value IS NOT NULL) OR systems_secrets.ref_type IS NULL) OR
+		systems_secrets.ref_type = 'aws'`)
 	if err != nil {
 		return nil, err
 	}
@@ -351,7 +351,7 @@ LEFT JOIN
 	libraries_secrets ON libraries.id = libraries_secrets.library_id
 LEFT JOIN
 	secrets ON libraries_secrets.secret_id = secrets.id
-WHERE libraries_secrets.ref_type = 'git_credentials' OR libraries_secrets.ref_type IS NULL`)
+WHERE (libraries_secrets.ref_type = 'git_credentials' AND secrets.value IS NOT NULL) OR libraries_secrets.ref_type IS NULL`)
 	if err != nil {
 		return nil, err
 	}
@@ -460,12 +460,12 @@ func (s *Service) loadSystems(root *config.Root) error {
 
 	for _, name := range names {
 		system := root.Systems[name]
-		var s3url, s3region, s3bucket, s3key string
+		var s3url, s3region, s3bucket, s3key *string
 		if system.ObjectStorage.AmazonS3 != nil {
-			s3url = system.ObjectStorage.AmazonS3.URL
-			s3region = system.ObjectStorage.AmazonS3.Region
-			s3bucket = system.ObjectStorage.AmazonS3.Bucket
-			s3key = system.ObjectStorage.AmazonS3.Key
+			s3url = &system.ObjectStorage.AmazonS3.URL
+			s3region = &system.ObjectStorage.AmazonS3.Region
+			s3bucket = &system.ObjectStorage.AmazonS3.Bucket
+			s3key = &system.ObjectStorage.AmazonS3.Key
 		}
 		if _, err := s.db.Exec(`INSERT OR REPLACE INTO systems (id, repo, ref, gitcommit, path, s3url, s3region, s3bucket, s3key) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			system.Name, system.Git.Repo, system.Git.Reference, system.Git.Commit, system.Git.Path, s3url, s3region, s3bucket, s3key); err != nil {
@@ -542,12 +542,18 @@ func (s *Service) loadSecrets(root *config.Root) error {
 
 	for _, name := range names {
 		secret := root.Secrets[name]
-		bs, err := json.Marshal(secret.Value)
-		if err != nil {
-			return err
-		}
-		if _, err := s.db.Exec(`INSERT OR REPLACE INTO secrets (id, value) VALUES (?, ?)`, secret.Name, string(bs)); err != nil {
-			return err
+		if len(secret.Value) > 0 {
+			bs, err := json.Marshal(secret.Value)
+			if err != nil {
+				return err
+			}
+			if _, err := s.db.Exec(`INSERT OR REPLACE INTO secrets (id, value) VALUES (?, ?)`, secret.Name, string(bs)); err != nil {
+				return err
+			}
+		} else {
+			if _, err := s.db.Exec(`INSERT OR REPLACE INTO secrets (id) VALUES (?)`, secret.Name); err != nil {
+				return err
+			}
 		}
 	}
 

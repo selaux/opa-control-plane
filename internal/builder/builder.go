@@ -74,10 +74,16 @@ func (b *Builder) Build(ctx context.Context) error {
 		}
 	}
 
-	toBuild := map[string]struct{}{b.systemSpec.Repo: {}}
-	toProcess, err := listRegoFilesRecursive(b.systemSpec.Repo)
-	if err != nil {
-		return err
+	toBuild := map[string]struct{}{}
+	var toProcess []string
+
+	if b.systemSpec.Repo != "" {
+		toBuild[b.systemSpec.Repo] = struct{}{}
+		var err error
+		toProcess, err = listRegoFilesRecursive(b.systemSpec.Repo)
+		if err != nil {
+			return err
+		}
 	}
 
 	for len(toProcess) > 0 {
@@ -154,6 +160,7 @@ func (b *Builder) Build(ctx context.Context) error {
 		}
 	}
 
+	// TODO(tsandall): this logic needs to be updated to handle libraries
 	for _, spec := range b.fileSpecs {
 		err := filepath.Walk(spec.Path, func(path string, fi os.FileInfo, err error) error {
 			if err != nil {

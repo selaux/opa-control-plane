@@ -120,15 +120,13 @@ func mapV1SystemToSystemAndSecretConfig(v1 *v1System, secretsById map[string]*v1
 	}
 
 	if v1.SourceControl.Origin.Credentials != "" {
-		if s, ok := secretsById[v1.SourceControl.Origin.Credentials]; ok {
-			secret = &config.Secret{}
-			secret.Name = v1.SourceControl.Origin.Credentials
-			secret.Value = map[string]interface{}{
-				"type":     "http_basic_auth",
-				"username": s.Name,
-			}
-			system.Git.Credentials = &config.SecretRef{Name: secret.Name}
-		}
+		secret = &config.Secret{}
+		secret.Name = v1.SourceControl.Origin.Credentials
+		system.Git.Credentials = &config.SecretRef{Name: secret.Name}
+	} else if v1.SourceControl.Origin.SSHCredentials.PrivateKey != "" {
+		secret = &config.Secret{}
+		secret.Name = v1.SourceControl.Origin.SSHCredentials.PrivateKey
+		system.Git.Credentials = &config.SecretRef{Name: secret.Name}
 	}
 
 	return &system, secret, nil
@@ -164,15 +162,13 @@ func mapV1LibraryToLibraryAndSecretConfig(v1 *v1Library, secretsById map[string]
 	}
 
 	if v1.SourceControl.LibraryOrigin.Credentials != "" {
-		if s, ok := secretsById[v1.SourceControl.LibraryOrigin.Credentials]; ok {
-			secret := &config.Secret{}
-			secret.Name = v1.SourceControl.LibraryOrigin.Credentials
-			secret.Value = map[string]interface{}{
-				"type":     "http_basic_auth",
-				"username": s.Name,
-			}
-			library.Git.Credentials = &config.SecretRef{Name: secret.Name}
-		}
+		secret = &config.Secret{}
+		secret.Name = v1.SourceControl.LibraryOrigin.Credentials
+		library.Git.Credentials = &config.SecretRef{Name: secret.Name}
+	} else if v1.SourceControl.LibraryOrigin.SSHCredentials.PrivateKey != "" {
+		secret = &config.Secret{}
+		secret.Name = v1.SourceControl.LibraryOrigin.SSHCredentials.PrivateKey
+		library.Git.Credentials = &config.SecretRef{Name: secret.Name}
 	}
 
 	return &library, secret, nil
