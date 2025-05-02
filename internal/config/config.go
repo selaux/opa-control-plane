@@ -70,8 +70,8 @@ func (r *Root) UnmarshalYAML(node *yaml.Node) error {
 // System defines the configuration for a Lighthouse System.
 type System struct {
 	Name          string        `yaml:"-"`
-	Git           Git           `yaml:"git"`
-	ObjectStorage ObjectStorage `yaml:"object_storage"`
+	Git           Git           `yaml:"git,omitempty"`
+	ObjectStorage ObjectStorage `yaml:"object_storage,omitempty"`
 }
 
 func (s *System) Equal(other *System) bool {
@@ -89,7 +89,7 @@ func (s *System) Equal(other *System) bool {
 // Library defines the configuration for a Lighthouse Library.
 type Library struct {
 	Name string `yaml:"-"`
-	Git  Git    `yaml:"git"`
+	Git  Git    `yaml:"git,omitempty"`
 }
 
 func (s *Library) Equal(other *Library) bool {
