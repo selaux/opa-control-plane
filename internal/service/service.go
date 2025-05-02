@@ -127,15 +127,20 @@ func (s *Service) launchWorkers(ctx context.Context) {
 		systemFileDir := path.Join(s.persistenceDir, "files", md5sum(system.Name))
 
 		syncs := []Synchronizer{
-			gitsync.New(systemRepoDir, system.Git),
 			sqlsync.NewSQLDataSynchronizer(systemFileDir, s.db, system.Name),
+		}
+
+		if system.Git.Repo != "" {
+			syncs = append(syncs, gitsync.New(systemRepoDir, system.Git))
 		}
 
 		ls := make([]*builder.LibrarySpec, len(libraries))
 		for i := range libraries {
-			libRepoDir := path.Join(s.persistenceDir, "repos", md5sum(system.Name+"@"+libraries[i].Name))
-			ls[i] = &builder.LibrarySpec{Repo: libRepoDir}
-			syncs = append(syncs, gitsync.New(libRepoDir, libraries[i].Git))
+			if libraries[i].Git.Repo != "" {
+				libRepoDir := path.Join(s.persistenceDir, "repos", md5sum(system.Name+"@"+libraries[i].Name))
+				ls[i] = &builder.LibrarySpec{Repo: libRepoDir}
+				syncs = append(syncs, gitsync.New(libRepoDir, libraries[i].Git))
+			}
 		}
 
 		fs := []*builder.FileSpec{&builder.FileSpec{Path: systemFileDir}}
