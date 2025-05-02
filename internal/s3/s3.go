@@ -60,7 +60,8 @@ func New(ctx context.Context, config config.ObjectStorage) (ObjectStorage, error
 			options = append(options, awsconfig.WithRegion(region))
 		}
 
-		option, err := s3auth(config.AmazonS3)
+		// TODO: Dynamic credentials are not supported yet.
+		option, err := s3auth(ctx, config.AmazonS3)
 		if err != nil {
 			return nil, err
 		}
@@ -104,7 +105,7 @@ func New(ctx context.Context, config config.ObjectStorage) (ObjectStorage, error
 	}
 }
 
-func s3auth(config *config.AmazonS3) (func(*awsconfig.LoadOptions) error, error) {
+func s3auth(ctx context.Context, config *config.AmazonS3) (func(*awsconfig.LoadOptions) error, error) {
 	if config.Credentials == nil {
 		return nil, nil
 	}
@@ -114,11 +115,16 @@ func s3auth(config *config.AmazonS3) (func(*awsconfig.LoadOptions) error, error)
 		return nil, err
 	}
 
-	switch secret.Value["type"] {
+	value, err := secret.Get(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	switch value["type"] {
 	case "aws_auth":
-		accessKeyId, _ := secret.Value["access_key_id"].(string)
-		secretAccessKey, _ := secret.Value["secret_access_key"].(string)
-		sessionToken, _ := secret.Value["session_token"].(string)
+		accessKeyId, _ := value["access_key_id"].(string)
+		secretAccessKey, _ := value["secret_access_key"].(string)
+		sessionToken, _ := value["session_token"].(string)
 		if accessKeyId != "" || secretAccessKey != "" || sessionToken != "" {
 			return awsconfig.WithCredentialsProvider(credentials.StaticCredentialsProvider{
 				Value: aws.Credentials{
@@ -130,7 +136,7 @@ func s3auth(config *config.AmazonS3) (func(*awsconfig.LoadOptions) error, error)
 
 		return nil, nil
 	default:
-		return nil, fmt.Errorf("unsupported authentication type: %s", secret.Value["type"])
+		return nil, fmt.Errorf("unsupported authentication type: %s", value["type"])
 	}
 }
 

@@ -1,6 +1,7 @@
 package sqlsync
 
 import (
+	"context"
 	"database/sql"
 	"os"
 	"path/filepath"
@@ -19,7 +20,7 @@ func NewSQLDataSynchronizer(path string, db *sql.DB, system string) *SQLDataSync
 	return &SQLDataSynchronizer{path: path, db: db, system: system}
 }
 
-func (s *SQLDataSynchronizer) Execute() error {
+func (s *SQLDataSynchronizer) Execute(ctx context.Context) error {
 	err := os.MkdirAll(s.path, 0755)
 	if err != nil {
 		return err

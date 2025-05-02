@@ -1,6 +1,7 @@
 package httpsync
 
 import (
+	"context"
 	"io"
 	"net/http"
 	"os"
@@ -18,7 +19,7 @@ func New(path string, url string) *HttpDataSynchronizer {
 	return &HttpDataSynchronizer{path: path, url: url}
 }
 
-func (s *HttpDataSynchronizer) Execute() error {
+func (s *HttpDataSynchronizer) Execute(ctx context.Context) error {
 	err := os.MkdirAll(filepath.Dir(s.path), 0755)
 	if err != nil {
 		return err

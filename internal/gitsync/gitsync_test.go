@@ -1,6 +1,7 @@
 package gitsync
 
 import (
+	"context"
 	"os"
 	"testing"
 
@@ -50,7 +51,8 @@ func TestGitsync(t *testing.T) {
 		Commit:    nil,
 	})
 
-	err = s.Execute()
+	ctx := context.Background()
+	err = s.Execute(ctx)
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -87,7 +89,7 @@ func TestGitsync(t *testing.T) {
 		t.Fatalf("expected no error while committing changes: %v", err)
 	}
 
-	err = s.Execute()
+	err = s.Execute(ctx)
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -145,7 +147,8 @@ func TestGitConfigWithPath(t *testing.T) {
 		Path:      &path,
 	})
 
-	err = s.Execute()
+	ctx := context.Background()
+	err = s.Execute(ctx)
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}

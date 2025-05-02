@@ -4,6 +4,7 @@
 package gitsync
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -30,10 +31,10 @@ func New(path string, config config.Git) *Synchronizer {
 
 // Execute performs the synchronization of the configured Git repository. If the repository does not exist
 // on disk, clone it. If it does exist, pull the latest changes and rebase the local branch onto the remote branch.
-func (s *Synchronizer) Execute() error {
+func (s *Synchronizer) Execute(ctx context.Context) error {
 	var repository *git.Repository
 
-	authMethod, err := s.auth()
+	authMethod, err := s.auth(ctx)
 	if err != nil {
 		// TODO: Validate the config earlier.
 		return err
@@ -102,7 +103,7 @@ func (s *Synchronizer) Execute() error {
 	return w.Checkout(checkoutOpts)
 }
 
-func (s *Synchronizer) auth() (transport.AuthMethod, error) {
+func (s *Synchronizer) auth(ctx context.Context) (transport.AuthMethod, error) {
 
 	if s.config.Credentials == nil {
 		return nil, nil
@@ -113,13 +114,18 @@ func (s *Synchronizer) auth() (transport.AuthMethod, error) {
 		return nil, err
 	}
 
-	switch secret.Value["type"] {
+	value, err := secret.Get(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	switch value["type"] {
 	case "http_basic_auth":
 		return &http.BasicAuth{
-			Username: secret.Value["username"].(string),
-			Password: secret.Value["password"].(string),
+			Username: value["username"].(string),
+			Password: value["password"].(string),
 		}, nil
 	default:
-		return nil, fmt.Errorf("unsupported authentication type: %s", secret.Value["type"])
+		return nil, fmt.Errorf("unsupported authentication type: %s", value["type"])
 	}
 }

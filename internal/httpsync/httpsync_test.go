@@ -2,6 +2,7 @@ package httpsync
 
 import (
 	"bytes"
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -24,7 +25,7 @@ func TestHTTPDataSynchronizer(t *testing.T) {
 
 	file := path.Join(t.TempDir(), "foo/test.json")
 	synchronizer := New(file, ts.URL)
-	err := synchronizer.Execute()
+	err := synchronizer.Execute(context.Background())
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}

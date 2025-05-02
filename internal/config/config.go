@@ -2,6 +2,7 @@ package config
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"io"
 	"os"
@@ -205,6 +206,22 @@ func (s *Secret) Equal(other *Secret) bool {
 	}
 
 	return s.Name == other.Name && reflect.DeepEqual(s.Value, other.Value)
+}
+
+// Get retrieves the values from any external source as necessary.
+func (s *Secret) Get(ctx context.Context) (map[string]interface{}, error) {
+	value := make(map[string]interface{}, len(s.Value))
+
+	for k, v := range s.Value {
+		if str, ok := v.(string); ok && str != "" {
+			str = os.ExpandEnv(str)
+			value[k] = str
+		} else {
+			value[k] = v // Keep non-string values as is
+		}
+	}
+
+	return value, nil
 }
 
 func ParseFile(filename string) (root *Root, err error) {

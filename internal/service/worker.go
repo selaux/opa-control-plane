@@ -35,7 +35,7 @@ type SystemWorker struct {
 }
 
 type Synchronizer interface {
-	Execute() error
+	Execute(ctx context.Context) error
 }
 
 func NewSystemWorker(system *config.System, libraries []*config.Library) *SystemWorker {
@@ -102,7 +102,7 @@ func (w *SystemWorker) Execute() time.Time {
 	}
 
 	for _, synchronizer := range w.synchronizers {
-		err := synchronizer.Execute()
+		err := synchronizer.Execute(ctx)
 		if err != nil {
 			log.Println("failed to synchronize:", err)
 			return time.Now().Add(errorDelay)
