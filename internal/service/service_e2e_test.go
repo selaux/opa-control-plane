@@ -4,9 +4,11 @@ import (
 	"bytes"
 	"context"
 	"html/template"
+	"net/http"
 	"net/http/httptest"
 	"os"
 	"path"
+	"reflect"
 	"testing"
 	"time"
 
@@ -75,10 +77,22 @@ func TestFromConfig(t *testing.T) {
 
 	mock := s3mem.New()
 	mock.CreateBucket("test")
-	ts := httptest.NewServer(gofakes3.New(mock).Server())
-	defer ts.Close()
+	s3TS := httptest.NewServer(gofakes3.New(mock).Server())
+	defer s3TS.Close()
 
-	t.Log("Test S3 URL:", ts.URL)
+	t.Log("Test S3 URL:", s3TS.URL)
+
+	// Create a mock HTTP service to serve the datasource.
+	httpTS := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, err := w.Write([]byte(`{"key": "value"}`))
+		if err != nil {
+			http.Error(w, "failed to write response", http.StatusInternalServerError)
+		}
+	}))
+	defer httpTS.Close()
+
+	t.Log("Test HTTP URL:", httpTS.URL)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -101,7 +115,17 @@ func TestFromConfig(t *testing.T) {
 						key: bundle.tar.gz,
 						region: mock-region,
 					}
-				}
+				},
+				datasources: [
+					{
+						name: "datasource1",
+						path: "datasource1",
+						type: "http",
+						config: {
+							url: {{ .MockHTTPURL }}
+						}
+					}
+				]
 			}
 		},
 		libraries: {
@@ -110,21 +134,25 @@ func TestFromConfig(t *testing.T) {
 					repo: {{ .RemoteGitDir }},
 					reference: refs/heads/master,
 					path: "lib/",
-				}
+				},
+				datasources: [],
 			}
 		}
 	}`)
 	if err != nil {
 		t.Fatal(err)
 	}
+	// TODO: Library datasource test.
 
 	buf := bytes.NewBuffer(nil)
 	err = tmpl.Execute(buf, struct {
 		RemoteGitDir string
 		MockS3URL    string
+		MockHTTPURL  string
 	}{
 		RemoteGitDir: remoteGitDir,
-		MockS3URL:    ts.URL,
+		MockS3URL:    s3TS.URL,
+		MockHTTPURL:  httpTS.URL,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -167,19 +195,28 @@ func TestFromConfig(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		exp := []string{
+		expectedRego := []string{
 			"package app\np := data.lib.q",
 			"package lib\nq := 7",
 		}
-
-		if len(exp) != len(b.Modules) {
-			t.Fatalf("expected %v modules but got %v", len(exp), len(b.Modules))
+		expectedData := map[string]interface{}{
+			"datasource1": map[string]interface{}{
+				"key": "value",
+			},
 		}
 
-		for i := range exp {
-			if exp[i] != string(b.Modules[i].Raw) {
-				t.Fatalf("exp:\n%v\n\ngot:\n%v", exp[i], string(b.Modules[i].Raw))
+		if len(expectedRego) != len(b.Modules) {
+			t.Fatalf("expected %v modules but got %v", len(expectedRego), len(b.Modules))
+		}
+
+		for i := range expectedRego {
+			if expectedRego[i] != string(b.Modules[i].Raw) {
+				t.Fatalf("exp:\n%v\n\ngot:\n%v", expectedRego[i], string(b.Modules[i].Raw))
 			}
+		}
+
+		if !reflect.DeepEqual(b.Data, expectedData) {
+			t.Fatalf("expected data to be %v but got %v", expectedData, b.Data)
 		}
 
 		break

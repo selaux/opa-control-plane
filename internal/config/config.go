@@ -305,7 +305,7 @@ func (a *AzureBlobStorage) Equal(other *AzureBlobStorage) bool {
 }
 
 type Datasource struct {
-	Name   string                 `yaml:"-"`
+	Name   string                 `yaml:"name"`
 	Path   string                 `yaml:"path"`
 	Type   string                 `yaml:"type"`
 	Config map[string]interface{} `yaml:"config,omitempty"`

@@ -135,13 +135,10 @@ func (s *Service) launchWorkers(ctx context.Context) {
 		}
 
 		for _, datasource := range system.Datasources {
-			datasourceDir := path.Join(systemFileDir, "datasources", md5sum(datasource.Name))
-
 			switch datasource.Type {
 			case "http":
 				url, _ := datasource.Config["url"].(string)
-				syncs = append(syncs, httpsync.New(path.Join(datasourceDir, datasource.Path, "data.json"), url))
-				fs = append(fs, &builder.FileSpec{Path: datasourceDir})
+				syncs = append(syncs, httpsync.New(path.Join(systemFileDir, datasource.Path, "data.json"), url))
 			}
 		}
 
@@ -154,13 +151,10 @@ func (s *Service) launchWorkers(ctx context.Context) {
 			}
 
 			for _, datasource := range l.Datasources {
-				datasourceDir := path.Join(s.persistenceDir, "datasources", md5sum(system.Name+"@"+datasource.Name))
-
 				switch datasource.Type {
 				case "http":
 					url, _ := datasource.Config["url"].(string)
-					syncs = append(syncs, httpsync.New(path.Join(datasourceDir, datasource.Path, "data.json"), url))
-					fs = append(fs, &builder.FileSpec{Path: datasourceDir})
+					syncs = append(syncs, httpsync.New(path.Join(systemFileDir, datasource.Path, "data.json"), url))
 				}
 			}
 		}
@@ -305,8 +299,8 @@ func (s *Service) listSystemsWithGitCredentials() ([]*config.System, error) {
 	rows2, err := txn.Query(`SELECT
 	systems_datasources.name,
 	systems_datasources.system_id,
-	systems_datasources.type,
 	systems_datasources.path,
+	systems_datasources.type,
 	systems_datasources.config
 FROM
 	systems_datasources
@@ -424,8 +418,8 @@ WHERE (libraries_secrets.ref_type = 'git_credentials' AND secrets.value IS NOT N
 	rows2, err := txn.Query(`SELECT
 		libraries_datasources.name,
 		libraries_datasources.library_id,
-		libraries_datasources.type,
 		libraries_datasources.path,
+		libraries_datasources.type,
 		libraries_datasources.config
 	FROM
 		libraries_datasources
