@@ -99,12 +99,12 @@ func (c *DASClient) JSON(path string) (*DASResponse, error) {
 
 func mapV1SystemToSystemAndSecretConfig(v1 *v1System, secretsById map[string]*v1Secret) (*config.System, *config.Secret, error) {
 	var system config.System
-	var secret config.Secret
+	var secret *config.Secret
 
 	system.Name = v1.Name
 
 	if v1.SourceControl == nil {
-		return nil, nil, fmt.Errorf("not git backed")
+		return &system, nil, nil
 	}
 
 	system.Git.Repo = v1.SourceControl.Origin.URL
@@ -113,8 +113,6 @@ func mapV1SystemToSystemAndSecretConfig(v1 *v1System, secretsById map[string]*v1
 		system.Git.Commit = &v1.SourceControl.Origin.Commit
 	} else if v1.SourceControl.Origin.Reference != "" {
 		system.Git.Reference = &v1.SourceControl.Origin.Reference
-	} else {
-		return nil, nil, fmt.Errorf("origin missing commit and reference")
 	}
 
 	if v1.SourceControl.Origin.Path != "" {
@@ -122,34 +120,35 @@ func mapV1SystemToSystemAndSecretConfig(v1 *v1System, secretsById map[string]*v1
 	}
 
 	if v1.SourceControl.Origin.Credentials != "" {
-		secret.Name = v1.SourceControl.Origin.Credentials
 		if s, ok := secretsById[v1.SourceControl.Origin.Credentials]; ok {
+			secret = &config.Secret{}
+			secret.Name = v1.SourceControl.Origin.Credentials
 			secret.Value = map[string]interface{}{
 				"type":     "http_basic_auth",
 				"username": s.Name,
 			}
+			system.Git.Credentials = &config.SecretRef{Name: secret.Name}
 		}
-		system.Git.Credentials = &config.SecretRef{Name: secret.Name}
-	} else {
-		return nil, nil, fmt.Errorf("non-http auth credentials not supported yet")
 	}
 
-	return &system, &secret, nil
+	return &system, secret, nil
 }
 
 func mapV1LibraryToLibraryAndSecretConfig(v1 *v1Library, secretsById map[string]*v1Secret) (*config.Library, *config.Secret, error) {
 
 	if v1.SourceControl.UseWorkspaceSettings {
+		// TODO(tsandall): need to find library that has this
+		// presumably need to export secret from workspace
 		return nil, nil, fmt.Errorf("workspace source control not supported yet")
 	}
 
 	var library config.Library
-	var secret config.Secret
+	var secret *config.Secret
 
 	library.Name = v1.Id
 
 	if v1.SourceControl.LibraryOrigin.URL == "" {
-		return nil, nil, fmt.Errorf("not git backed")
+		return &library, nil, nil
 	}
 
 	library.Git.Repo = v1.SourceControl.LibraryOrigin.URL
@@ -158,8 +157,6 @@ func mapV1LibraryToLibraryAndSecretConfig(v1 *v1Library, secretsById map[string]
 		library.Git.Commit = &v1.SourceControl.LibraryOrigin.Commit
 	} else if v1.SourceControl.LibraryOrigin.Reference != "" {
 		library.Git.Reference = &v1.SourceControl.LibraryOrigin.Reference
-	} else {
-		return nil, nil, fmt.Errorf("missing commit and reference")
 	}
 
 	if v1.SourceControl.LibraryOrigin.Path != "" {
@@ -167,17 +164,18 @@ func mapV1LibraryToLibraryAndSecretConfig(v1 *v1Library, secretsById map[string]
 	}
 
 	if v1.SourceControl.LibraryOrigin.Credentials != "" {
-		secret.Name = v1.SourceControl.LibraryOrigin.Credentials
 		if s, ok := secretsById[v1.SourceControl.LibraryOrigin.Credentials]; ok {
+			secret := &config.Secret{}
+			secret.Name = v1.SourceControl.LibraryOrigin.Credentials
 			secret.Value = map[string]interface{}{
 				"type":     "http_basic_auth",
 				"username": s.Name,
 			}
+			library.Git.Credentials = &config.SecretRef{Name: secret.Name}
 		}
-		library.Git.Credentials = &config.SecretRef{Name: secret.Name}
 	}
 
-	return &library, &secret, nil
+	return &library, secret, nil
 }
 
 func doExport(params exportParams) error {
@@ -255,23 +253,26 @@ func doExport(params exportParams) error {
 	for _, system := range systems {
 		sc, secret, err := mapV1SystemToSystemAndSecretConfig(system, secretsById)
 		if err != nil {
-			log.Printf("Skipping system %q: %v.", system.Name, err)
-			continue
+			return err
 		}
 
 		output.Systems[sc.Name] = sc
-		output.Secrets[secret.Name] = secret
+
+		if secret != nil {
+			output.Secrets[secret.Name] = secret
+		}
 	}
 
 	for _, library := range libraries {
 		lc, secret, err := mapV1LibraryToLibraryAndSecretConfig(library, secretsById)
 		if err != nil {
-			log.Printf("Skipping library %q: %v.", library.Id, err)
-			continue
+			return err
 		}
 
 		output.Libraries[lc.Name] = lc
-		output.Secrets[secret.Name] = secret
+		if secret != nil {
+			output.Secrets[secret.Name] = secret
+		}
 	}
 
 	log.Printf("Finished downloading resources from DAS. Dumping configuration.\n\n")
