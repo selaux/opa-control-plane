@@ -101,17 +101,18 @@ func (f Files) MarshalYAML() (interface{}, error) {
 	return encodedMap, nil
 }
 
-func (f Files) UnmarshalYAML(node *yaml.Node) error {
+func (f *Files) UnmarshalYAML(node *yaml.Node) error {
 	raw := map[string]string{}
 	if err := node.Decode(&raw); err != nil {
 		return err
 	}
+	*f = Files{}
 	for key, encodedValue := range raw {
 		decodedBytes, err := base64.StdEncoding.DecodeString(encodedValue)
 		if err != nil {
 			return fmt.Errorf("failed to decode value for key %q: %w", key, err)
 		}
-		f[key] = string(decodedBytes)
+		(*f)[key] = string(decodedBytes)
 	}
 	return nil
 }

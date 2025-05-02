@@ -504,6 +504,12 @@ func (s *Service) loadSystems(root *config.Root) error {
 				return err
 			}
 		}
+
+		for path, data := range system.Files {
+			if _, err := s.db.Exec(`INSERT OR REPLACE INTO systems_data (system_id, path, data) VALUES (?, ?, ?)`, name, path, data); err != nil {
+				return err
+			}
+		}
 	}
 
 	return nil
@@ -535,6 +541,12 @@ func (s *Service) loadLibraries(root *config.Root) error {
 			}
 			if _, err := s.db.Exec(`INSERT OR REPLACE INTO libraries_datasources (name, library_id, type, path, config) VALUES (?, ?, ?, ?, ?)`,
 				datasource.Name, library.Name, datasource.Type, datasource.Path, string(bs)); err != nil {
+				return err
+			}
+		}
+
+		for path, data := range library.Files {
+			if _, err := s.db.Exec(`INSERT OR REPLACE INTO libraries_data (libraries_data, path, data) VALUES (?, ?, ?)`, name, path, data); err != nil {
 				return err
 			}
 		}

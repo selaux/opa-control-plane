@@ -18,7 +18,7 @@ func TestParseSecretResolve(t *testing.T) {
 				git: {
 					repo: https://example.com/repo.git,
 					credentials: secret1
-				}
+				},
 			}
 		},
 		secrets: {
@@ -55,23 +55,36 @@ func TestParseSecretResolve(t *testing.T) {
 
 func TestFilesMarshallingRoundtrip(t *testing.T) {
 
-	f := config.Files{
-		"foo.rego": "package x\np := 7",
-	}
+	cfg, err := config.Parse(bytes.NewBufferString(`{
+		systems: {
+			foo: {
+				files: {
+					"foo.rego": "cGFja2FnZSBmb28=",
+				}
+			}
+		}
+	}`))
 
-	bs, err := yaml.Marshal(f)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	f2 := config.Files{}
+	if cfg.Systems["foo"].Files["foo.rego"] != "package foo" {
+		t.Fatalf("expected file to be 'package foo' but got:\n%v", cfg.Systems["foo"].Files["foo.rego"])
+	}
 
-	if err := yaml.Unmarshal(bs, &f2); err != nil {
+	bs, err := yaml.Marshal(cfg)
+	if err != nil {
 		t.Fatal(err)
 	}
 
-	if !reflect.DeepEqual(f, f2) {
-		t.Fatalf("exp: %v\n\ngot: %v", f, f2)
+	cfg2, err := config.Parse(bytes.NewBuffer(bs))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if !cfg.Systems["foo"].Equal(cfg2.Systems["foo"]) {
+		t.Fatal("expected systems to be equal")
 	}
 
 }

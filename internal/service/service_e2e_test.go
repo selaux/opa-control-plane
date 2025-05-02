@@ -24,7 +24,6 @@ import (
 
 // TODO(tsandall): update e2e tests to handle
 // non-git backed systems
-// libraries
 
 func TestFromConfig(t *testing.T) {
 
@@ -125,7 +124,10 @@ func TestFromConfig(t *testing.T) {
 							url: {{ .MockHTTPURL }}
 						}
 					}
-				]
+				],
+				files: {
+					"foo.rego": "cGFja2FnZSBmb28="
+				}
 			}
 		},
 		libraries: {
@@ -146,9 +148,10 @@ func TestFromConfig(t *testing.T) {
 
 	buf := bytes.NewBuffer(nil)
 	err = tmpl.Execute(buf, struct {
-		RemoteGitDir string
-		MockS3URL    string
-		MockHTTPURL  string
+		RemoteGitDir    string
+		MockS3URL       string
+		MockHTTPURL     string
+		TestFileContent string
 	}{
 		RemoteGitDir: remoteGitDir,
 		MockS3URL:    s3TS.URL,
@@ -198,6 +201,7 @@ func TestFromConfig(t *testing.T) {
 		expectedRego := []string{
 			"package app\np := data.lib.q",
 			"package lib\nq := 7",
+			"package foo",
 		}
 		expectedData := map[string]interface{}{
 			"datasource1": map[string]interface{}{
