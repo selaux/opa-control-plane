@@ -13,11 +13,11 @@ type HttpDataSynchronizer struct {
 	// TODO: Add more fields if needed, such as headers, authentication, etc.
 }
 
-func NewHttpDataSynchronizer(path string, url string) HttpDataSynchronizer {
-	return HttpDataSynchronizer{path: path, url: url}
+func New(path string, url string) *HttpDataSynchronizer {
+	return &HttpDataSynchronizer{path: path, url: url}
 }
 
-func (s HttpDataSynchronizer) Execute() error {
+func (s *HttpDataSynchronizer) Execute() error {
 	f, err := os.Create(s.path)
 	if err != nil {
 		return err

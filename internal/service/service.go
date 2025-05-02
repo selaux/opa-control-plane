@@ -15,6 +15,7 @@ import (
 	"github.com/tsandall/lighthouse/internal/builder"
 	"github.com/tsandall/lighthouse/internal/config"
 	"github.com/tsandall/lighthouse/internal/gitsync"
+	"github.com/tsandall/lighthouse/internal/httpsync"
 	"github.com/tsandall/lighthouse/internal/pool"
 	"github.com/tsandall/lighthouse/internal/s3"
 	"github.com/tsandall/lighthouse/internal/sqlsync"
@@ -122,6 +123,7 @@ func (s *Service) launchWorkers(ctx context.Context) {
 		ss := &builder.SystemSpec{}
 
 		systemFileDir := path.Join(s.persistenceDir, "files", md5sum(system.Name))
+		fs := []*builder.FileSpec{&builder.FileSpec{Path: systemFileDir}}
 
 		syncs := []Synchronizer{
 			sqlsync.NewSQLDataSynchronizer(systemFileDir, s.db, system.Name),
@@ -132,7 +134,16 @@ func (s *Service) launchWorkers(ctx context.Context) {
 			syncs = append(syncs, gitsync.New(ss.Repo, system.Git))
 		}
 
-		// TODO: Handle system datasources.
+		for _, datasource := range system.Datasources {
+			datasourceDir := path.Join(systemFileDir, "datasources", md5sum(datasource.Name))
+
+			switch datasource.Type {
+			case "http":
+				url, _ := datasource.Config["url"].(string)
+				syncs = append(syncs, httpsync.New(datasourceDir, url))
+				fs = append(fs, &builder.FileSpec{Path: datasourceDir})
+			}
+		}
 
 		var ls []*builder.LibrarySpec
 		for _, l := range libraries {
@@ -142,10 +153,17 @@ func (s *Service) launchWorkers(ctx context.Context) {
 				syncs = append(syncs, gitsync.New(libRepoDir, l.Git))
 			}
 
-			// TODO: Handle library datasources.
-		}
+			for _, datasource := range l.Datasources {
+				datasourceDir := path.Join(s.persistenceDir, "datasources", md5sum(system.Name+"@"+datasource.Name))
 
-		fs := []*builder.FileSpec{&builder.FileSpec{Path: systemFileDir}}
+				switch datasource.Type {
+				case "http":
+					url, _ := datasource.Config["url"].(string)
+					syncs = append(syncs, httpsync.New(datasourceDir, url))
+					fs = append(fs, &builder.FileSpec{Path: datasourceDir})
+				}
+			}
+		}
 
 		storage, err := s3.New(ctx, system.ObjectStorage)
 		if err != nil {
