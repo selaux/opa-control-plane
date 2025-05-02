@@ -4,6 +4,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"path/filepath"
 )
 
 // HttpDataSynchronizer is a struct that implements the Synchronizer interface for downloading JSON from HTTP endpoints.
@@ -18,6 +19,11 @@ func New(path string, url string) *HttpDataSynchronizer {
 }
 
 func (s *HttpDataSynchronizer) Execute() error {
+	err := os.MkdirAll(filepath.Dir(s.path), 0755)
+	if err != nil {
+		return err
+	}
+
 	f, err := os.Create(s.path)
 	if err != nil {
 		return err

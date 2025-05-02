@@ -140,7 +140,7 @@ func (s *Service) launchWorkers(ctx context.Context) {
 			switch datasource.Type {
 			case "http":
 				url, _ := datasource.Config["url"].(string)
-				syncs = append(syncs, httpsync.New(datasourceDir, url))
+				syncs = append(syncs, httpsync.New(path.Join(datasourceDir, datasource.Path, "data.json"), url))
 				fs = append(fs, &builder.FileSpec{Path: datasourceDir})
 			}
 		}
@@ -159,7 +159,7 @@ func (s *Service) launchWorkers(ctx context.Context) {
 				switch datasource.Type {
 				case "http":
 					url, _ := datasource.Config["url"].(string)
-					syncs = append(syncs, httpsync.New(datasourceDir, url))
+					syncs = append(syncs, httpsync.New(path.Join(datasourceDir, datasource.Path, "data.json"), url))
 					fs = append(fs, &builder.FileSpec{Path: datasourceDir})
 				}
 			}
