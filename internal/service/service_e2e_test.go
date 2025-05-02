@@ -26,14 +26,12 @@ import (
 
 func TestFromConfig(t *testing.T) {
 
-	rootDir, cleanup, err := tempfs.MakeTempFS("", "lighthouse_e2e", nil)
+	rootDir, _, err := tempfs.MakeTempFS("", "lighthouse_e2e", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	t.Log("Root Directory:", rootDir)
-
-	defer cleanup()
 
 	remoteGitDir := path.Join(rootDir, "remote-git")
 
@@ -42,7 +40,17 @@ func TestFromConfig(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := os.WriteFile(path.Join(remoteGitDir, "x.rego"), []byte(`package x`), 0644); err != nil {
+	for _, x := range []string{"app", "lib"} {
+		if err := os.Mkdir(path.Join(remoteGitDir, x), 0755); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	if err := os.WriteFile(path.Join(remoteGitDir, "app/app.rego"), []byte("package app\np := data.lib.q"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := os.WriteFile(path.Join(remoteGitDir, "lib/lib.rego"), []byte("package lib\nq := 7"), 0644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -51,7 +59,11 @@ func TestFromConfig(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if _, err := w.Add("x.rego"); err != nil {
+	if _, err := w.Add("app/app.rego"); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := w.Add("lib/lib.rego"); err != nil {
 		t.Fatal(err)
 	}
 
@@ -79,7 +91,8 @@ func TestFromConfig(t *testing.T) {
 			TestSystem: {
 				git: {
 					repo: {{ .RemoteGitDir }},
-					reference: refs/heads/master
+					reference: refs/heads/master,
+					path: "app/",
 				},
 				object_storage: {
 					aws: {
@@ -88,6 +101,15 @@ func TestFromConfig(t *testing.T) {
 						key: bundle.tar.gz,
 						region: mock-region,
 					}
+				}
+			}
+		},
+		libraries: {
+			TestLibrary: {
+				git: {
+					repo: {{ .RemoteGitDir }},
+					reference: refs/heads/master,
+					path: "lib/",
 				}
 			}
 		}
@@ -145,8 +167,19 @@ func TestFromConfig(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		if len(b.Modules) != 1 || string(b.Modules[0].Raw) != "package x" {
-			t.Fatal("unexpected bundle modules:", b.Modules)
+		exp := []string{
+			"package app\np := data.lib.q",
+			"package lib\nq := 7",
+		}
+
+		if len(exp) != len(b.Modules) {
+			t.Fatalf("expected %v modules but got %v", len(exp), len(b.Modules))
+		}
+
+		for i := range exp {
+			if exp[i] != string(b.Modules[i].Raw) {
+				t.Fatalf("exp:\n%v\n\ngot:\n%v", exp[i], string(b.Modules[i].Raw))
+			}
 		}
 
 		break
