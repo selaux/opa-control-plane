@@ -29,7 +29,27 @@ type compareSystemReport struct {
 }
 
 type compareBundleReport struct {
-	Rego *compareRegoReport `json:"rego,omitempty"`
+	Identical bool               `json:"identical"`
+	Rego      *compareRegoReport `json:"rego,omitempty"`
+}
+
+func (r *compareBundleReport) init() {
+	r.Rego = &compareRegoReport{Diffs: map[string]string{}}
+}
+
+func (r *compareBundleReport) AddExtra(path string) {
+	r.init()
+	r.Rego.Extras = append(r.Rego.Extras, path)
+}
+
+func (r *compareBundleReport) AddMissing(path string) {
+	r.init()
+	r.Rego.Missing = append(r.Rego.Missing, path)
+}
+
+func (r *compareBundleReport) AddDiff(path, blob string) {
+	r.init()
+	r.Rego.Diffs[path] = blob
 }
 
 type compareRegoReport struct {
@@ -70,6 +90,7 @@ func init() {
 
 func doCompare(params compareParams) error {
 
+	log.Printf("Loading configuration from %v...", params.configFile)
 	cfg, err := config.ParseFile(params.configFile)
 	if err != nil {
 		return err
@@ -94,14 +115,11 @@ func doCompare(params compareParams) error {
 		return sortedSystems[i].Name < sortedSystems[j].Name
 	})
 
-	_ = url
-
-	ctx := context.Background()
-
 	styra := DASClient{
 		url:    url,
 		token:  params.styraToken,
 		client: http.DefaultClient}
+	log.Println("Fetching systems...")
 	resp, err := styra.JSON("v1/systems")
 	if err != nil {
 		return err
@@ -129,58 +147,15 @@ func doCompare(params compareParams) error {
 		}
 	}
 
+	ctx := context.Background()
+
 	for _, system := range sortedSystems {
-		s, err := s3.New(ctx, system.ObjectStorage)
+		report, err := compareSystem(ctx, &styra, v1SystemsByName, system)
 		if err != nil {
 			msg := err.Error()
-			result.Systems[system.Name] = compareSystemReport{Error: &msg}
-			continue
+			report = &compareSystemReport{Error: &msg}
 		}
-		r, err := s.Download(ctx)
-		if err != nil {
-			return err
-		}
-		a, err := bundle.NewReader(r).Read()
-		if err != nil {
-			return err
-		}
-
-		// TODO(tsandall): ideally this would be addressed upstream or fixed within the builder
-		for i := range a.Modules {
-			a.Modules[i].Path = strings.TrimPrefix(a.Modules[i].Path, "/")
-		}
-
-		resp, err := styra.JSON("v1/systems/" + v1SystemsByName[system.Name].Id + "/bundles")
-		if err != nil {
-			return err
-		}
-
-		var v1bundles []*v1Bundle
-		if err := resp.Decode(&v1bundles); err != nil {
-			return err
-		}
-
-		downloadResp, err := styra.Get(strings.TrimPrefix(v1bundles[0].DownloadURL, styra.url))
-		if err != nil {
-			return err
-		}
-
-		err = func() error {
-			defer downloadResp.Body.Close()
-
-			b, err := bundle.NewReader(downloadResp.Body).Read()
-			if err != nil {
-				return err
-			}
-
-			bundleReport := compareBundle(a, b)
-			result.Systems[system.Name] = compareSystemReport{Bundle: &bundleReport}
-
-			return nil
-		}()
-		if err != nil {
-			return err
-		}
+		result.Systems[system.Name] = *report
 	}
 
 	bs, err := json.MarshalIndent(result, "", "  ")
@@ -193,12 +168,57 @@ func doCompare(params compareParams) error {
 	return nil
 }
 
-func compareBundle(a, b bundle.Bundle) compareBundleReport {
-	r := compareBundleReport{
-		Rego: &compareRegoReport{
-			Diffs: map[string]string{},
-		},
+func compareSystem(ctx context.Context, client *DASClient, v1SystemsByName map[string]*v1System, system *config.System) (*compareSystemReport, error) {
+
+	log.Printf("Checking system %q...", system.Name)
+
+	s, err := s3.New(ctx, system.ObjectStorage)
+	if err != nil {
+		return nil, err
 	}
+	r, err := s.Download(ctx)
+	if err != nil {
+		return nil, err
+	}
+	a, err := bundle.NewReader(r).Read()
+	if err != nil {
+		return nil, err
+	}
+
+	// TODO(tsandall): ideally this would be addressed upstream or fixed within the builder
+	for i := range a.Modules {
+		a.Modules[i].Path = strings.TrimPrefix(a.Modules[i].Path, "/")
+	}
+
+	resp, err := client.JSON("v1/systems/" + v1SystemsByName[system.Name].Id + "/bundles")
+	if err != nil {
+		return nil, err
+	}
+
+	var v1bundles []*v1Bundle
+	if err := resp.Decode(&v1bundles); err != nil {
+		return nil, err
+	}
+
+	downloadResp, err := client.Get(strings.TrimPrefix(v1bundles[0].DownloadURL, client.url))
+	if err != nil {
+		return nil, err
+	}
+
+	defer downloadResp.Body.Close()
+
+	b, err := bundle.NewReader(downloadResp.Body).Read()
+	if err != nil {
+		return nil, err
+	}
+
+	bundleReport := compareBundle(a, b)
+	return &compareSystemReport{Bundle: &bundleReport}, nil
+}
+
+func compareBundle(a, b bundle.Bundle) compareBundleReport {
+
+	var r compareBundleReport
 
 	aFiles := map[string][]byte{}
 	for _, mf := range a.Modules {
@@ -212,22 +232,26 @@ func compareBundle(a, b bundle.Bundle) compareBundleReport {
 
 	for k := range aFiles {
 		if _, ok := bFiles[k]; !ok {
-			r.Rego.Extras = append(r.Rego.Extras, k)
+			r.AddExtra(k)
 		}
 	}
 
 	for k := range bFiles {
 		if _, ok := aFiles[k]; !ok {
-			r.Rego.Missing = append(r.Rego.Missing, k)
+			r.AddMissing(k)
 		}
 	}
 
 	for k := range aFiles {
 		if _, ok := bFiles[k]; ok {
 			if !bytes.Equal(aFiles[k], bFiles[k]) {
-				r.Rego.Diffs[k] = textdiff.Unified("Expected", "Found", string(bFiles[k]), string(aFiles[k]))
+				r.AddDiff(k, textdiff.Unified("Expected", "Found", string(bFiles[k]), string(aFiles[k])))
 			}
 		}
+	}
+
+	if r.Rego == nil {
+		r.Identical = true
 	}
 
 	return r
