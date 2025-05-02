@@ -296,7 +296,7 @@ LEFT JOIN
 	libraries_secrets ON libraries.id = libraries_secrets.library_id
 LEFT JOIN
 	secrets ON libraries_secrets.secret_id = secrets.id
-WHERE libraries_secrets.ref_type = 'git_credentials'`) // TODO: add support for optional credentials
+WHERE libraries_secrets.ref_type = 'git_credentials' OR libraries_secrets.ref_type IS NULL`)
 	if err != nil {
 		return nil, err
 	}
@@ -305,7 +305,8 @@ WHERE libraries_secrets.ref_type = 'git_credentials'`) // TODO: add support for 
 	libraryMap := make(map[string]*config.Library)
 
 	for rows.Next() {
-		var libraryId, repo, secretId, secretRefType, secretValue string
+		var libraryId, repo string
+		var secretId, secretRefType, secretValue *string
 		var ref, gitCommit, path *string
 		if err := rows.Scan(&libraryId, &repo, &ref, &gitCommit, &path, &secretId, &secretRefType, &secretValue); err != nil {
 			return nil, err
@@ -332,13 +333,13 @@ WHERE libraries_secrets.ref_type = 'git_credentials'`) // TODO: add support for 
 			}
 		}
 
-		if secretId != "" {
-			s := config.Secret{Name: secretId}
-			if err := json.Unmarshal([]byte(secretValue), &s.Value); err != nil {
+		if secretId != nil {
+			s := config.Secret{Name: *secretId}
+			if err := json.Unmarshal([]byte(*secretValue), &s.Value); err != nil {
 				return nil, err
 			}
 
-			switch secretRefType {
+			switch *secretRefType {
 			case "git_credentials":
 				library.Git.Credentials = s.Ref()
 			}

@@ -20,6 +20,10 @@ import (
 	"github.com/tsandall/lighthouse/internal/test/tempfs"
 )
 
+// TODO(tsandall): update e2e tests to handle
+// non-git backed systems
+// libraries
+
 func TestFromConfig(t *testing.T) {
 
 	rootDir, cleanup, err := tempfs.MakeTempFS("", "lighthouse_e2e", nil)
