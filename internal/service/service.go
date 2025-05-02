@@ -127,7 +127,7 @@ func (s *Service) launchWorkers(ctx context.Context) {
 
 		syncs := []Synchronizer{
 			gitsync.New(systemRepoDir, system.Git),
-			// NewSQLDataSynchronizer(systemFileDir, s.db, system.Name),
+			NewSQLDataSynchronizer(systemFileDir, s.db, system.Name),
 		}
 
 		ls := make([]*builder.LibrarySpec, len(libraries))
