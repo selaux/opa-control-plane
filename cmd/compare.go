@@ -232,10 +232,3 @@ func compareBundle(a, b bundle.Bundle) compareBundleReport {
 
 	return r
 }
-
-type v1Bundle struct {
-	DownloadURL string `json:"download_url"`
-	Origins     []struct {
-		Roots []string `json:"roots"`
-	}
-}

@@ -12,6 +12,7 @@ import (
 
 	"gopkg.in/yaml.v3"
 
+	"github.com/open-policy-agent/opa/bundle"
 	"github.com/spf13/cobra"
 	"github.com/tsandall/lighthouse/internal/config"
 )
@@ -97,39 +98,97 @@ func (c *DASClient) JSON(path string) (*DASResponse, error) {
 	return &r, decoder.Decode(&r)
 }
 
-func mapV1SystemToSystemAndSecretConfig(v1 *v1System) (*config.System, *config.Secret, error) {
+func mapV1SystemToSystemAndSecretConfig(client *DASClient, v1 *v1System) (*config.System, *config.Secret, error) {
 	var system config.System
 	var secret *config.Secret
 
 	system.Name = v1.Name
 
-	if v1.SourceControl == nil {
-		return &system, nil, nil
+	if v1.SourceControl != nil {
+		system.Git.Repo = v1.SourceControl.Origin.URL
+
+		if v1.SourceControl.Origin.Commit != "" {
+			system.Git.Commit = &v1.SourceControl.Origin.Commit
+		} else if v1.SourceControl.Origin.Reference != "" {
+			system.Git.Reference = &v1.SourceControl.Origin.Reference
+		}
+
+		if v1.SourceControl.Origin.Path != "" {
+			system.Git.Path = &v1.SourceControl.Origin.Path
+		}
+
+		if v1.SourceControl.Origin.Credentials != "" {
+			secret = &config.Secret{}
+			secret.Name = v1.SourceControl.Origin.Credentials
+			system.Git.Credentials = &config.SecretRef{Name: secret.Name}
+		} else if v1.SourceControl.Origin.SSHCredentials.PrivateKey != "" {
+			secret = &config.Secret{}
+			secret.Name = v1.SourceControl.Origin.SSHCredentials.PrivateKey
+			system.Git.Credentials = &config.SecretRef{Name: secret.Name}
+		}
 	}
 
-	system.Git.Repo = v1.SourceControl.Origin.URL
-
-	if v1.SourceControl.Origin.Commit != "" {
-		system.Git.Commit = &v1.SourceControl.Origin.Commit
-	} else if v1.SourceControl.Origin.Reference != "" {
-		system.Git.Reference = &v1.SourceControl.Origin.Reference
-	}
-
-	if v1.SourceControl.Origin.Path != "" {
-		system.Git.Path = &v1.SourceControl.Origin.Path
-	}
-
-	if v1.SourceControl.Origin.Credentials != "" {
-		secret = &config.Secret{}
-		secret.Name = v1.SourceControl.Origin.Credentials
-		system.Git.Credentials = &config.SecretRef{Name: secret.Name}
-	} else if v1.SourceControl.Origin.SSHCredentials.PrivateKey != "" {
-		secret = &config.Secret{}
-		secret.Name = v1.SourceControl.Origin.SSHCredentials.PrivateKey
-		system.Git.Credentials = &config.SecretRef{Name: secret.Name}
+	var err error
+	system.Files, err = getNonGitFiles(client, v1.Id)
+	if err != nil {
+		return nil, nil, err
 	}
 
 	return &system, secret, nil
+}
+
+func getNonGitFiles(client *DASClient, id string) (config.Files, error) {
+
+	log.Printf("Fetching bundle for system %q...", id)
+
+	resp, err := client.JSON("v1/systems/" + id + "/bundles")
+	if err != nil {
+		return nil, err
+	}
+
+	bundles := []*v1Bundle{}
+	if err := resp.Decode(&bundles); err != nil {
+		return nil, err
+	}
+
+	result := config.Files{}
+
+	if len(bundles) > 0 {
+		var roots []string
+		for i := range bundles[0].SBOM.Origins {
+			roots = append(roots, bundles[0].SBOM.Origins[i].Roots...)
+		}
+
+		resp, err := client.Get(strings.TrimPrefix(bundles[0].DownloadURL, client.url))
+		if err != nil {
+			return nil, err
+		}
+
+		b, err := bundle.NewReader(resp.Body).Read()
+		if err != nil {
+			return nil, err
+		}
+
+		for _, mf := range b.Modules {
+			if !rootsPrefix(roots, mf.Path) {
+				result[mf.Path] = string(mf.Raw)
+			}
+		}
+	}
+
+	return result, nil
+}
+
+func rootsPrefix(roots []string, path string) bool {
+	for _, r := range roots {
+		if path == r {
+			return true
+		}
+		if strings.HasPrefix(path, r+"/") {
+			return true
+		}
+	}
+	return false
 }
 
 func mapV1LibraryToLibraryAndSecretConfig(v1 *v1Library) (*config.Library, *config.Secret, error) {
@@ -228,7 +287,7 @@ func doExport(params exportParams) error {
 	log.Printf("Received %d libraries.", len(libraries))
 
 	for _, system := range systems {
-		sc, secret, err := mapV1SystemToSystemAndSecretConfig(system)
+		sc, secret, err := mapV1SystemToSystemAndSecretConfig(&c, system)
 		if err != nil {
 			return err
 		}
@@ -305,4 +364,13 @@ type v1GitRepoConfig struct {
 		PrivateKey string `json:"private_key"`
 	} `json:"ssh_credentials"`
 	URL string `json:"url"`
+}
+
+type v1Bundle struct {
+	DownloadURL string `json:"download_url"`
+	SBOM        struct {
+		Origins []struct {
+			Roots []string `json:"roots"`
+		} `json:"origins"`
+	} `json:"sbom"`
 }
