@@ -97,7 +97,7 @@ func (c *DASClient) JSON(path string) (*DASResponse, error) {
 	return &r, decoder.Decode(&r)
 }
 
-func mapV1SystemToSystemAndSecretConfig(v1 *v1System, secretsById map[string]*v1Secret) (*config.System, *config.Secret, error) {
+func mapV1SystemToSystemAndSecretConfig(v1 *v1System) (*config.System, *config.Secret, error) {
 	var system config.System
 	var secret *config.Secret
 
@@ -132,7 +132,7 @@ func mapV1SystemToSystemAndSecretConfig(v1 *v1System, secretsById map[string]*v1
 	return &system, secret, nil
 }
 
-func mapV1LibraryToLibraryAndSecretConfig(v1 *v1Library, secretsById map[string]*v1Secret) (*config.Library, *config.Secret, error) {
+func mapV1LibraryToLibraryAndSecretConfig(v1 *v1Library) (*config.Library, *config.Secret, error) {
 
 	if v1.SourceControl.UseWorkspaceSettings {
 		// TODO(tsandall): need to find library that has this
@@ -227,27 +227,8 @@ func doExport(params exportParams) error {
 
 	log.Printf("Received %d libraries.", len(libraries))
 
-	log.Println("Fetching v1/secrets...")
-	resp, err = c.JSON("v1/secrets")
-	if err != nil {
-		return err
-	}
-
-	var secrets []*v1Secret
-	err = resp.Decode(&secrets)
-	if err != nil {
-		return err
-	}
-
-	log.Printf("Received %d secrets.", len(secrets))
-
-	secretsById := map[string]*v1Secret{}
-	for _, secret := range secrets {
-		secretsById[secret.Id] = secret
-	}
-
 	for _, system := range systems {
-		sc, secret, err := mapV1SystemToSystemAndSecretConfig(system, secretsById)
+		sc, secret, err := mapV1SystemToSystemAndSecretConfig(system)
 		if err != nil {
 			return err
 		}
@@ -260,7 +241,7 @@ func doExport(params exportParams) error {
 	}
 
 	for _, library := range libraries {
-		lc, secret, err := mapV1LibraryToLibraryAndSecretConfig(library, secretsById)
+		lc, secret, err := mapV1LibraryToLibraryAndSecretConfig(library)
 		if err != nil {
 			return err
 		}
