@@ -79,21 +79,27 @@ func (s *Synchronizer) Execute() error {
 		return err
 	}
 
+	var checkoutOpts *git.CheckoutOptions
+
 	if s.config.Reference != nil {
-		err = w.Checkout(&git.CheckoutOptions{
+		checkoutOpts = &git.CheckoutOptions{
 			Force:  true, // Discard any local changes
 			Branch: plumbing.ReferenceName(*s.config.Reference),
-		})
+		}
 	} else if s.config.Commit != nil {
-		err = w.Checkout(&git.CheckoutOptions{
+		checkoutOpts = &git.CheckoutOptions{
 			Force: true, // Discard any local changes
 			Hash:  plumbing.NewHash(*s.config.Commit),
-		})
+		}
 	} else {
 		return errors.New("either reference or commit must be set in git configuration")
 	}
 
-	return err
+	if s.config.Path != nil {
+		checkoutOpts.SparseCheckoutDirectories = []string{*s.config.Path}
+	}
+
+	return w.Checkout(checkoutOpts)
 }
 
 func (s *Synchronizer) auth() (transport.AuthMethod, error) {
