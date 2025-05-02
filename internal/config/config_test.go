@@ -2,6 +2,7 @@ package config_test
 
 import (
 	"bytes"
+	"context"
 	"reflect"
 	"testing"
 
@@ -23,7 +24,7 @@ func TestParseSecretResolve(t *testing.T) {
 		secrets: {
 			secret1: {
 				username: bob,
-				password: passw0rd
+				password: '${LIGHTHOUSE_PASSWORD}'
 			}
 		}
 	}`)))
@@ -31,6 +32,8 @@ func TestParseSecretResolve(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+
+	t.Setenv("LIGHTHOUSE_PASSWORD", "passw0rd")
 
 	secret, err := result.Systems["foo"].Git.Credentials.Resolve()
 	if err != nil {
@@ -41,8 +44,11 @@ func TestParseSecretResolve(t *testing.T) {
 		"username": "bob",
 		"password": "passw0rd",
 	}
-	if !reflect.DeepEqual(secret.Value, exp) {
-		t.Fatalf("expected: %v\n\ngot: %v", exp, secret.Value)
+
+	value, _ := secret.Get(context.Background())
+
+	if !reflect.DeepEqual(value, exp) {
+		t.Fatalf("expected: %v\n\ngot: %v", exp, value)
 	}
 
 }
