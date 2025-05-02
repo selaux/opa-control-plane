@@ -17,6 +17,7 @@ import (
 	"github.com/tsandall/lighthouse/internal/gitsync"
 	"github.com/tsandall/lighthouse/internal/pool"
 	"github.com/tsandall/lighthouse/internal/s3"
+	"github.com/tsandall/lighthouse/internal/sqlsync"
 )
 
 const reconfigurationInterval = 15 * time.Second
@@ -127,7 +128,7 @@ func (s *Service) launchWorkers(ctx context.Context) {
 
 		syncs := []Synchronizer{
 			gitsync.New(systemRepoDir, system.Git),
-			NewSQLDataSynchronizer(systemFileDir, s.db, system.Name),
+			sqlsync.NewSQLDataSynchronizer(systemFileDir, s.db, system.Name),
 		}
 
 		ls := make([]*builder.LibrarySpec, len(libraries))

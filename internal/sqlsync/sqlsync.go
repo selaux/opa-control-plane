@@ -1,4 +1,4 @@
-package service
+package sqlsync
 
 import (
 	"database/sql"
