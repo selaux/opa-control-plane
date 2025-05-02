@@ -3,6 +3,7 @@ package config
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"fmt"
 	"io"
 	"os"
@@ -74,6 +75,45 @@ type System struct {
 	Git           Git           `yaml:"git,omitempty"`
 	ObjectStorage ObjectStorage `yaml:"object_storage,omitempty"`
 	Datasources   []Datasource  `yaml:"datasources,omitempty"`
+	Files         Files         `yaml:"files,omitempty"`
+}
+
+type Files map[string]string
+
+func (f Files) Equal(other Files) bool {
+	if len(f) != len(other) {
+		return false
+	}
+	for k := range other {
+		if other[k] != f[k] {
+			return false
+		}
+	}
+	return true
+}
+
+func (f Files) MarshalYAML() (interface{}, error) {
+	encodedMap := make(map[string]string)
+	for key, value := range f {
+		encodedValue := base64.StdEncoding.EncodeToString([]byte(value))
+		encodedMap[key] = encodedValue
+	}
+	return encodedMap, nil
+}
+
+func (f Files) UnmarshalYAML(node *yaml.Node) error {
+	raw := map[string]string{}
+	if err := node.Decode(&raw); err != nil {
+		return err
+	}
+	for key, encodedValue := range raw {
+		decodedBytes, err := base64.StdEncoding.DecodeString(encodedValue)
+		if err != nil {
+			return fmt.Errorf("failed to decode value for key %q: %w", key, err)
+		}
+		f[key] = string(decodedBytes)
+	}
+	return nil
 }
 
 func (s *System) Equal(other *System) bool {
@@ -85,7 +125,7 @@ func (s *System) Equal(other *System) bool {
 		return false
 	}
 
-	return s.Name == other.Name && s.Git.Equal(&other.Git) && s.ObjectStorage.Equal(&other.ObjectStorage) && equalDatasources(s.Datasources, other.Datasources)
+	return s.Name == other.Name && s.Git.Equal(&other.Git) && s.ObjectStorage.Equal(&other.ObjectStorage) && equalDatasources(s.Datasources, other.Datasources) && s.Files.Equal(other.Files)
 }
 
 // Library defines the configuration for a Lighthouse Library.
@@ -93,6 +133,7 @@ type Library struct {
 	Name        string       `yaml:"-"`
 	Git         Git          `yaml:"git,omitempty"`
 	Datasources []Datasource `yaml:"datasources,omitempty"`
+	Files       Files        `yaml:"files,omitempty"`
 }
 
 func (s *Library) Equal(other *Library) bool {
@@ -104,7 +145,7 @@ func (s *Library) Equal(other *Library) bool {
 		return false
 	}
 
-	return s.Name == other.Name && s.Git.Equal(&other.Git) && equalDatasources(s.Datasources, other.Datasources)
+	return s.Name == other.Name && s.Git.Equal(&other.Git) && equalDatasources(s.Datasources, other.Datasources) && s.Files.Equal(other.Files)
 }
 
 // Git defines the Git synchronization configuration used by Lighthouse

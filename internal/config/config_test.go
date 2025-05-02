@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/tsandall/lighthouse/internal/config"
+	"gopkg.in/yaml.v3"
 )
 
 func TestParseSecretResolve(t *testing.T) {
@@ -42,6 +43,29 @@ func TestParseSecretResolve(t *testing.T) {
 	}
 	if !reflect.DeepEqual(secret.Value, exp) {
 		t.Fatalf("expected: %v\n\ngot: %v", exp, secret.Value)
+	}
+
+}
+
+func TestFilesMarshallingRoundtrip(t *testing.T) {
+
+	f := config.Files{
+		"foo.rego": "package x\np := 7",
+	}
+
+	bs, err := yaml.Marshal(f)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	f2 := config.Files{}
+
+	if err := yaml.Unmarshal(bs, &f2); err != nil {
+		t.Fatal(err)
+	}
+
+	if !reflect.DeepEqual(f, f2) {
+		t.Fatalf("exp: %v\n\ngot: %v", f, f2)
 	}
 
 }
