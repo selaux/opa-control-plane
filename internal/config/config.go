@@ -84,7 +84,7 @@ func (s *System) Equal(other *System) bool {
 		return false
 	}
 
-	return s.Name == other.Name && s.Git.Equal(&other.Git) && s.ObjectStorage.Equal(&other.ObjectStorage)
+	return s.Name == other.Name && s.Git.Equal(&other.Git) && s.ObjectStorage.Equal(&other.ObjectStorage) && equalDatasources(s.Datasources, other.Datasources)
 }
 
 // Library defines the configuration for a Lighthouse Library.
@@ -103,7 +103,7 @@ func (s *Library) Equal(other *Library) bool {
 		return false
 	}
 
-	return s.Name == other.Name && s.Git.Equal(&other.Git)
+	return s.Name == other.Name && s.Git.Equal(&other.Git) && equalDatasources(s.Datasources, other.Datasources)
 }
 
 // Git defines the Git synchronization configuration used by Lighthouse
@@ -311,6 +311,32 @@ type Datasource struct {
 	Config map[string]interface{} `yaml:"config,omitempty"`
 }
 
+func (d *Datasource) Equal(other *Datasource) bool {
+	if d == other {
+		return true
+	}
+
+	if d == nil || other == nil {
+		return false
+	}
+
+	if d.Name != other.Name || d.Path != other.Path || d.Type != other.Type {
+		return false
+	}
+
+	if len(d.Config) != len(other.Config) {
+		return false
+	}
+
+	for k, v := range d.Config {
+		if ov, ok := other.Config[k]; !ok || !reflect.DeepEqual(v, ov) {
+			return false
+		}
+	}
+
+	return true
+}
+
 func EqualLibraries(a, b []*Library) bool {
 	m := make(map[string]*Library, len(a))
 	for _, lib := range a {
@@ -332,6 +358,25 @@ func EqualLibraries(a, b []*Library) bool {
 			return false
 		}
 		if !a.Equal(b) {
+			return false
+		}
+	}
+
+	return true
+}
+
+func equalDatasources(a, b []Datasource) bool {
+	if len(a) != len(b) {
+		return false
+	}
+
+	m := make(map[string]Datasource, len(a))
+	for _, ds := range a {
+		m[ds.Name] = ds
+	}
+
+	for _, ds := range b {
+		if other, ok := m[ds.Name]; !ok || !ds.Equal(&other) {
 			return false
 		}
 	}
