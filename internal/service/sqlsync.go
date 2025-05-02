@@ -53,6 +53,5 @@ WHERE
 		}
 	}
 
-	// TODO: Atomic multi file writes.
 	return nil
 }
