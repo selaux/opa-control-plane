@@ -72,6 +72,7 @@ type System struct {
 	Name          string        `yaml:"-"`
 	Git           Git           `yaml:"git,omitempty"`
 	ObjectStorage ObjectStorage `yaml:"object_storage,omitempty"`
+	Datasources   []Datasource  `yaml:"datasources,omitempty"`
 }
 
 func (s *System) Equal(other *System) bool {
@@ -88,8 +89,9 @@ func (s *System) Equal(other *System) bool {
 
 // Library defines the configuration for a Lighthouse Library.
 type Library struct {
-	Name string `yaml:"-"`
-	Git  Git    `yaml:"git,omitempty"`
+	Name        string       `yaml:"-"`
+	Git         Git          `yaml:"git,omitempty"`
+	Datasources []Datasource `yaml:"datasources,omitempty"`
 }
 
 func (s *Library) Equal(other *Library) bool {
@@ -300,6 +302,13 @@ func (a *AzureBlobStorage) Equal(other *AzureBlobStorage) bool {
 	}
 
 	return a.AccountURL == other.AccountURL && a.Container == other.Container && a.Path == other.Path
+}
+
+type Datasource struct {
+	Name   string                 `yaml:"-"`
+	Path   string                 `yaml:"path"`
+	Type   string                 `yaml:"type"`
+	Config map[string]interface{} `yaml:"config,omitempty"`
 }
 
 func EqualLibraries(a, b []*Library) bool {

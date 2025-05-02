@@ -134,6 +134,8 @@ func (s *Service) launchWorkers(ctx context.Context) {
 			syncs = append(syncs, gitsync.New(systemRepoDir, system.Git))
 		}
 
+		// TODO: Handle system datasources.
+
 		ls := make([]*builder.LibrarySpec, len(libraries))
 		for i := range libraries {
 			if libraries[i].Git.Repo != "" {
@@ -141,6 +143,8 @@ func (s *Service) launchWorkers(ctx context.Context) {
 				ls[i] = &builder.LibrarySpec{Repo: libRepoDir}
 				syncs = append(syncs, gitsync.New(libRepoDir, libraries[i].Git))
 			}
+
+			// TODO: Handle library datasources.
 		}
 
 		fs := []*builder.FileSpec{&builder.FileSpec{Path: systemFileDir}}
@@ -187,7 +191,13 @@ func (s *Service) loadConfig(_ context.Context) error {
 }
 
 func (s *Service) listSystemsWithGitCredentials() ([]*config.System, error) {
-	rows, err := s.db.Query(`SELECT
+	txn, err := s.db.Begin()
+	if err != nil {
+		return nil, err
+	}
+	defer txn.Commit()
+
+	rows, err := txn.Query(`SELECT
         systems.id AS system_id,
         systems.repo,
         systems.ref,
@@ -272,6 +282,45 @@ func (s *Service) listSystemsWithGitCredentials() ([]*config.System, error) {
 		}
 	}
 
+	// Load datasources for each system.
+
+	rows2, err := txn.Query(`SELECT
+	systems_datasources.name,
+	systems_datasources.system_id,
+	systems_datasources.type,
+	systems_datasources.path,
+	systems_datasources.config
+FROM
+	systems_datasources
+`)
+	if err != nil {
+		return nil, err
+	}
+
+	defer rows2.Close()
+
+	for rows2.Next() {
+		var name, system_id, path, type_, configuration string
+		if err := rows2.Scan(&name, &system_id, &path, &type_, &configuration); err != nil {
+			return nil, err
+		}
+
+		datasource := config.Datasource{
+			Name: name,
+			Type: type_,
+			Path: path,
+		}
+
+		if err := json.Unmarshal([]byte(configuration), &datasource.Config); err != nil {
+			return nil, err
+		}
+
+		system, ok := systemMap[system_id]
+		if ok {
+			system.Datasources = append(system.Datasources, datasource)
+		}
+	}
+
 	var systems []*config.System
 	for _, system := range systemMap {
 		systems = append(systems, system)
@@ -281,7 +330,13 @@ func (s *Service) listSystemsWithGitCredentials() ([]*config.System, error) {
 }
 
 func (s *Service) listLibrariesWithGitCredentials() ([]*config.Library, error) {
-	rows, err := s.db.Query(`SELECT
+	txn, err := s.db.Begin()
+	if err != nil {
+		return nil, err
+	}
+	defer txn.Commit()
+
+	rows, err := txn.Query(`SELECT
 	libraries.id AS library_id,
 	libraries.repo,
 	libraries.ref,
@@ -346,6 +401,45 @@ WHERE libraries_secrets.ref_type = 'git_credentials' OR libraries_secrets.ref_ty
 		}
 	}
 
+	// Load datasources for each library.
+
+	rows2, err := txn.Query(`SELECT
+		libraries_datasources.name,
+		libraries_datasources.library_id,
+		libraries_datasources.type,
+		libraries_datasources.path,
+		libraries_datasources.config
+	FROM
+		libraries_datasources
+	`)
+	if err != nil {
+		return nil, err
+	}
+
+	defer rows2.Close()
+
+	for rows2.Next() {
+		var name, library_id, path, type_, configuration string
+		if err := rows2.Scan(&name, &library_id, &path, &type_, &configuration); err != nil {
+			return nil, err
+		}
+
+		datasource := config.Datasource{
+			Name: name,
+			Type: type_,
+			Path: path,
+		}
+
+		if err := json.Unmarshal([]byte(configuration), &datasource.Config); err != nil {
+			return nil, err
+		}
+
+		library, ok := libraryMap[library_id]
+		if ok {
+			library.Datasources = append(library.Datasources, datasource)
+		}
+	}
+
 	var libraries []*config.Library
 	for _, library := range libraryMap {
 		libraries = append(libraries, library)
@@ -387,6 +481,17 @@ func (s *Service) loadSystems(root *config.Root) error {
 				s.db.Exec(`INSERT OR REPLACE INTO systems_secrets (system_id, secret_id, ref_type) VALUES (?, ?, ?)`, system.Name, system.ObjectStorage.AmazonS3.Credentials.Name, "aws")
 			}
 		}
+
+		for _, datasource := range system.Datasources {
+			bs, err := json.Marshal(datasource.Config)
+			if err != nil {
+				return err
+			}
+			if _, err := s.db.Exec(`INSERT OR REPLACE INTO systems_datasources (name, system_id, type, path, config) VALUES (?, ?, ?, ?, ?)`,
+				datasource.Name, system.Name, datasource.Type, datasource.Path, string(bs)); err != nil {
+				return err
+			}
+		}
 	}
 
 	return nil
@@ -409,6 +514,17 @@ func (s *Service) loadLibraries(root *config.Root) error {
 
 		if library.Git.Credentials != nil {
 			s.db.Exec(`INSERT OR REPLACE INTO libraries_secrets (library_id, secret_id, ref_type) VALUES (?, ?, ?)`, library.Name, library.Git.Credentials.Name, "git_credentials")
+		}
+
+		for _, datasource := range library.Datasources {
+			bs, err := json.Marshal(datasource.Config)
+			if err != nil {
+				return err
+			}
+			if _, err := s.db.Exec(`INSERT OR REPLACE INTO libraries_datasources (name, library_id, type, path, config) VALUES (?, ?, ?, ?, ?)`,
+				datasource.Name, library.Name, datasource.Type, datasource.Path, string(bs)); err != nil {
+				return err
+			}
 		}
 	}
 
@@ -478,6 +594,15 @@ func (s *Service) initDb() {
 			PRIMARY KEY (system_id, path),
 			FOREIGN KEY (system_id) REFERENCES systems(id)
 		);`,
+		`CREATE TABLE IF NOT EXISTS systems_datasources (
+			name TEXT NOT NULL,
+			system_id TEXT NOT NULL,
+			type TEXT NOT NULL,
+			path TEXT NOT NULL,
+			config TEXT NOT NULL,
+			PRIMARY KEY (system_id, name),
+			FOREIGN KEY (system_id) REFERENCES systems(id)
+		);`,
 		`CREATE TABLE IF NOT EXISTS libraries_secrets (
 			library_id TEXT NOT NULL,
 			secret_id TEXT NOT NULL,
@@ -492,6 +617,15 @@ func (s *Service) initDb() {
 			data BLOB NOT NULL,
 			PRIMARY KEY (system_id, path),
 			FOREIGN KEY (system_id) REFERENCES systems(id)
+		);`,
+		`CREATE TABLE IF NOT EXISTS libraries_datasources (
+			name TEXT NOT NULL,
+			library_id TEXT NOT NULL,
+			type TEXT NOT NULL,
+			path TEXT NOT NULL,
+			config TEXT NOT NULL,
+			PRIMARY KEY (library_id, name),
+			FOREIGN KEY (library_id) REFERENCES library(id)
 		);`,
 	}
 
