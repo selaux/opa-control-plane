@@ -8,6 +8,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"reflect"
 	"sort"
 	"strings"
 
@@ -29,8 +30,7 @@ type compareSystemReport struct {
 }
 
 type compareBundleReport struct {
-	Identical bool               `json:"identical"`
-	Rego      *compareRegoReport `json:"rego,omitempty"`
+	Rego *compareRegoReport `json:"rego,omitempty"`
 }
 
 func (r *compareBundleReport) init() {
@@ -212,11 +212,16 @@ func compareSystem(ctx context.Context, client *DASClient, v1SystemsByName map[s
 		return nil, err
 	}
 
-	bundleReport := compareBundle(a, b)
-	return &compareSystemReport{Bundle: &bundleReport}, nil
+	bundleReport, err := compareBundle(a, b)
+	result := &compareSystemReport{Bundle: &bundleReport}
+	if err != nil {
+		msg := err.Error()
+		result.Error = &msg
+	}
+	return result, nil
 }
 
-func compareBundle(a, b bundle.Bundle) compareBundleReport {
+func compareBundle(a, b bundle.Bundle) (compareBundleReport, error) {
 
 	var r compareBundleReport
 
@@ -250,9 +255,25 @@ func compareBundle(a, b bundle.Bundle) compareBundleReport {
 		}
 	}
 
-	if r.Rego == nil {
-		r.Identical = true
+	if !reflect.DeepEqual(a.Data, b.Data) {
+
+		aBytes, err := json.MarshalIndent(a.Data, "", "  ")
+		if err != nil {
+			return r, err
+		}
+
+		bBytes, err := json.MarshalIndent(b.Data, "", "  ")
+		if err != nil {
+			return r, err
+		}
+
+		diffText := textdiff.Unified("Expected", "Found", string(bBytes), string(aBytes))
+		if len(diffText) > 1024 {
+			diffText = diffText[:1024]
+		}
+
+		r.AddDiff("data.json", diffText)
 	}
 
-	return r
+	return r, nil
 }
