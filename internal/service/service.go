@@ -50,17 +50,8 @@ func (s *Service) WithConfigFile(configFile string) *Service {
 }
 
 func (s *Service) Run(ctx context.Context) error {
-
-	var err error
-	s.db, err = sql.Open("sqlite3", path.Join(s.persistenceDir, "sqlite.db"))
-	if err != nil {
-		return err
-	}
-
-	defer s.db.Close()
-
-	s.Database.Init(s.db)
-	s.initDb()
+	s.InitDB()
+	defer s.CloseDB()
 
 	if err := s.loadConfig(ctx); err != nil {
 		return err
@@ -586,7 +577,14 @@ func (s *Service) loadSecrets(root *config.Root) error {
 	return nil
 }
 
-func (s *Service) initDb() {
+func (s *Service) InitDB() error {
+	var err error
+	s.db, err = sql.Open("sqlite3", path.Join(s.persistenceDir, "sqlite.db"))
+	if err != nil {
+		return err
+	}
+
+	s.Database.Init(s.db)
 
 	stmts := []string{
 		`CREATE TABLE IF NOT EXISTS systems (
@@ -667,6 +665,12 @@ func (s *Service) initDb() {
 			log.Fatal(err)
 		}
 	}
+
+	return nil
+}
+
+func (s *Service) CloseDB() {
+	s.db.Close()
 }
 
 func md5sum(s string) string {

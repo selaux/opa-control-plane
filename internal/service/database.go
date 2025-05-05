@@ -32,7 +32,7 @@ WHERE system_id = ? AND path = ?`, systemId, path)
 	}
 
 	var bs []byte
-	if err := rows.Scan(bs); err != nil {
+	if err := rows.Scan(&bs); err != nil {
 		return nil, false, err
 	}
 
@@ -49,7 +49,7 @@ func (d *Database) SystemsDataPut(ctx context.Context, systemId, path string, da
 	if err != nil {
 		return err
 	}
-	_, err = d.db.Exec(`INSERT OR REPLACE INTO systems_data (system_id, path, value) VALUES (?, ?, ?)`, systemId, path, bs)
+	_, err = d.db.Exec(`INSERT OR REPLACE INTO systems_data (system_id, path, data) VALUES (?, ?, ?)`, systemId, path, bs)
 	return err
 }
 
