@@ -29,6 +29,7 @@ type Service struct {
 	db             *sql.DB
 	pool           *pool.Pool
 	workers        map[string]*SystemWorker
+	Database
 }
 
 func New() *Service {
@@ -58,6 +59,7 @@ func (s *Service) Run(ctx context.Context) error {
 
 	defer s.db.Close()
 
+	s.Database.Init(s.db)
 	s.initDb()
 
 	if err := s.loadConfig(ctx); err != nil {

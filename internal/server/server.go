@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"path"
 	"strings"
 
 	"github.com/gorilla/mux"
@@ -53,7 +54,7 @@ func (s *Server) v1SystemsDataGet(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	data, ok, err := s.database.SystemsDataGet(ctx, systemId, vars["path"])
+	data, ok, err := s.database.SystemsDataGet(ctx, systemId, path.Join(vars["path"], "data.json"))
 	if err != nil {
 		errorAuto(w, err)
 		return
@@ -85,7 +86,7 @@ func (s *Server) v1SystemsDataPut(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err = s.database.SystemsDataPut(ctx, systemId, vars["path"], value)
+	err = s.database.SystemsDataPut(ctx, systemId, path.Join(vars["path"], "data.json"), value)
 	if err != nil {
 		errorAuto(w, err)
 		return
@@ -106,7 +107,7 @@ func (s *Server) v1SystemsDataDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err = s.database.SystemsDataDelete(ctx, systemId, vars["path"])
+	err = s.database.SystemsDataDelete(ctx, systemId, path.Join(vars["path"], "data.json"))
 	if err != nil {
 		errorAuto(w, err)
 		return
