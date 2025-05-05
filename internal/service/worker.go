@@ -104,7 +104,7 @@ func (w *SystemWorker) Execute() time.Time {
 	for _, synchronizer := range w.synchronizers {
 		err := synchronizer.Execute(ctx)
 		if err != nil {
-			log.Println("failed to synchronize:", err)
+			log.Printf("failed to synchronize system %q: %v", w.systemConfig.Name, err)
 			return time.Now().Add(errorDelay)
 		}
 	}
@@ -119,13 +119,13 @@ func (w *SystemWorker) Execute() time.Time {
 
 	err := b.Build(ctx)
 	if err != nil {
-		log.Println("failed to build a system bundle:", err)
+		log.Println("failed to build a system bundle %q: %v", w.systemConfig.Name, err)
 		return time.Now().Add(errorDelay)
 	}
 
 	if w.storage != nil {
 		if err := w.storage.Upload(ctx, buffer); err != nil {
-			log.Println("failed to upload system bundle:", err)
+			log.Println("failed to upload system bundle %q: %v", w.systemConfig.Name, err)
 			return time.Now().Add(errorDelay)
 		}
 	}
