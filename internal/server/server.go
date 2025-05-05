@@ -43,6 +43,10 @@ func (s *Server) WithDatabase(db Database) *Server {
 	return s
 }
 
+func (s *Server) ListenAndServe(addr string) error {
+	return http.ListenAndServe(addr, s.router)
+}
+
 // v1SystemsDataGet handles GET requests to retrieve data from a system.
 func (s *Server) v1SystemsDataGet(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()

@@ -6,10 +6,14 @@ import (
 	"os"
 
 	"github.com/spf13/cobra"
+	"github.com/tsandall/lighthouse/internal/server"
 	"github.com/tsandall/lighthouse/internal/service"
 )
 
+const defaultLocalAddr = "localhost:8282"
+
 type runParams struct {
+	addr             string
 	configFile       string
 	persistenceDir   string
 	resetPersistence bool
@@ -32,12 +36,20 @@ func init() {
 				log.Fatalf("failed to create persistence directory: %v", err)
 			}
 			svc := service.New().WithConfigFile(params.configFile).WithPersistenceDir(params.persistenceDir)
+
+			go func() {
+				if err := server.New().WithDatabase(svc).ListenAndServe(params.addr); err != nil {
+					log.Fatalf("failed to start server: %v", err)
+				}
+			}()
+
 			if err := svc.Run(ctx); err != nil {
 				log.Fatal(err)
 			}
 		},
 	}
 
+	cmd.Flags().StringVarP(&params.addr, "addr", "a", defaultLocalAddr, "set listening address of the server")
 	cmd.Flags().StringVarP(&params.configFile, "config", "c", "config.yaml", "Path to the configuration file")
 	cmd.Flags().StringVarP(&params.persistenceDir, "data-dir", "d", "data", "Path to the persistence directory")
 	cmd.Flags().BoolVarP(&params.resetPersistence, "reset-persistence", "", false, "Reset the persistence directory (for development purposes)")
