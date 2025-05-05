@@ -26,15 +26,23 @@ type Database interface {
 }
 
 func New() *Server {
-	router := mux.NewRouter()
-	s := &Server{
-		router: router,
+	return &Server{}
+}
+
+func (s *Server) Init() *Server {
+	if s.router == nil {
+		s.router = mux.NewRouter()
 	}
 
-	router.Handle("/v1/systems/{system:.+}/{path:.+}", http.HandlerFunc(s.v1SystemsDataGet)).Methods(http.MethodGet)
-	router.Handle("/v1/systems/{system:.+}/{path:.+}", http.HandlerFunc(s.v1SystemsDataPut)).Methods(http.MethodPost, http.MethodPut)
-	router.Handle("/v1/systems/{system:.+}/{path:.+}", http.HandlerFunc(s.v1SystemsDataDelete)).Methods(http.MethodDelete)
+	s.router.Handle("/v1/systems/{system:.+}/{path:.+}", http.HandlerFunc(s.v1SystemsDataGet)).Methods(http.MethodGet)
+	s.router.Handle("/v1/systems/{system:.+}/{path:.+}", http.HandlerFunc(s.v1SystemsDataPut)).Methods(http.MethodPost, http.MethodPut)
+	s.router.Handle("/v1/systems/{system:.+}/{path:.+}", http.HandlerFunc(s.v1SystemsDataDelete)).Methods(http.MethodDelete)
 
+	return s
+}
+
+func (s *Server) WithRouter(router *mux.Router) *Server {
+	s.router = router
 	return s
 }
 
