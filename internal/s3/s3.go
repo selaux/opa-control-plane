@@ -5,17 +5,20 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"time"
 
 	"cloud.google.com/go/storage"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
-	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/feature/s3/manager"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/tsandall/lighthouse/internal/config"
 )
+
+// refreshCredentialsInterval sets the refreshing interval to ensure they are up to date.
+const refreshCredentialsInterval = 5 * time.Minute
 
 var (
 	_ ObjectStorage = (*AmazonS3)(nil)
@@ -60,7 +63,6 @@ func New(ctx context.Context, config config.ObjectStorage) (ObjectStorage, error
 			options = append(options, awsconfig.WithRegion(region))
 		}
 
-		// TODO: Dynamic credentials are not supported yet.
 		option, err := s3auth(ctx, config.AmazonS3)
 		if err != nil {
 			return nil, err
@@ -110,14 +112,25 @@ func s3auth(ctx context.Context, config *config.AmazonS3) (func(*awsconfig.LoadO
 		return nil, nil
 	}
 
-	secret, err := config.Credentials.Resolve()
+	return awsconfig.WithCredentialsProvider(&secretCredentialsProvider{config: config}), nil
+}
+
+// secretCredentialsProvider is a custom credentials provider that retrieves AWS credentials from a secret every 5 minutes.
+// It implements the aws.CredentialsProvider interface.
+type secretCredentialsProvider struct {
+	aws.Credentials
+	config *config.AmazonS3
+}
+
+func (s *secretCredentialsProvider) Retrieve(ctx context.Context) (aws.Credentials, error) {
+	secret, err := s.config.Credentials.Resolve()
 	if err != nil {
-		return nil, err
+		return aws.Credentials{}, err
 	}
 
 	value, err := secret.Get(ctx)
 	if err != nil {
-		return nil, err
+		return aws.Credentials{}, err
 	}
 
 	switch value["type"] {
@@ -126,17 +139,17 @@ func s3auth(ctx context.Context, config *config.AmazonS3) (func(*awsconfig.LoadO
 		secretAccessKey, _ := value["secret_access_key"].(string)
 		sessionToken, _ := value["session_token"].(string)
 		if accessKeyId != "" || secretAccessKey != "" || sessionToken != "" {
-			return awsconfig.WithCredentialsProvider(credentials.StaticCredentialsProvider{
-				Value: aws.Credentials{
-					AccessKeyID: accessKeyId, SecretAccessKey: secretAccessKey, SessionToken: sessionToken,
-					Source: "configurated credentials",
-				},
-			}), nil
+			return aws.Credentials{
+				AccessKeyID: accessKeyId, SecretAccessKey: secretAccessKey, SessionToken: sessionToken,
+				Source:    "configurated credentials",
+				CanExpire: true,
+				Expires:   time.Now().Add(refreshCredentialsInterval),
+			}, nil
 		}
 
-		return nil, nil
+		return aws.Credentials{}, fmt.Errorf("missing access_key_id or secret_access_key in credentials")
 	default:
-		return nil, fmt.Errorf("unsupported authentication type: %s", value["type"])
+		return aws.Credentials{}, fmt.Errorf("unsupported authentication type: %s", value["type"])
 	}
 }
 
