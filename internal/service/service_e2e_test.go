@@ -9,6 +9,7 @@ import (
 	"os"
 	"path"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -50,7 +51,7 @@ func TestFromConfig(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := os.WriteFile(path.Join(remoteGitDir, "lib/lib.rego"), []byte("package lib\nq := 7"), 0644); err != nil {
+	if err := os.WriteFile(path.Join(remoteGitDir, "lib/lib.rego"), []byte("package lib\nq := data.lib.s"), 0644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -152,6 +153,9 @@ func TestFromConfig(t *testing.T) {
 						}
 					}
 				],
+				files: {
+					"bar.rego": "cGFja2FnZSBsaWIKcyA6PSB0cnVl"
+				}
 			}
 		}
 	}`)
@@ -207,10 +211,11 @@ func TestFromConfig(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		expectedRego := []string{
-			"package foo",
-			"package app\np := data.lib.q",
-			"package lib\nq := 7",
+		expectedRego := map[string]string{
+			"foo.rego":     "package foo",
+			"app/app.rego": "package app\np := data.lib.q",
+			"lib/lib.rego": "package lib\nq := data.lib.s",
+			"bar.rego":     "package lib\ns := true",
 		}
 		expectedData := map[string]interface{}{
 			"datasource1": map[string]interface{}{
@@ -225,9 +230,14 @@ func TestFromConfig(t *testing.T) {
 			t.Fatalf("expected %v modules but got %v", len(expectedRego), len(b.Modules))
 		}
 
-		for i := range expectedRego {
-			if expectedRego[i] != string(b.Modules[i].Raw) {
-				t.Fatalf("exp:\n%v\n\ngot:\n%v", expectedRego[i], string(b.Modules[i].Raw))
+		got := map[string]string{}
+		for _, mf := range b.Modules {
+			got[strings.TrimPrefix(mf.Path, "/")] = string(mf.Raw)
+		}
+
+		for k := range expectedRego {
+			if expectedRego[k] != got[k] {
+				t.Fatalf("exp:\n%v\n\ngot:\n%v", expectedRego[k], got[k])
 			}
 		}
 

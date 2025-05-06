@@ -22,6 +22,7 @@ func NewSQLDataSynchronizer(path string, db *sql.DB, table, pk, id string) *SQLD
 }
 
 func (s *SQLDataSynchronizer) Execute(ctx context.Context) error {
+
 	err := os.MkdirAll(s.path, 0755)
 	if err != nil {
 		return err

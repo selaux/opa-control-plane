@@ -84,11 +84,11 @@ func (d *Database) InitDB(persistenceDir string) error {
 			FOREIGN KEY (secret_id) REFERENCES secrets(id)
 		);`,
 		`CREATE TABLE IF NOT EXISTS libraries_data (
-			system_id TEXT NOT NULL,
+			library_id TEXT NOT NULL,
 			path TEXT NOT NULL,
 			data BLOB NOT NULL,
-			PRIMARY KEY (system_id, path),
-			FOREIGN KEY (system_id) REFERENCES systems(id)
+			PRIMARY KEY (library_id, path),
+			FOREIGN KEY (library_id) REFERENCES libraries(id)
 		);`,
 		`CREATE TABLE IF NOT EXISTS libraries_datasources (
 			name TEXT NOT NULL,
@@ -526,7 +526,7 @@ func (d *Database) loadLibraries(root *config.Root) error {
 		}
 
 		for path, data := range library.Files {
-			if _, err := d.db.Exec(`INSERT OR REPLACE INTO libraries_data (libraries_data, path, data) VALUES (?, ?, ?)`, name, path, data); err != nil {
+			if _, err := d.db.Exec(`INSERT OR REPLACE INTO libraries_data (library_id, path, data) VALUES (?, ?, ?)`, name, path, data); err != nil {
 				return err
 			}
 		}

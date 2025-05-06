@@ -151,6 +151,10 @@ func (s *Service) launchWorkers(ctx context.Context) {
 					syncs = append(syncs, httpsync.New(path.Join(systemFileDir, datasource.Path, "data.json"), url))
 				}
 			}
+
+			libFileDir := path.Join(s.persistenceDir, "files", md5sum(system.Name)+"@"+l.Name)
+			syncs = append(syncs, sqlsync.NewSQLDataSynchronizer(libFileDir, s.database.db, "libraries_data", "library_id", l.Name))
+			fs = append(fs, &builder.FileSpec{Path: libFileDir})
 		}
 
 		storage, err := s3.New(ctx, system.ObjectStorage)
