@@ -83,7 +83,13 @@ func TestFromConfig(t *testing.T) {
 	// Create a mock HTTP service to serve the datasource.
 	httpTS := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		_, err := w.Write([]byte(`{"key": "value"}`))
+		var content []byte
+		if r.URL.Path == "/datasource1" {
+			content = []byte(`{"key": "value1"}`)
+		} else {
+			content = []byte(`{"key": "value2"}`)
+		}
+		_, err := w.Write(content)
 		if err != nil {
 			http.Error(w, "failed to write response", http.StatusInternalServerError)
 		}
@@ -120,7 +126,7 @@ func TestFromConfig(t *testing.T) {
 						path: "datasource1",
 						type: "http",
 						config: {
-							url: {{ .MockHTTPURL }}
+							url: {{ .MockHTTPURL }}/datasource1
 						}
 					}
 				],
@@ -136,14 +142,22 @@ func TestFromConfig(t *testing.T) {
 					reference: refs/heads/master,
 					path: "lib/",
 				},
-				datasources: [],
+				datasources: [
+				{
+						name: "datasource2",
+						path: "datasource2",
+						type: "http",
+						config: {
+							url: {{ .MockHTTPURL }}/datasource2
+						}
+					}
+				],
 			}
 		}
 	}`)
 	if err != nil {
 		t.Fatal(err)
 	}
-	// TODO: Library datasource test.
 
 	buf := bytes.NewBuffer(nil)
 	err = tmpl.Execute(buf, struct {
@@ -200,7 +214,10 @@ func TestFromConfig(t *testing.T) {
 		}
 		expectedData := map[string]interface{}{
 			"datasource1": map[string]interface{}{
-				"key": "value",
+				"key": "value1",
+			},
+			"datasource2": map[string]interface{}{
+				"key": "value2",
 			},
 		}
 
