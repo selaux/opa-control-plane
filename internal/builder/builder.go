@@ -3,7 +3,6 @@ package builder
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"io"
 	"os"
 	"path/filepath"
@@ -293,25 +292,4 @@ func getRootsForRepo(dir string) ([]ast.Ref, error) {
 	}
 
 	return result, err
-}
-
-func mktree(path []string, value interface{}) (map[string]interface{}, error) {
-	if len(path) == 0 {
-		// For 0 length path the value is the full tree.
-		obj, ok := value.(map[string]interface{})
-		if !ok {
-			return nil, errors.New("root value must be object")
-		}
-		return obj, nil
-	}
-
-	dir := map[string]interface{}{}
-	for i := len(path) - 1; i > 0; i-- {
-		dir[path[i]] = value
-		value = dir
-		dir = map[string]interface{}{}
-	}
-	dir[path[0]] = value
-
-	return dir, nil
 }
