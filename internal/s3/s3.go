@@ -15,6 +15,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/feature/s3/manager"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/tsandall/lighthouse/internal/config"
+	"google.golang.org/api/option"
 )
 
 // refreshCredentialsInterval sets the refreshing interval to ensure they are up to date.
@@ -85,20 +86,73 @@ func New(ctx context.Context, config config.ObjectStorage) (ObjectStorage, error
 
 		return &AmazonS3{bucket: config.AmazonS3.Bucket, key: config.AmazonS3.Key, uploader: manager.NewUploader(client), client: client}, nil
 	case config.GCPCloudStorage != nil:
-		client, err := storage.NewClient(ctx)
+		secret, err := config.GCPCloudStorage.Credentials.Resolve()
+		if err != nil {
+			return nil, err
+		}
+
+		value, err := secret.Get(ctx)
+		if err != nil {
+			return nil, err
+		}
+
+		// TODO: Not clear how to handle dynamic credentials with GCP.
+
+		var client *storage.Client
+
+		apiKey, _ := value["api_key"].(string)
+		credentials, _ := value["credentials"].(string)
+
+		if apiKey != "" {
+			client, err = storage.NewClient(ctx, option.WithAPIKey(apiKey))
+		} else if credentials != "" {
+			client, err = storage.NewClient(ctx, option.WithCredentialsJSON([]byte(credentials)))
+		} else {
+			// Use default credentials if no API key is provided.
+			client, err = storage.NewClient(ctx)
+		}
 		if err != nil {
 			return nil, err
 		}
 
 		return &GCPCloudStorage{project: config.GCPCloudStorage.Project, bucket: config.GCPCloudStorage.Bucket, object: config.GCPCloudStorage.Object, client: client}, nil
 	case config.AzureBlobStorage != nil:
-		credential, err := azidentity.NewDefaultAzureCredential(nil)
+		secret, err := config.AzureBlobStorage.Credentials.Resolve()
 		if err != nil {
 			return nil, err
 		}
-		client, err := azblob.NewClient(config.AzureBlobStorage.AccountURL, credential, nil)
+
+		value, err := secret.Get(ctx)
 		if err != nil {
 			return nil, err
+		}
+
+		// TODO: Not clear how to handle dynamic credentials with Azure.
+
+		accountName, _ := value["account_name"].(string)
+		accountKey, _ := value["account_key"].(string)
+
+		var client *azblob.Client
+		if accountName != "" && accountKey != "" {
+			credential, err := azblob.NewSharedKeyCredential(accountName, accountKey)
+			if err != nil {
+				return nil, err
+			}
+
+			client, err = azblob.NewClientWithSharedKeyCredential(config.AzureBlobStorage.AccountURL, credential, nil)
+			if err != nil {
+				return nil, err
+			}
+		} else {
+			credential, err := azidentity.NewDefaultAzureCredential(nil)
+			if err != nil {
+				return nil, err
+			}
+
+			client, err = azblob.NewClient(config.AzureBlobStorage.AccountURL, credential, nil)
+			if err != nil {
+				return nil, err
+			}
 		}
 
 		return &AzureBlobStorage{container: config.AzureBlobStorage.Container, path: config.AzureBlobStorage.Path, client: client}, nil

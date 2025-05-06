@@ -55,7 +55,12 @@ func (r *Root) UnmarshalYAML(node *yaml.Node) error {
 		if system.ObjectStorage.AmazonS3 != nil && system.ObjectStorage.AmazonS3.Credentials != nil {
 			system.ObjectStorage.AmazonS3.Credentials.value = raw.Secrets[system.ObjectStorage.AmazonS3.Credentials.Name]
 		}
-		// TODO: Handle other object storage types (GCP, Azure) similarly
+		if system.ObjectStorage.AzureBlobStorage != nil && system.ObjectStorage.AzureBlobStorage.Credentials != nil {
+			system.ObjectStorage.AzureBlobStorage.Credentials.value = raw.Secrets[system.ObjectStorage.AzureBlobStorage.Credentials.Name]
+		}
+		if system.ObjectStorage.GCPCloudStorage != nil && system.ObjectStorage.GCPCloudStorage.Credentials != nil {
+			system.ObjectStorage.GCPCloudStorage.Credentials.value = raw.Secrets[system.ObjectStorage.GCPCloudStorage.Credentials.Name]
+		}
 	}
 
 	for name, library := range raw.Libraries {
@@ -315,16 +320,18 @@ type AmazonS3 struct {
 
 // GCPCloudStorage defines the configuration for a Google Cloud Storage bucket.
 type GCPCloudStorage struct {
-	Project string `yaml:"project"`
-	Bucket  string `yaml:"bucket"`
-	Object  string `yaml:"object"`
+	Project     string     `yaml:"project"`
+	Bucket      string     `yaml:"bucket"`
+	Object      string     `yaml:"object"`
+	Credentials *SecretRef `yaml:"credentials,omitempty"`
 }
 
 // AzureBlobStorage defines the configuration for an Azure Blob Storage container.
 type AzureBlobStorage struct {
-	AccountURL string `yaml:"account_url"`
-	Container  string `yaml:"container"`
-	Path       string `yaml:"path"`
+	AccountURL  string     `yaml:"account_url"`
+	Container   string     `yaml:"container"`
+	Path        string     `yaml:"path"`
+	Credentials *SecretRef `yaml:"credentials,omitempty"`
 }
 
 func (a *AmazonS3) Equal(other *AmazonS3) bool {
