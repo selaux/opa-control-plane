@@ -117,7 +117,7 @@ func (s *Service) launchWorkers(ctx context.Context) {
 		ss := &builder.SystemSpec{}
 
 		systemFileDir := path.Join(s.persistenceDir, "files", md5sum(system.Name))
-		fs := []*builder.FileSpec{&builder.FileSpec{Path: systemFileDir}}
+		fs := []*builder.FileSpec{{Path: systemFileDir}}
 
 		syncs := []Synchronizer{
 			sqlsync.NewSQLDataSynchronizer(systemFileDir, s.database.db, system.Name),

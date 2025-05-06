@@ -107,7 +107,7 @@ func New(ctx context.Context, config config.ObjectStorage) (ObjectStorage, error
 	}
 }
 
-func s3auth(ctx context.Context, config *config.AmazonS3) (func(*awsconfig.LoadOptions) error, error) {
+func s3auth(_ context.Context, config *config.AmazonS3) (func(*awsconfig.LoadOptions) error, error) {
 	if config.Credentials == nil {
 		return nil, nil
 	}
