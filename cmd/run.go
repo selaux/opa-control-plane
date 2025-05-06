@@ -38,7 +38,7 @@ func init() {
 			svc := service.New().WithConfigFile(params.configFile).WithPersistenceDir(params.persistenceDir)
 
 			go func() {
-				if err := server.New().WithDatabase(svc).Init().ListenAndServe(params.addr); err != nil {
+				if err := server.New().WithDatabase(svc.Database()).Init().ListenAndServe(params.addr); err != nil {
 					log.Fatalf("failed to start server: %v", err)
 				}
 			}()

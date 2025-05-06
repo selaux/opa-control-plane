@@ -2,6 +2,7 @@ package service_test
 
 import (
 	"context"
+	"path/filepath"
 	"reflect"
 	"testing"
 
@@ -11,8 +12,8 @@ import (
 func TestDatabaseSystemsData(t *testing.T) {
 	ctx := context.Background()
 
-	db := service.New().WithPersistenceDir(t.TempDir())
-	err := db.InitDB()
+	db := service.New().Database()
+	err := db.InitDB(filepath.Join(t.TempDir(), "data"))
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
