@@ -3,6 +3,7 @@ package sqlsync
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"os"
 	"path/filepath"
 )
@@ -11,13 +12,13 @@ import (
 // It is expected that the caller will handle concurrency and parallelism. The Synchronizer is not thread-safe. It
 // dumps files stored in SQL database into a directory used by the builder package to construct a bundle.
 type SQLDataSynchronizer struct {
-	path   string
-	db     *sql.DB
-	system string
+	path          string
+	db            *sql.DB
+	table, pk, id string
 }
 
-func NewSQLDataSynchronizer(path string, db *sql.DB, system string) *SQLDataSynchronizer {
-	return &SQLDataSynchronizer{path: path, db: db, system: system}
+func NewSQLDataSynchronizer(path string, db *sql.DB, table, pk, id string) *SQLDataSynchronizer {
+	return &SQLDataSynchronizer{path: path, db: db, table: table, pk: pk, id: id}
 }
 
 func (s *SQLDataSynchronizer) Execute(ctx context.Context) error {
@@ -26,13 +27,13 @@ func (s *SQLDataSynchronizer) Execute(ctx context.Context) error {
 		return err
 	}
 
-	rows, err := s.db.Query(`SELECT
+	rows, err := s.db.Query(fmt.Sprintf(`SELECT
 	path,
 	data
 FROM
-	systems_data
+	%v
 WHERE
-	system_id = ?`, s.system)
+	%v = ?`, s.table, s.pk), s.id)
 	if err != nil {
 		return err
 	}

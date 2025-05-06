@@ -120,7 +120,7 @@ func (s *Service) launchWorkers(ctx context.Context) {
 		fs := []*builder.FileSpec{{Path: systemFileDir}}
 
 		syncs := []Synchronizer{
-			sqlsync.NewSQLDataSynchronizer(systemFileDir, s.database.db, system.Name),
+			sqlsync.NewSQLDataSynchronizer(systemFileDir, s.database.db, "systems_data", "system_id", system.Name),
 		}
 
 		if system.Git.Repo != "" {
