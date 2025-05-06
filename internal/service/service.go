@@ -49,7 +49,7 @@ func (s *Service) Database() *Database {
 }
 
 func (s *Service) Run(ctx context.Context) error {
-	if err := s.database.InitDB(s.persistenceDir); err != nil {
+	if err := s.database.InitDB(ctx, s.persistenceDir); err != nil {
 		return err
 	}
 	defer s.database.CloseDB()

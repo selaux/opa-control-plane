@@ -4,28 +4,68 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
 
+	"github.com/aws/aws-sdk-go-v2/feature/rds/auth"
+	_ "github.com/go-sql-driver/mysql"
+	_ "github.com/jackc/pgx/v5/stdlib" // database/sql compatible driver for pgx
+	"github.com/tsandall/lighthouse/internal/aws"
 	"github.com/tsandall/lighthouse/internal/config"
 )
 
 // Database implements the database operations.
 // TODO: Move more database code here.
 type Database struct {
-	db *sql.DB
+	db     *sql.DB
+	config *config.Database
 }
 
-func (d *Database) InitDB(persistenceDir string) error {
-	err := os.MkdirAll(persistenceDir, 0755)
-	if err != nil {
-		return err
-	}
+func (d *Database) WithConfig(config *config.Database) *Database {
+	d.config = config
+	return d
+}
 
-	d.db, err = sql.Open("sqlite3", filepath.Join(persistenceDir, "sqlite.db"))
-	if err != nil {
-		return err
+func (d *Database) InitDB(ctx context.Context, persistenceDir string) error {
+	switch {
+	case d.config != nil && d.config.AWSRDS != nil:
+		config := d.config.AWSRDS
+		driver := config.Driver
+		endpoint := config.Endpoint
+		region := config.Region
+		dbUser := config.DatabaseUser
+		dbName := config.DatabaseName
+
+		credentials := aws.NewSecretCredentialsProvider(d.config.AWSRDS.Credentials)
+		authenticationToken, err := auth.BuildAuthToken(ctx, endpoint, region, dbUser, credentials)
+		if err != nil {
+			return err
+		}
+
+		dsn := fmt.Sprintf("%s:%s@tcp(%s)/%s?tls=true&allowCleartextPasswords=true", dbUser, authenticationToken, endpoint, dbName)
+		d.db, err = sql.Open(driver, dsn)
+		if err != nil {
+			return err
+		}
+
+	case d.config == nil:
+		// Default to SQLite3 if no config is provided.
+		fallthrough
+	case d.config != nil && d.config.SQL != nil && d.config.SQL.Driver == "sqlite3":
+		err := os.MkdirAll(persistenceDir, 0755)
+		if err != nil {
+			return err
+		}
+
+		d.db, err = sql.Open("sqlite3", filepath.Join(persistenceDir, "sqlite.db"))
+		if err != nil {
+			return err
+		}
+	default:
+		return errors.New("unsupported database connection type")
 	}
 
 	stmts := []string{

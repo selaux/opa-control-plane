@@ -13,7 +13,7 @@ func TestDatabaseSystemsData(t *testing.T) {
 	ctx := context.Background()
 
 	db := service.New().Database()
-	err := db.InitDB(filepath.Join(t.TempDir(), "data"))
+	err := db.InitDB(ctx, filepath.Join(t.TempDir(), "data"))
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}

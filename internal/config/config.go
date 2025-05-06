@@ -28,6 +28,7 @@ type Root struct {
 	Systems   map[string]*System  `yaml:"systems,omitempty"`
 	Libraries map[string]*Library `yaml:"libraries,omitempty"`
 	Secrets   map[string]*Secret  `yaml:"secrets,omitempty"`
+	Database  Database            `yaml:"database,omitempty"`
 }
 
 // UnmarshalYAML implements the yaml.Marshaler interface for the Root struct. This
@@ -401,6 +402,25 @@ func (d *Datasource) Equal(other *Datasource) bool {
 	}
 
 	return true
+}
+
+type Database struct {
+	SQL    *SQLDatabase `yaml:"sql,omitempty"`
+	AWSRDS *AmazonRDS   `yaml:"aws_rds,omitempty"`
+}
+
+type SQLDatabase struct {
+	Driver string `yaml:"driver"`
+	DSN    string `yaml:"dsn"`
+}
+
+type AmazonRDS struct {
+	Region       string     `yaml:"region"`
+	Endpoint     string     `yaml:"endpoint"` // hostname:port
+	Driver       string     `yaml:"driver"`   // mysql or postgres
+	DatabaseUser string     `yaml:"database_user"`
+	DatabaseName string     `yaml:"database_name"`
+	Credentials  *SecretRef `yaml:"credentials,omitempty"`
 }
 
 func EqualLibraries(a, b []*Library) bool {
