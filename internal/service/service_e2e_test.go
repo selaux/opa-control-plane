@@ -199,9 +199,9 @@ func TestFromConfig(t *testing.T) {
 		}
 
 		expectedRego := []string{
+			"package foo",
 			"package app\np := data.lib.q",
 			"package lib\nq := 7",
-			"package foo",
 		}
 		expectedData := map[string]interface{}{
 			"datasource1": map[string]interface{}{

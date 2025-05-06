@@ -86,6 +86,17 @@ func (b *Builder) Build(ctx context.Context) error {
 		}
 	}
 
+	// Add the files unconditionally to the build list.
+	for _, spec := range b.fileSpecs {
+		toBuild[spec.Path] = struct{}{}
+		files, err := listRegoFilesRecursive(spec.Path)
+		if err != nil {
+			return err
+		}
+
+		toProcess = append(toProcess, files...)
+	}
+
 	for len(toProcess) > 0 {
 		var next string
 		next, toProcess = toProcess[0], toProcess[1:]
@@ -122,6 +133,8 @@ func (b *Builder) Build(ctx context.Context) error {
 					}
 				}
 			}
+
+			// If the extra files were to be added conditionally, check for matching here.
 			return false
 		})
 	}
@@ -140,32 +153,14 @@ func (b *Builder) Build(ctx context.Context) error {
 	// favour of the compile package which would give us support for
 	// optimization levels, other targets, etc.
 	var result bundle.Bundle
-	result.Data = map[string]interface{}{} // TODO(tsandall): add data
+	result.Data = map[string]interface{}{}
 
 	for _, srcDir := range sortedSrcs {
-
-		err := walkRegoFilesRecursive(srcDir, func(path string, _ os.FileInfo) error {
-			bs, err := os.ReadFile(path)
+		err := filepath.Walk(srcDir, func(path string, fi os.FileInfo, err error) error {
 			if err != nil {
 				return err
 			}
-			result.Modules = append(result.Modules, bundle.ModuleFile{
-				Path: strings.TrimPrefix(path, srcDir),
-				Raw:  bs,
-			})
-			return nil
-		})
-		if err != nil {
-			return err
-		}
-	}
 
-	// TODO(tsandall): this logic needs to be updated to handle libraries
-	for _, spec := range b.fileSpecs {
-		err := filepath.Walk(spec.Path, func(path string, fi os.FileInfo, err error) error {
-			if err != nil {
-				return err
-			}
 			if fi.IsDir() {
 				return nil
 			}
@@ -181,9 +176,10 @@ func (b *Builder) Build(ctx context.Context) error {
 				}
 			} else if filepath.Ext(path) == ".rego" {
 				result.Modules = append(result.Modules, bundle.ModuleFile{
-					Path: strings.TrimPrefix(path, spec.Path),
+					Path: strings.TrimPrefix(path, srcDir),
 					Raw:  bs,
 				})
+
 			} else if filepath.Ext(path) == ".json" {
 				var value map[string]interface{}
 				err := json.Unmarshal(bs, &value)
@@ -191,7 +187,7 @@ func (b *Builder) Build(ctx context.Context) error {
 					return err
 				}
 
-				path = strings.TrimPrefix(path, spec.Path)
+				path = strings.TrimPrefix(path, srcDir)
 				dirpath := strings.TrimLeft(filepath.ToSlash(filepath.Dir(path)), "/.")
 
 				var key []string
