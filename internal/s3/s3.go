@@ -5,7 +5,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"time"
 
 	"cloud.google.com/go/storage"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
@@ -19,9 +18,6 @@ import (
 
 	"google.golang.org/api/option"
 )
-
-// refreshCredentialsInterval sets the refreshing interval to ensure they are up to date.
-const refreshCredentialsInterval = 5 * time.Minute
 
 var (
 	_ ObjectStorage = (*AmazonS3)(nil)
