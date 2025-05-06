@@ -21,6 +21,7 @@ import (
 
 type compareReport struct {
 	MissingSystems []string                       `json:"missing_systems,omitempty"`
+	ExtraSystems   []string                       `json:"extra_systems,omitempty"`
 	Systems        map[string]compareSystemReport `json:"systems,omitempty"`
 }
 
@@ -150,7 +151,12 @@ func doCompare(params compareParams) error {
 	ctx := context.Background()
 
 	for _, system := range sortedSystems {
-		report, err := compareSystem(ctx, &styra, v1SystemsByName, system)
+		v1, ok := v1SystemsByName[system.Name]
+		if !ok {
+			result.ExtraSystems = append(result.ExtraSystems, system.Name)
+			continue
+		}
+		report, err := compareSystem(ctx, &styra, v1, system)
 		if err != nil {
 			msg := err.Error()
 			report = &compareSystemReport{Error: &msg}
@@ -168,7 +174,7 @@ func doCompare(params compareParams) error {
 	return nil
 }
 
-func compareSystem(ctx context.Context, client *DASClient, v1SystemsByName map[string]*v1System, system *config.System) (*compareSystemReport, error) {
+func compareSystem(ctx context.Context, client *DASClient, v1 *v1System, system *config.System) (*compareSystemReport, error) {
 
 	log.Printf("Checking system %q...", system.Name)
 
@@ -190,7 +196,7 @@ func compareSystem(ctx context.Context, client *DASClient, v1SystemsByName map[s
 		a.Modules[i].Path = strings.TrimPrefix(a.Modules[i].Path, "/")
 	}
 
-	resp, err := client.JSON("v1/systems/" + v1SystemsByName[system.Name].Id + "/bundles")
+	resp, err := client.JSON("v1/systems/" + v1.Id + "/bundles")
 	if err != nil {
 		return nil, err
 	}
