@@ -372,10 +372,11 @@ func (a *AzureBlobStorage) Equal(other *AzureBlobStorage) bool {
 }
 
 type Datasource struct {
-	Name   string                 `yaml:"name"`
-	Path   string                 `yaml:"path"`
-	Type   string                 `yaml:"type"`
-	Config map[string]interface{} `yaml:"config,omitempty"`
+	Name        string                 `yaml:"name"`
+	Path        string                 `yaml:"path"`
+	Type        string                 `yaml:"type"`
+	Config      map[string]interface{} `yaml:"config,omitempty"`
+	Credentials *SecretRef             `yaml:"credentials,omitempty"`
 }
 
 func (d *Datasource) Equal(other *Datasource) bool {
@@ -401,7 +402,7 @@ func (d *Datasource) Equal(other *Datasource) bool {
 		}
 	}
 
-	return true
+	return d.Credentials.Equal(other.Credentials)
 }
 
 type Database struct {
