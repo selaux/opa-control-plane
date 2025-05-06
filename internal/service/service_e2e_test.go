@@ -14,7 +14,6 @@ import (
 
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing/object"
-	_ "github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/johannesboyne/gofakes3"
 	"github.com/johannesboyne/gofakes3/backend/s3mem"
 	"github.com/open-policy-agent/opa/bundle"
@@ -172,14 +171,10 @@ func TestFromConfig(t *testing.T) {
 
 	svc := service.New().WithConfigFile(configPath).WithPersistenceDir(persistenceDir)
 
-	doneCh := make(chan struct{})
+	doneCh := make(chan error)
 
 	go func() {
-		if err := svc.Run(ctx); err != nil {
-			t.Fatal(err)
-		}
-
-		doneCh <- struct{}{}
+		doneCh <- svc.Run(ctx)
 	}()
 
 	for {
@@ -227,6 +222,8 @@ func TestFromConfig(t *testing.T) {
 	}
 
 	cancel()
-	_ = <-doneCh
-
+	err = <-doneCh
+	if err != nil {
+		t.Fatal(err)
+	}
 }
