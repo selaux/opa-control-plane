@@ -7,8 +7,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	gohttp "net/http"
 	"os"
 
+	"github.com/bradleyfalzon/ghinstallation"
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/transport"
@@ -125,6 +127,26 @@ func (s *Synchronizer) auth(ctx context.Context) (transport.AuthMethod, error) {
 			Username: value["username"].(string),
 			Password: value["password"].(string),
 		}, nil
+	case "github_app":
+		integrationID, _ := value["integration_id"].(int64)
+		installationID, _ := value["installation_id"].(int64)
+		privateKey, _ := value["private_key"].(string)
+
+		// TODO: Reuse the token generating transport across git operations.
+		itr, err := ghinstallation.NewKeyFromFile(gohttp.DefaultTransport, integrationID, installationID, privateKey)
+		if err != nil {
+			return nil, err
+		}
+
+		token, err := itr.Token(ctx)
+		if err != nil {
+			return nil, err
+		}
+
+		return &http.TokenAuth{
+			Token: token,
+		}, nil
+
 	default:
 		return nil, fmt.Errorf("unsupported authentication type: %s", value["type"])
 	}
