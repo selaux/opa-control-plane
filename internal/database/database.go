@@ -13,6 +13,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/feature/rds/auth"
 	_ "github.com/go-sql-driver/mysql"
 	_ "github.com/jackc/pgx/v5/stdlib" // database/sql compatible driver for pgx
+	_ "github.com/mattn/go-sqlite3"
 	"github.com/tsandall/lighthouse/internal/aws"
 	"github.com/tsandall/lighthouse/internal/config"
 )
