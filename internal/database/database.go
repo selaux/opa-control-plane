@@ -1,4 +1,4 @@
-package service
+package database
 
 import (
 	"context"
@@ -198,8 +198,8 @@ func (d *Database) SystemsDataDelete(ctx context.Context, systemId, path string)
 	return err
 }
 
-// loadConfig loads the configuration from the configuration file into the database.
-func (d *Database) loadConfig(_ context.Context, configFile string) error {
+// LoadConfig loads the configuration from the configuration file into the database.
+func (d *Database) LoadConfig(_ context.Context, configFile string) error {
 
 	root, err := config.ParseFile(configFile)
 	if err != nil {
@@ -221,7 +221,7 @@ func (d *Database) loadConfig(_ context.Context, configFile string) error {
 	return nil
 }
 
-func (d *Database) listSystemsWithGitCredentials() ([]*config.System, error) {
+func (d *Database) ListSystemsWithGitCredentials() ([]*config.System, error) {
 	txn, err := d.db.Begin()
 	if err != nil {
 		return nil, err
@@ -362,7 +362,7 @@ FROM
 	return systems, nil
 }
 
-func (d *Database) listLibrariesWithGitCredentials() ([]*config.Library, error) {
+func (d *Database) ListLibrariesWithGitCredentials() ([]*config.Library, error) {
 	txn, err := d.db.Begin()
 	if err != nil {
 		return nil, err

@@ -10,6 +10,7 @@ import (
 
 	_ "github.com/mattn/go-sqlite3"
 	"github.com/tsandall/lighthouse/internal/builder"
+	"github.com/tsandall/lighthouse/internal/database"
 	"github.com/tsandall/lighthouse/internal/gitsync"
 	"github.com/tsandall/lighthouse/internal/httpsync"
 	"github.com/tsandall/lighthouse/internal/pool"
@@ -24,7 +25,7 @@ type Service struct {
 	persistenceDir string
 	pool           *pool.Pool
 	workers        map[string]*SystemWorker
-	database       Database
+	database       database.Database
 }
 
 func New() *Service {
@@ -44,7 +45,7 @@ func (s *Service) WithConfigFile(configFile string) *Service {
 	return s
 }
 
-func (s *Service) Database() *Database {
+func (s *Service) Database() *database.Database {
 	return &s.database
 }
 
@@ -54,7 +55,7 @@ func (s *Service) Run(ctx context.Context) error {
 	}
 	defer s.database.CloseDB()
 
-	if err := s.database.loadConfig(ctx, s.configFile); err != nil {
+	if err := s.database.LoadConfig(ctx, s.configFile); err != nil {
 		return err
 	}
 
@@ -76,12 +77,12 @@ shutdown:
 
 func (s *Service) launchWorkers(ctx context.Context) {
 
-	systems, err := s.database.listSystemsWithGitCredentials()
+	systems, err := s.database.ListSystemsWithGitCredentials()
 	if err != nil {
 		log.Println("error listing systems:", err)
 	}
 
-	libraries, err := s.database.listLibrariesWithGitCredentials()
+	libraries, err := s.database.ListLibrariesWithGitCredentials()
 	if err != nil {
 		log.Println("error listing libraries:", err)
 	}
