@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/credentials/ec2rolecreds"
 	"github.com/tsandall/lighthouse/internal/config"
 )
 
@@ -19,7 +20,7 @@ type SecretCredentialsProvider struct {
 	credentials *config.SecretRef
 }
 
-func NewSecretCredentialsProvider(credentials *config.SecretRef) *SecretCredentialsProvider {
+func NewSecretCredentialsProvider(credentials *config.SecretRef) aws.CredentialsProvider {
 	return &SecretCredentialsProvider{
 		credentials: credentials,
 	}
@@ -51,6 +52,20 @@ func (s *SecretCredentialsProvider) Retrieve(ctx context.Context) (aws.Credentia
 		}
 
 		return aws.Credentials{}, fmt.Errorf("missing access_key_id or secret_access_key in credentials")
+	case "aws_imds":
+		creds, err := ec2rolecreds.New().Retrieve(ctx)
+		if err != nil {
+			return aws.Credentials{}, err
+		}
+
+		expires := time.Now().Add(refreshCredentialsInterval)
+		if creds.Expires.After(expires) {
+			creds.CanExpire = true
+			creds.Expires = expires
+		}
+
+		return creds, nil
+
 	default:
 		return aws.Credentials{}, fmt.Errorf("unsupported authentication type: %s", value["type"])
 	}
