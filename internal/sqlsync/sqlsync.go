@@ -17,7 +17,15 @@ type SQLDataSynchronizer struct {
 	table, pk, id string
 }
 
-func NewSQLDataSynchronizer(path string, db *sql.DB, table, pk, id string) *SQLDataSynchronizer {
+func NewSQLLibraryDataSynchronizer(path string, db *sql.DB, id string) *SQLDataSynchronizer {
+	return newSQLDataSynchronizer(path, db, "libraries_data", "library_id", id)
+}
+
+func NewSQLSystemDataSynchronizer(path string, db *sql.DB, id string) *SQLDataSynchronizer {
+	return newSQLDataSynchronizer(path, db, "systems_data", "system_id", id)
+}
+
+func newSQLDataSynchronizer(path string, db *sql.DB, table, pk, id string) *SQLDataSynchronizer {
 	return &SQLDataSynchronizer{path: path, db: db, table: table, pk: pk, id: id}
 }
 
