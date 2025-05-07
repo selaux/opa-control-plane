@@ -15,10 +15,11 @@ import (
 	_ "github.com/jackc/pgx/v5/stdlib" // database/sql compatible driver for pgx
 	"github.com/tsandall/lighthouse/internal/aws"
 	"github.com/tsandall/lighthouse/internal/config"
+	"github.com/tsandall/lighthouse/internal/sqlsync"
 )
 
-// Database implements the database operations.
-// TODO: Move more database code here.
+// Database implements the database operations. It will hide any differences between the varying SQL databases from the rest of the codebase.
+// TODO: Move this into its own package to avoid referring to sqlsync package here.
 type Database struct {
 	db     *sql.DB
 	config *config.Database
@@ -479,6 +480,50 @@ WHERE (libraries_secrets.ref_type = 'git_credentials' AND secrets.value IS NOT N
 
 	return libraries, nil
 
+}
+
+func (d *Database) QueryLibraryData(id string) (sqlsync.DataCursor, error) {
+	return d.queryData("libraries_data", "library_id", id)
+}
+
+func (d *Database) QuerySystemData(id string) (sqlsync.DataCursor, error) {
+	return d.queryData("systems_data", "system_id", id)
+}
+
+func (d *Database) queryData(table, pk, id string) (sqlsync.DataCursor, error) {
+	rows, err := d.db.Query(fmt.Sprintf(`SELECT
+	path,
+	data
+FROM
+	%v
+WHERE
+	%v = ?`, table, pk), id)
+	if err != nil {
+		return nil, err
+	}
+	return &DataCursor{rows: rows}, nil
+}
+
+type DataCursor struct {
+	rows *sql.Rows
+}
+
+func (c *DataCursor) Next() bool {
+	return c.rows.Next()
+}
+
+func (c *DataCursor) Close() error {
+	return c.rows.Close()
+}
+
+func (c *DataCursor) Value() (sqlsync.Data, error) {
+	var path string
+	var data []byte
+	if err := c.rows.Scan(&path, &data); err != nil {
+		return sqlsync.Data{}, err
+	}
+
+	return sqlsync.Data{Path: path, Data: data}, nil
 }
 
 func (d *Database) loadSystems(root *config.Root) error {

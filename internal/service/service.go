@@ -120,7 +120,7 @@ func (s *Service) launchWorkers(ctx context.Context) {
 		fs := []*builder.FileSpec{{Path: systemFileDir}}
 
 		syncs := []Synchronizer{
-			sqlsync.NewSQLSystemDataSynchronizer(systemFileDir, s.database.db, system.Name),
+			sqlsync.NewSQLSystemDataSynchronizer(systemFileDir, &s.database, system.Name),
 		}
 
 		if system.Git.Repo != "" {
@@ -155,7 +155,7 @@ func (s *Service) launchWorkers(ctx context.Context) {
 			}
 
 			libFileDir := path.Join(s.persistenceDir, "files", md5sum(system.Name)+"@"+l.Name)
-			syncs = append(syncs, sqlsync.NewSQLLibraryDataSynchronizer(libFileDir, s.database.db, l.Name))
+			syncs = append(syncs, sqlsync.NewSQLLibraryDataSynchronizer(libFileDir, &s.database, l.Name))
 			fs = append(fs, &builder.FileSpec{Path: libFileDir})
 		}
 
