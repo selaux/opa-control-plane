@@ -3,6 +3,7 @@ package s3
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 
@@ -62,11 +63,18 @@ func New(ctx context.Context, config config.ObjectStorage) (ObjectStorage, error
 			options = append(options, awsconfig.WithRegion(region))
 		}
 
-		option, err := s3auth(ctx, config.AmazonS3)
-		if err != nil {
-			return nil, err
-		}
-		if option != nil {
+		if config.AmazonS3.Credentials == nil {
+			// No explicit credentials configured, use AWS default credential provider chain:
+			// 1) Environment variables.
+			// 2) Shared credentials file.
+			// 3) If your application uses an ECS task definition or RunTask API operation, IAM role for tasks.
+			// 4) If your application is running on an Amazon EC2 instance, IAM role for Amazon EC2.
+		} else {
+			// Use only the credentials (access key, secret key, session token) provided in the configuration.
+			option, err := s3auth(ctx, config.AmazonS3)
+			if err != nil {
+				return nil, err
+			}
 			options = append(options, option)
 		}
 
@@ -84,64 +92,62 @@ func New(ctx context.Context, config config.ObjectStorage) (ObjectStorage, error
 
 		return &AmazonS3{bucket: config.AmazonS3.Bucket, key: config.AmazonS3.Key, uploader: manager.NewUploader(client), client: client}, nil
 	case config.GCPCloudStorage != nil:
-		secret, err := config.GCPCloudStorage.Credentials.Resolve()
-		if err != nil {
-			return nil, err
-		}
-
-		value, err := secret.Get(ctx)
-		if err != nil {
-			return nil, err
-		}
-
-		// TODO: Not clear how to handle dynamic credentials with GCP.
-
 		var client *storage.Client
 
-		apiKey, _ := value["api_key"].(string)
-		credentials, _ := value["credentials"].(string)
-
-		if apiKey != "" {
-			client, err = storage.NewClient(ctx, option.WithAPIKey(apiKey))
-		} else if credentials != "" {
-			client, err = storage.NewClient(ctx, option.WithCredentialsJSON([]byte(credentials)))
-		} else {
-			// Use default credentials if no API key is provided.
+		if config.GCPCloudStorage.Credentials == nil {
+			// Use "Application Default Credentials" if nothing explicitly provided:
+			// 1) GOOGLE_APPLICATION_CREDENTIALS environment variable
+			// 2) A credential file created by using the gcloud auth application-default login command
+			// 3) The attached service account, returned by the metadata server
+			var err error
 			client, err = storage.NewClient(ctx)
-		}
-		if err != nil {
-			return nil, err
+			if err != nil {
+				return nil, err
+			}
+		} else {
+			// Use only the credentials (api key or JSON credentials) provided in the configuration.
+			secret, err := config.GCPCloudStorage.Credentials.Resolve()
+			if err != nil {
+				return nil, err
+			}
+
+			value, err := secret.Get(ctx)
+			if err != nil {
+				return nil, err
+			}
+
+			// TODO: Not clear how to handle dynamic credentials with GCP.
+
+			apiKey, _ := value["api_key"].(string)
+			credentials, _ := value["credentials"].(string)
+
+			if apiKey != "" {
+				client, err = storage.NewClient(ctx, option.WithAPIKey(apiKey))
+			} else if credentials != "" {
+				client, err = storage.NewClient(ctx, option.WithCredentialsJSON([]byte(credentials)))
+			} else {
+				return nil, errors.New("missing api_key or credentials in GCP secret")
+			}
+			if err != nil {
+				return nil, err
+			}
 		}
 
 		return &GCPCloudStorage{project: config.GCPCloudStorage.Project, bucket: config.GCPCloudStorage.Bucket, object: config.GCPCloudStorage.Object, client: client}, nil
 	case config.AzureBlobStorage != nil:
-		secret, err := config.AzureBlobStorage.Credentials.Resolve()
-		if err != nil {
-			return nil, err
-		}
-
-		value, err := secret.Get(ctx)
-		if err != nil {
-			return nil, err
-		}
-
-		// TODO: Not clear how to handle dynamic credentials with Azure.
-
-		accountName, _ := value["account_name"].(string)
-		accountKey, _ := value["account_key"].(string)
-
 		var client *azblob.Client
-		if accountName != "" && accountKey != "" {
-			credential, err := azblob.NewSharedKeyCredential(accountName, accountKey)
-			if err != nil {
-				return nil, err
-			}
 
-			client, err = azblob.NewClientWithSharedKeyCredential(config.AzureBlobStorage.AccountURL, credential, nil)
-			if err != nil {
-				return nil, err
-			}
-		} else {
+		if config.AzureBlobStorage.Credentials == nil {
+			// Use "DefaultAzureCredential" which is an opinionated, preconfigured chain of credentials. It's designed to support many environments,
+			// along with the most common authentication flows and developer tools:
+			//
+			// 	1) Reads a collection of environment variables to determine if an application service principal (application user) is configured for the app.
+			//     If so, DefaultAzureCredential uses these values to authenticate the app to Azure. This method is most often used in server environments
+			//     but can also be used when developing locally.
+			// 2) If the app is deployed to an Azure host with Workload Identity enabled, authenticate that account.
+			// 3) If the app is deployed to an Azure host with Managed Identity enabled, authenticate the app to Azure using that Managed Identity.
+			// 4) If the developer authenticated to Azure using Azure CLI's az login command, authenticate the app to Azure using that same account.
+			// 5) If the developer authenticated to Azure using Azure Developer CLI's azd auth login command, authenticate with that account.
 			credential, err := azidentity.NewDefaultAzureCredential(nil)
 			if err != nil {
 				return nil, err
@@ -150,6 +156,36 @@ func New(ctx context.Context, config config.ObjectStorage) (ObjectStorage, error
 			client, err = azblob.NewClient(config.AzureBlobStorage.AccountURL, credential, nil)
 			if err != nil {
 				return nil, err
+			}
+		} else {
+			// Use only the credentials (account key) provided in the configuration.
+			secret, err := config.AzureBlobStorage.Credentials.Resolve()
+			if err != nil {
+				return nil, err
+			}
+
+			value, err := secret.Get(ctx)
+			if err != nil {
+				return nil, err
+			}
+
+			// TODO: Not clear how to handle dynamic credentials with Azure.
+
+			accountName, _ := value["account_name"].(string)
+			accountKey, _ := value["account_key"].(string)
+
+			if accountName != "" && accountKey != "" {
+				credential, err := azblob.NewSharedKeyCredential(accountName, accountKey)
+				if err != nil {
+					return nil, err
+				}
+
+				client, err = azblob.NewClientWithSharedKeyCredential(config.AzureBlobStorage.AccountURL, credential, nil)
+				if err != nil {
+					return nil, err
+				}
+			} else {
+				return nil, errors.New("missing account_name or account_key in Azure secret")
 			}
 		}
 
