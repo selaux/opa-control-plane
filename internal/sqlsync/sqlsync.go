@@ -4,6 +4,8 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+
+	"github.com/tsandall/lighthouse/internal/database"
 )
 
 // SQLDataSynchronizer is a struct that implements the Synchronizer interface for bundle files stored in SQL database.
@@ -11,32 +13,15 @@ import (
 // dumps files stored in SQL database into a directory used by the builder package to construct a bundle.
 type SQLDataSynchronizer struct {
 	path  string
-	query func(string) (DataCursor, error)
+	query func(string) (*database.DataCursor, error)
 	id    string
 }
 
-type Database interface {
-	QueryLibraryData(string) (DataCursor, error)
-	QuerySystemData(string) (DataCursor, error)
-}
-
-// TODO: Move this to database package with Data struct.
-type DataCursor interface {
-	Close() error
-	Next() bool
-	Value() (Data, error)
-}
-
-type Data struct {
-	Path string
-	Data []byte
-}
-
-func NewSQLLibraryDataSynchronizer(path string, db Database, id string) *SQLDataSynchronizer {
+func NewSQLLibraryDataSynchronizer(path string, db *database.Database, id string) *SQLDataSynchronizer {
 	return &SQLDataSynchronizer{path: path, query: db.QueryLibraryData, id: id}
 }
 
-func NewSQLSystemDataSynchronizer(path string, db Database, id string) *SQLDataSynchronizer {
+func NewSQLSystemDataSynchronizer(path string, db *database.Database, id string) *SQLDataSynchronizer {
 	return &SQLDataSynchronizer{path: path, query: db.QuerySystemData, id: id}
 }
 
