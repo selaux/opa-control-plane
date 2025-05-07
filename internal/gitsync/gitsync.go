@@ -123,9 +123,11 @@ func (s *Synchronizer) auth(ctx context.Context) (transport.AuthMethod, error) {
 
 	switch value["type"] {
 	case "http_basic_auth":
+		username, _ := value["username"].(string)
+		password, _ := value["password"].(string)
 		return &http.BasicAuth{
-			Username: value["username"].(string),
-			Password: value["password"].(string),
+			Username: username,
+			Password: password,
 		}, nil
 	case "github_app":
 		integrationID, _ := value["integration_id"].(int64)
