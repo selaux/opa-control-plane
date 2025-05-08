@@ -43,7 +43,7 @@ func TestS3(t *testing.T) {
 		t.Fatalf("failed to create storage: %v", err)
 	}
 
-	bundle := bytes.NewBuffer([]byte("bundle content"))
+	bundle := bytes.NewReader([]byte("bundle content"))
 	err = storage.Upload(ctx, bundle)
 	if err != nil {
 		t.Fatalf("expected no error while uploading bundle: %v", err)

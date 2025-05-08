@@ -123,10 +123,8 @@ func (w *SystemWorker) Execute() time.Time {
 		return time.Now().Add(errorDelay)
 	}
 
-	// TODO: Compare here the bulder output with the previous one and only upload if it has changed.
-
 	if w.storage != nil {
-		if err := w.storage.Upload(ctx, buffer); err != nil {
+		if err := w.storage.Upload(ctx, bytes.NewReader(buffer.Bytes())); err != nil {
 			log.Printf("failed to upload system bundle %q: %v", w.systemConfig.Name, err)
 			return time.Now().Add(errorDelay)
 		}

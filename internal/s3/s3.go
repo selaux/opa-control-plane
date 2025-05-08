@@ -3,6 +3,8 @@ package s3
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -14,6 +16,7 @@ import (
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/feature/s3/manager"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 	iaws "github.com/tsandall/lighthouse/internal/aws"
 	"github.com/tsandall/lighthouse/internal/config"
 
@@ -28,7 +31,7 @@ var (
 
 type (
 	ObjectStorage interface {
-		Upload(ctx context.Context, body io.Reader) error
+		Upload(ctx context.Context, body io.ReadSeeker) error
 		Download(ctx context.Context) (io.Reader, error)
 	}
 
@@ -216,17 +219,34 @@ func (e *Error) Error() string {
 	return e.Message
 }
 
-// Upload uploads a file to the S3-compatible storage.
-func (s *AmazonS3) Upload(ctx context.Context, body io.Reader) error {
-	_, err := s.uploader.Upload(ctx, &s3.PutObjectInput{
+// Upload uploads a file to the S3-compatible storage. It computes the SHA256 digest of the file and records that to the object metadata.
+// Relying on object ETag is not if the object is encrypted with SSE-C or SSE-KMS, as the ETag will not be the MD5 hash of the object.
+// With (part) checksums, only parallellizable, less reliable checksums (CRCs) are supported.
+func (s *AmazonS3) Upload(ctx context.Context, body io.ReadSeeker) error {
+
+	digest, equal, err := s.check(ctx, body)
+	if equal || err != nil {
+		return err
+	}
+
+	_, err = body.Seek(0, io.SeekStart)
+	if err != nil {
+		return err
+	}
+
+	_, err = s.uploader.Upload(ctx, &s3.PutObjectInput{
 		Bucket: aws.String(s.bucket),
 		Key:    aws.String(s.key),
 		Body:   body,
+		Metadata: map[string]string{
+			"sha256": hex.EncodeToString(digest),
+		},
 	})
 	return err
 }
 
 func (s *AmazonS3) Download(ctx context.Context) (io.Reader, error) {
+
 	output, err := s.client.GetObject(ctx, &s3.GetObjectInput{
 		Bucket: aws.String(s.bucket),
 		Key:    aws.String(s.key),
@@ -237,7 +257,36 @@ func (s *AmazonS3) Download(ctx context.Context) (io.Reader, error) {
 	return output.Body, nil
 }
 
-func (s *GCPCloudStorage) Upload(ctx context.Context, body io.Reader) error {
+func (s *AmazonS3) check(ctx context.Context, body io.Reader) ([]byte, bool, error) {
+	d := sha256.New()
+	_, err := io.Copy(d, body)
+	if err != nil {
+		return nil, false, err
+	}
+
+	digest := d.Sum(nil)
+
+	output, err := s.client.HeadObject(ctx, &s3.HeadObjectInput{
+		Bucket: aws.String(s.bucket),
+		Key:    aws.String(s.key),
+	})
+	if err != nil {
+		var noKey *types.NoSuchKey
+		var notFound *types.NotFound
+		if errors.As(err, &noKey) || errors.As(err, &notFound) {
+			return digest, false, nil
+		}
+
+		return nil, false, err
+	}
+	if output.Metadata == nil {
+		return digest, false, nil
+	}
+
+	return digest, output.Metadata["sha256"] == hex.EncodeToString(digest), nil
+}
+
+func (s *GCPCloudStorage) Upload(ctx context.Context, body io.ReadSeeker) error {
 	w := s.client.Bucket(s.bucket).Object(s.object).NewWriter(ctx)
 	if _, err := io.Copy(w, body); err != nil {
 		return err
@@ -250,7 +299,7 @@ func (s *GCPCloudStorage) Download(ctx context.Context) (io.Reader, error) {
 	return nil, fmt.Errorf("not implemented")
 }
 
-func (s *AzureBlobStorage) Upload(ctx context.Context, body io.Reader) error {
+func (s *AzureBlobStorage) Upload(ctx context.Context, body io.ReadSeeker) error {
 	_, err := s.client.UploadStream(ctx, s.container, s.path, body, nil)
 	return err
 }
