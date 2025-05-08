@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"context"
 	"log"
+	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/tsandall/lighthouse/internal/builder"
@@ -99,6 +101,31 @@ func (w *SystemWorker) Execute() time.Time {
 		var zero time.Time
 		return zero
 	default:
+	}
+
+	// Wipe any old files synchronized during the previous run to avoid deleted files in database/http from reappearing to system bundles.
+	for _, file := range w.files {
+		if file.Path == "" {
+			continue
+		}
+
+		if _, err := os.Stat(file.Path); os.IsNotExist(err) {
+			continue
+		}
+
+		files, err := os.ReadDir(file.Path)
+		if err != nil {
+			log.Printf("failed to read directory %q: %v", file.Path, err)
+			return time.Now().Add(errorDelay)
+		}
+
+		for _, f := range files {
+			err := os.RemoveAll(filepath.Join(file.Path, f.Name()))
+			if err != nil {
+				log.Printf("failed to remove file %q: %v", filepath.Join(file.Path, f.Name()), err)
+				return time.Now().Add(errorDelay)
+			}
+		}
 	}
 
 	for _, synchronizer := range w.synchronizers {
