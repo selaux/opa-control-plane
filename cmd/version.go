@@ -5,14 +5,13 @@ import (
 	"io"
 	"os"
 	"runtime"
+	"runtime/debug"
 
 	"github.com/spf13/cobra"
 )
 
 var (
-	Version   = "0.0.0-dev"
-	GoVersion = runtime.Version()
-	Platform  = runtime.GOOS + "/" + runtime.GOARCH
+	version = "0.0.0-dev"
 )
 
 func init() {
@@ -31,7 +30,38 @@ func init() {
 }
 
 func generateCmdOutput(out io.Writer) {
-	fmt.Fprintln(out, "Version: "+Version)
-	fmt.Fprintln(out, "Go Version: "+GoVersion)
-	fmt.Fprintln(out, "Platform: "+Platform)
+	goVersion := runtime.Version()
+	platform := runtime.GOOS + "/" + runtime.GOARCH
+	binVcs := ""
+	binTimestamp := ""
+	hostname := ""
+
+	bi, ok := debug.ReadBuildInfo()
+	if !ok {
+		return
+	}
+	var dirty bool
+
+	for _, s := range bi.Settings {
+		switch s.Key {
+		case "vcs.time":
+			binTimestamp = s.Value
+		case "vcs.revision":
+			binVcs = s.Value
+		case "vcs.modified":
+			dirty = s.Value == "true"
+		}
+	}
+
+	if dirty {
+		binVcs += "-dirty"
+	}
+
+	fmt.Fprintln(out, "Version: "+version)
+	fmt.Fprintln(out, "Build Commit: "+binVcs)
+	fmt.Fprintln(out, "Build Timestamp: "+binTimestamp)
+	fmt.Fprintln(out, "Build Hostname: "+hostname)
+	fmt.Fprintln(out, "Go Version: "+goVersion)
+	fmt.Fprintln(out, "Platform: "+platform)
+
 }
