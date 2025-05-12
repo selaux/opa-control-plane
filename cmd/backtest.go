@@ -10,6 +10,7 @@ import (
 	"reflect"
 	"strings"
 
+	"github.com/akedrou/textdiff"
 	"github.com/open-policy-agent/opa/ast"
 	"github.com/open-policy-agent/opa/bundle"
 	"github.com/open-policy-agent/opa/rego"
@@ -190,17 +191,28 @@ func compareResults(d *v1Decision, rs rego.ResultSet) error {
 
 	if d.Result == nil {
 		if len(rs) > 0 {
-			return fmt.Errorf("logged decision was undefined but bundle decision was not")
+			return fmt.Errorf("Logged decision was undefined but bundle decision was not")
 		}
 		return nil
 	}
 
 	if len(rs) == 0 {
-		return fmt.Errorf("logged decision was defined but bundle decision was not")
+		return fmt.Errorf("Logged decision was defined but bundle decision was not")
 	}
 
 	if !reflect.DeepEqual(rs[0].Expressions[0].Value, *d.Result) {
-		return fmt.Errorf("decision %v differed from logged", d.DecisionId)
+
+		aBytes, err := json.MarshalIndent(rs[0].Expressions[0].Value, "", "  ")
+		if err != nil {
+			return err
+		}
+
+		bBytes, err := json.MarshalIndent(*d.Result, "", "  ")
+		if err != nil {
+			return err
+		}
+
+		return fmt.Errorf(textdiff.Unified("Expected", "Found", string(bBytes), string(aBytes)))
 	}
 
 	return nil
