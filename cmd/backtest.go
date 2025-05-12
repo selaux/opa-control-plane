@@ -7,7 +7,6 @@ import (
 	"log"
 	"net/http"
 	"os"
-	"reflect"
 	"strings"
 
 	"github.com/akedrou/textdiff"
@@ -200,7 +199,17 @@ func compareResults(d *v1Decision, rs rego.ResultSet) error {
 		return fmt.Errorf("Logged decision was defined but bundle decision was not")
 	}
 
-	if !reflect.DeepEqual(rs[0].Expressions[0].Value, *d.Result) {
+	a, err := ast.InterfaceToValue(rs[0].Expressions[0].Value)
+	if err != nil {
+		return err
+	}
+
+	b, err := ast.InterfaceToValue(*d.Result)
+	if err != nil {
+		return err
+	}
+
+	if a.Compare(b) != 0 {
 
 		aBytes, err := json.MarshalIndent(rs[0].Expressions[0].Value, "", "  ")
 		if err != nil {
