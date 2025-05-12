@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	neturl "net/url"
 	"os"
 	"strings"
 	"time"
@@ -62,8 +63,28 @@ func (r *DASResponse) Decode(x interface{}) error {
 	return decoder.Decode(x)
 }
 
-func (c *DASClient) Get(path string) (*http.Response, error) {
+type DASParams struct {
+	Query map[string]string
+}
+
+func (c *DASClient) Get(path string, params ...DASParams) (*http.Response, error) {
 	url := fmt.Sprintf("%v/%v", c.url, "/"+strings.TrimPrefix(path, "/"))
+
+	var p DASParams
+	if len(params) > 0 {
+		p = params[0]
+	}
+
+	if len(p.Query) > 0 {
+
+		qps := []string{}
+		for key, value := range p.Query {
+			qps = append(qps, fmt.Sprintf("%v=%v", neturl.QueryEscape(key), neturl.QueryEscape(value)))
+		}
+
+		url += "?" + strings.Join(qps, "&")
+	}
+
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
 		return nil, err
@@ -84,9 +105,9 @@ func (c *DASClient) Get(path string) (*http.Response, error) {
 
 }
 
-func (c *DASClient) JSON(path string) (*DASResponse, error) {
+func (c *DASClient) JSON(path string, params ...DASParams) (*DASResponse, error) {
 
-	resp, err := c.Get(path)
+	resp, err := c.Get(path, params...)
 	if err != nil {
 		return nil, err
 	}
@@ -373,4 +394,18 @@ type v1Bundle struct {
 			Roots []string `json:"roots"`
 		} `json:"origins"`
 	} `json:"sbom"`
+}
+
+type v1Decisions struct {
+	Items []v1Decision `json:"items"`
+}
+
+type v1Decision struct {
+	DecisionId string `json:"decision_id"`
+	Bundles    map[string]struct {
+		Revision string `json:"revision"`
+	} `json:"bundles"`
+	Path   string       `json:"path"`
+	Input  *interface{} `json:"input"`
+	Result *interface{} `json:"result"`
 }
