@@ -2,12 +2,12 @@ package cmd
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
 	"os"
 	"reflect"
-	"sort"
 	"strings"
 
 	"github.com/open-policy-agent/opa/ast"
@@ -48,6 +48,12 @@ func init() {
 
 }
 
+type backtestReport struct {
+	MissingSystems   []string          `json:"missing_systems,omitempty"`
+	MissingDecisions []string          `json:"missing_decisions,omitempty"`
+	Systems          map[string]string `json:"systems,omitempty"`
+}
+
 func doBacktest(params backtestParams) error {
 
 	log.Printf("Loading configuration from %v...", params.configFile)
@@ -71,13 +77,6 @@ func doBacktest(params backtestParams) error {
 		token:  params.styraToken,
 		client: http.DefaultClient}
 
-	var sortedSystems []string
-	for name := range cfg.Systems {
-		sortedSystems = append(sortedSystems, name)
-	}
-
-	sort.Strings(sortedSystems)
-
 	log.Println("Fetching systems...")
 	resp, err := styra.JSON("v1/systems")
 	if err != nil {
@@ -94,47 +93,58 @@ func doBacktest(params backtestParams) error {
 		v1SystemsByName[system.Name] = system
 	}
 
-	var v1 *v1System
-	var decisions v1Decisions
-
-	for _, name := range sortedSystems {
-
-		var ok bool
-		v1, ok = v1SystemsByName[name]
-		if !ok {
-			continue
-		}
-
-		resp, err = styra.JSON("v1/decisions", DASParams{
-			Query: map[string]string{
-				"limit":  "10",
-				"system": v1.Id,
-			},
-		})
-		if err != nil {
-			return err
-		}
-
-		if err := resp.Decode(&decisions); err != nil {
-			return err
-		}
-
-		if len(decisions.Items) == 0 {
-			continue
-		}
-
-		break
+	report := backtestReport{
+		Systems: map[string]string{},
 	}
-
-	if len(decisions.Items) == 0 {
-		return fmt.Errorf("Could not find any matching systems with decisions")
-	}
-
-	log.Printf("Picked system %q (%v)...", v1.Name, v1.Id)
 
 	ctx := context.Background()
 
-	s, err := s3.New(ctx, cfg.Systems[v1.Name].ObjectStorage)
+	for _, system := range cfg.Systems {
+		if err := backtestSystem(ctx, &styra, v1SystemsByName, system, &report); err != nil {
+			report.Systems[system.Name] = err.Error()
+		}
+	}
+
+	bs, err := json.MarshalIndent(report, "", "  ")
+	if err != nil {
+		return err
+	}
+
+	fmt.Fprintln(os.Stdout, string(bs))
+
+	return nil
+}
+
+func backtestSystem(ctx context.Context, styra *DASClient, byName map[string]*v1System, system *config.System, report *backtestReport) error {
+
+	v1, ok := byName[system.Name]
+	if !ok {
+		report.MissingSystems = append(report.MissingSystems, system.Name)
+		return nil
+	}
+
+	resp, err := styra.JSON("v1/decisions", DASParams{
+		Query: map[string]string{
+			"limit":  "10",
+			"system": v1.Id,
+		},
+	})
+	if err != nil {
+		return err
+	}
+
+	var decisions v1Decisions
+
+	if err := resp.Decode(&decisions); err != nil {
+		return err
+	}
+
+	if len(decisions.Items) == 0 {
+		report.MissingDecisions = append(report.MissingDecisions, system.Name)
+		return nil
+	}
+
+	s, err := s3.New(ctx, system.ObjectStorage)
 	if err != nil {
 		return err
 	}
