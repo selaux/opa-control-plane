@@ -49,7 +49,7 @@ func init() {
 }
 
 type backtestReport struct {
-	MissingSystems   []string          `json:"missing_systems,omitempty"`
+	ExtraSystems     []string          `json:"extra_systems,omitempty"`
 	MissingDecisions []string          `json:"missing_decisions,omitempty"`
 	Systems          map[string]string `json:"systems,omitempty"`
 }
@@ -119,7 +119,7 @@ func backtestSystem(ctx context.Context, styra *DASClient, byName map[string]*v1
 
 	v1, ok := byName[system.Name]
 	if !ok {
-		report.MissingSystems = append(report.MissingSystems, system.Name)
+		report.ExtraSystems = append(report.ExtraSystems, system.Name)
 		return nil
 	}
 
