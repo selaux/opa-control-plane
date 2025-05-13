@@ -8,6 +8,7 @@ import (
 	"net/http"
 	neturl "net/url"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -185,7 +186,7 @@ func getNonGitFiles(client *DASClient, id string) (config.Files, error) {
 			return nil, err
 		}
 
-		b, err := bundle.NewReader(resp.Body).Read()
+		b, err := bundle.NewReader(resp.Body).WithLazyLoadingMode(true).Read()
 		if err != nil {
 			return nil, err
 		}
@@ -193,6 +194,12 @@ func getNonGitFiles(client *DASClient, id string) (config.Files, error) {
 		for _, mf := range b.Modules {
 			if !rootsPrefix(roots, mf.Path) {
 				result[mf.Path] = string(mf.Raw)
+			}
+		}
+
+		for _, rf := range b.Raw {
+			if filepath.Base(rf.Path) == "data.json" && !rootsPrefix(roots, rf.Path) {
+				result[rf.Path] = string(rf.Value)
 			}
 		}
 	}
