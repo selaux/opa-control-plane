@@ -98,10 +98,6 @@ func (s *Synchronizer) Execute(ctx context.Context) error {
 		return errors.New("either reference or commit must be set in git configuration")
 	}
 
-	if s.config.Path != nil {
-		checkoutOpts.SparseCheckoutDirectories = []string{*s.config.Path}
-	}
-
 	return w.Checkout(checkoutOpts)
 }
 

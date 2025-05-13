@@ -175,10 +175,10 @@ func TestFromConfigWithGit(t *testing.T) {
 		}
 
 		expectedRego := map[string]string{
-			"foo.rego":     "package foo",
-			"app/app.rego": "package app\np := data.lib.q",
-			"lib/lib.rego": "package lib\nq := data.lib.s",
-			"bar.rego":     "package lib\ns := true",
+			"foo.rego": "package foo",
+			"app.rego": "package app\np := data.lib.q",
+			"lib.rego": "package lib\nq := data.lib.s",
+			"bar.rego": "package lib\ns := true",
 		}
 		expectedData := map[string]interface{}{
 			"datasource1": map[string]interface{}{

@@ -125,8 +125,12 @@ func (s *Service) launchWorkers(ctx context.Context) {
 		}
 
 		if system.Git.Repo != "" {
-			ss.Repo = path.Join(s.persistenceDir, "repos", md5sum(system.Name))
-			syncs = append(syncs, gitsync.New(ss.Repo, system.Git))
+			repoDir := path.Join(s.persistenceDir, "repos", md5sum(system.Name))
+			ss.Repo = repoDir
+			if system.Git.Path != nil {
+				ss.Repo = path.Join(ss.Repo, *system.Git.Path)
+			}
+			syncs = append(syncs, gitsync.New(repoDir, system.Git))
 		}
 
 		for _, datasource := range system.Datasources {
@@ -140,9 +144,16 @@ func (s *Service) launchWorkers(ctx context.Context) {
 
 		var ls []*builder.LibrarySpec
 		for _, l := range libraries {
+
+			libSpec := &builder.LibrarySpec{}
+
 			if l.Git.Repo != "" {
 				libRepoDir := path.Join(s.persistenceDir, "repos", md5sum(system.Name+"@"+l.Name))
-				ls = append(ls, &builder.LibrarySpec{Repo: libRepoDir})
+				libSpec.Repo = libRepoDir
+				if l.Git.Path != nil {
+					libSpec.Repo = path.Join(libSpec.Repo, *l.Git.Path)
+				}
+				ls = append(ls, libSpec)
 				syncs = append(syncs, gitsync.New(libRepoDir, l.Git))
 			}
 
