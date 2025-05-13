@@ -3,6 +3,7 @@ package cmd
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
@@ -221,7 +222,7 @@ func compareResults(d *v1Decision, rs rego.ResultSet) error {
 			return err
 		}
 
-		return fmt.Errorf(textdiff.Unified("Expected", "Found", string(bBytes), string(aBytes)))
+		return errors.New(textdiff.Unified("Expected", "Found", string(bBytes), string(aBytes)))
 	}
 
 	return nil
