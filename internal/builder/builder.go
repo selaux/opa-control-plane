@@ -64,6 +64,7 @@ func (b *Builder) Build(ctx context.Context) error {
 	// this means that libraries must be syntactically valid when synched otherwise
 	// all builds will stop.
 	// TODO(tsandall): precompute if this becomes a bottleneck
+
 	for i := range b.librarySpecs {
 		if b.librarySpecs[i].Roots == nil {
 			var err error
@@ -116,7 +117,15 @@ func (b *Builder) Build(ctx context.Context) error {
 			if errInner != nil {
 				return true
 			}
+
+			// only data refs can introduce library dependencies so skip
+			// everything else (e.g., input.foo, f(x)[_], etc.) but be sure to
+			// continue recursing so we visit all nodes.
 			p := r.ConstantPrefix()
+			if !p.HasPrefix(ast.DefaultRootRef) {
+				return false
+			}
+
 			for _, l := range b.librarySpecs {
 				if _, ok := toBuild[l.RootDir]; ok {
 					continue

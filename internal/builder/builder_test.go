@@ -10,7 +10,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/open-policy-agent/opa/ast"
 	"github.com/open-policy-agent/opa/bundle"
 
 	"github.com/tsandall/lighthouse/internal/builder"
@@ -102,6 +101,31 @@ func TestBuilder(t *testing.T) {
 				"/data.json": `{"bar":{"a":1,"b":2},"baz":{"bar":{"c":3,"d":4}},"qux":[1,2]}`,
 			},
 		},
+		{
+			note: "nested refs",
+			systemFiles: map[string]string{
+				"x.rego": `
+					package x
+					p := f([data.lib.r])[_]  # parses as ref(call(...), var(_))
+				`,
+			},
+			libFiles: []map[string]string{{
+				"y.rego": `
+					package lib
+
+					r := 7`,
+			}},
+			exp: map[string]string{
+				"/x.rego": `
+					package x
+					p := f([data.lib.r])[_]  # parses as ref(call(...), var(_))
+				`,
+				"/y.rego": `
+					package lib
+
+					r := 7`,
+			},
+		},
 	}
 
 	for _, tc := range cases {
@@ -134,7 +158,6 @@ func TestBuilder(t *testing.T) {
 				for i := range tc.libFiles {
 					libSpecs = append(libSpecs, &builder.LibrarySpec{
 						RootDir: filepath.Join(root, fmt.Sprintf("lib%d", i)),
-						Roots:   []ast.Ref{ast.MustParseRef(fmt.Sprintf("data.lib%d", i))},
 					})
 				}
 
