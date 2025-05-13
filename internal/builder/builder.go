@@ -3,6 +3,7 @@ package builder
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -180,7 +181,7 @@ func (b *Builder) Build(ctx context.Context) error {
 				})
 
 			} else if filepath.Ext(path) == ".json" {
-				var value map[string]interface{}
+				var value interface{}
 				err := json.Unmarshal(bs, &value)
 				if err != nil {
 					return err
@@ -196,7 +197,11 @@ func (b *Builder) Build(ctx context.Context) error {
 
 				if len(key) == 0 {
 					// TODO: Not able to merge root and non-root data. Is that ever allowed in bundles?
-					result.Data = value
+					valueAsMap, ok := value.(map[string]interface{})
+					if !ok {
+						return fmt.Errorf("expected root data document to be object (got %T)", value)
+					}
+					result.Data = valueAsMap
 					return nil
 				}
 

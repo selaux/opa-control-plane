@@ -92,13 +92,14 @@ func TestBuilder(t *testing.T) {
 				f := 42`,
 				"bar/data.json":     `{"a": 1, "b": 2}`,
 				"baz/bar/data.json": `{"c": 3, "d": 4}`,
+				"qux/data.json":     `[1,2]`,
 			},
 			exp: map[string]string{
 				"/x/x.rego": `package x
 				p := data.lib0.q`,
 				"/foo/file0.rego": `package file0
 				f := 42`,
-				"/data.json": `{"bar":{"a":1,"b":2},"baz":{"bar":{"c":3,"d":4}}}`,
+				"/data.json": `{"bar":{"a":1,"b":2},"baz":{"bar":{"c":3,"d":4}},"qux":[1,2]}`,
 			},
 		},
 	}
