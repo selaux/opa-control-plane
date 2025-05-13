@@ -12,6 +12,7 @@ import (
 
 	"github.com/bradleyfalzon/ghinstallation"
 	"github.com/go-git/go-git/v5"
+	gitconfig "github.com/go-git/go-git/v5/config"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/transport"
 	"github.com/go-git/go-git/v5/plumbing/transport/http"
@@ -66,28 +67,30 @@ func (s *Synchronizer) Execute(ctx context.Context) error {
 		}
 	}
 
-	w, err := repository.Worktree()
-	if err != nil {
+	remote := "origin"
+
+	err = repository.FetchContext(ctx, &git.FetchOptions{
+		RemoteName: remote,
+		Auth:       authMethod,
+		Force:      true,
+		RefSpecs:   []gitconfig.RefSpec{gitconfig.RefSpec(fmt.Sprintf("+refs/heads/*:refs/remotes/%s/refs/heads/*", remote))},
+	})
+	if err != nil && err != git.NoErrAlreadyUpToDate {
 		return err
 	}
 
-	err = w.Pull(&git.PullOptions{
-		RemoteName:    "origin",
-		ReferenceName: referenceName,
-		Auth:          authMethod,
-		Force:         true,
-		SingleBranch:  true,
-	})
-	if err != nil && err != git.NoErrAlreadyUpToDate {
+	w, err := repository.Worktree()
+	if err != nil {
 		return err
 	}
 
 	var checkoutOpts *git.CheckoutOptions
 
 	if s.config.Reference != nil {
+		ref := fmt.Sprintf("refs/remotes/%s/%s", remote, *s.config.Reference)
 		checkoutOpts = &git.CheckoutOptions{
 			Force:  true, // Discard any local changes
-			Branch: plumbing.ReferenceName(*s.config.Reference),
+			Branch: plumbing.ReferenceName(ref),
 		}
 	} else if s.config.Commit != nil {
 		checkoutOpts = &git.CheckoutOptions{
