@@ -14,12 +14,12 @@ import (
 )
 
 type LibrarySpec struct {
-	Roots []ast.Ref
-	Repo  string
+	Roots   []ast.Ref
+	RootDir string
 }
 
 type SystemSpec struct {
-	Repo string
+	RootDir string
 }
 
 type FileSpec struct {
@@ -66,7 +66,7 @@ func (b *Builder) Build(ctx context.Context) error {
 	for i := range b.librarySpecs {
 		if b.librarySpecs[i].Roots == nil {
 			var err error
-			b.librarySpecs[i].Roots, err = getRootsForRepo(b.librarySpecs[i].Repo)
+			b.librarySpecs[i].Roots, err = getRootsForRepo(b.librarySpecs[i].RootDir)
 			if err != nil {
 				return err
 			}
@@ -76,10 +76,10 @@ func (b *Builder) Build(ctx context.Context) error {
 	toBuild := map[string]struct{}{}
 	var toProcess []string
 
-	if b.systemSpec.Repo != "" {
-		toBuild[b.systemSpec.Repo] = struct{}{}
+	if b.systemSpec.RootDir != "" {
+		toBuild[b.systemSpec.RootDir] = struct{}{}
 		var err error
-		toProcess, err = listRegoFilesRecursive(b.systemSpec.Repo)
+		toProcess, err = listRegoFilesRecursive(b.systemSpec.RootDir)
 		if err != nil {
 			return err
 		}
@@ -117,13 +117,13 @@ func (b *Builder) Build(ctx context.Context) error {
 			}
 			p := r.ConstantPrefix()
 			for _, l := range b.librarySpecs {
-				if _, ok := toBuild[l.Repo]; ok {
+				if _, ok := toBuild[l.RootDir]; ok {
 					continue
 				}
 				for _, root := range l.Roots {
 					if root.HasPrefix(p) || p.HasPrefix(root) {
-						toBuild[l.Repo] = struct{}{}
-						files, err := listRegoFilesRecursive(l.Repo)
+						toBuild[l.RootDir] = struct{}{}
+						files, err := listRegoFilesRecursive(l.RootDir)
 						if err != nil {
 							errInner = err
 						}

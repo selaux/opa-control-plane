@@ -126,9 +126,9 @@ func (s *Service) launchWorkers(ctx context.Context) {
 
 		if system.Git.Repo != "" {
 			repoDir := path.Join(s.persistenceDir, "repos", md5sum(system.Name))
-			ss.Repo = repoDir
+			ss.RootDir = repoDir
 			if system.Git.Path != nil {
-				ss.Repo = path.Join(ss.Repo, *system.Git.Path)
+				ss.RootDir = path.Join(ss.RootDir, *system.Git.Path)
 			}
 			syncs = append(syncs, gitsync.New(repoDir, system.Git))
 		}
@@ -149,9 +149,9 @@ func (s *Service) launchWorkers(ctx context.Context) {
 
 			if l.Git.Repo != "" {
 				libRepoDir := path.Join(s.persistenceDir, "repos", md5sum(system.Name+"@"+l.Name))
-				libSpec.Repo = libRepoDir
+				libSpec.RootDir = libRepoDir
 				if l.Git.Path != nil {
-					libSpec.Repo = path.Join(libSpec.Repo, *l.Git.Path)
+					libSpec.RootDir = path.Join(libSpec.RootDir, *l.Git.Path)
 				}
 				ls = append(ls, libSpec)
 				syncs = append(syncs, gitsync.New(libRepoDir, l.Git))

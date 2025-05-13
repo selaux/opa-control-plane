@@ -132,8 +132,8 @@ func TestBuilder(t *testing.T) {
 
 				for i := range tc.libFiles {
 					libSpecs = append(libSpecs, &builder.LibrarySpec{
-						Repo:  filepath.Join(root, fmt.Sprintf("lib%d", i)),
-						Roots: []ast.Ref{ast.MustParseRef(fmt.Sprintf("data.lib%d", i))},
+						RootDir: filepath.Join(root, fmt.Sprintf("lib%d", i)),
+						Roots:   []ast.Ref{ast.MustParseRef(fmt.Sprintf("data.lib%d", i))},
 					})
 				}
 
@@ -143,7 +143,7 @@ func TestBuilder(t *testing.T) {
 				}
 
 				b := builder.New().
-					WithSystemSpec(&builder.SystemSpec{Repo: filepath.Join(root, "system")}).
+					WithSystemSpec(&builder.SystemSpec{RootDir: filepath.Join(root, "system")}).
 					WithLibrarySpecs(libSpecs).
 					WithFileSpecs(fileSpecs).
 					WithOutput(buf)
