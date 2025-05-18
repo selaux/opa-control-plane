@@ -5,5 +5,5 @@ package main
 #    this system's data, but if it includes all systems on the cluster, that'll be costly.
 
 main = x {
-	x := data.TYPELIB.conflicts.entry.main
+	x := data.global.systemtypes["envoy:2.1"].conflicts.entry.main
 }

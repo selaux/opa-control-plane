@@ -1,6 +1,6 @@
 package conflicts.test
 
-import data.TYPELIB.conflicts.entry
+import data.global.systemtypes["envoy:2.1"].conflicts.entry
 
 # Note: double-brace indicates to the templating engine a template variable.
 #  So in Rego replace double-brace  with { {

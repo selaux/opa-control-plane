@@ -1,4 +1,4 @@
-package TYPELIB.conflicts.entry
+package global.systemtypes["envoy:2.1"].conflicts.entry
 
 # System and stack rules policies must exist at policy[type]
 # System and stack rules return
