@@ -1,6 +1,0 @@
-package self
-
-metadata := {
-    "system_id": "{{.ID}}",
-    "system_type": "{{.This.TypeName}}",
-}

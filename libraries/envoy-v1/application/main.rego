@@ -14,7 +14,6 @@ main["outcome"] = {
 	"code": code,
 	"http_status": code,
 	"policy_type": "app",
-	"system_type": data.self.metadata.system_type,
 }
 
 code = 200 {

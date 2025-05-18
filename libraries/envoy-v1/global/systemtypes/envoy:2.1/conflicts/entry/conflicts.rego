@@ -72,7 +72,12 @@ main["outcome"] = {
 
 stacks_outcome[stack_id] = x {
 	# stacks that set allow to true
-	applicable_stacks[stack_id]
+
+	# TODO(tsandall): evaluating the entire tree will be slower than necessary but to
+	# maintain compatibility; removing the entire outcome field in the result is probably
+	# the best path forward.
+	_ = data.stacks[stack_id]
+
 	allowed := {decision | decision := data.stacks[stack_id].policy[type].allow}
 	denied := {decision | decision := data.stacks[stack_id].policy[type].deny}
 
@@ -266,7 +271,6 @@ default deny_stacks = []
 
 deny_stacks = [stack_id |
 	some stack_id
-	applicable_stacks[stack_id]
 	data.stacks[stack_id].policy[type].deny
 ]
 
@@ -276,33 +280,6 @@ allow_stacks = result {
 	count(deny_stacks) == 0 # skip computing if already a deny_stack
 	result := [stack_id |
 		some stack_id
-		applicable_stacks[stack_id]
 		data.stacks[stack_id].policy[type].allow
 	]
-}
-
-###########################################
-# Compute applicable stacks
-
-applicable_stacks[stack_id] {
-	some stack_id
-	stack := data.styra.stacks[stack_id]
-	typename_match_major(stack.config.type, data.self.metadata.system_type)
-	data.stacks[stack_id].selectors.systems[data.self.metadata.system_id]
-}
-
-typename_match_major(typename1, typename2) {
-	typename1 == typename2
-} else {
-	parse_name_major(typename1) == parse_name_major(typename2)
-}
-
-# "template.envoy:2.1" ==> ["template.envoy", "2"]
-# ensure we use only OLD opa builtins (no indexof_n)
-parse_name_major(name) = [typename, major] {
-	index := indexof(name, ":") # index of :
-	index != -1
-	typename = substring(name, 0, index)
-	version := substring(name, index + 1, -1) # 2.1
-	major := split(version, ".")[0]
 }
