@@ -99,11 +99,21 @@ func (c *DASClient) Get(path string, params ...DASParams) (*http.Response, error
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("DAS returned unexpected status code (%v) for %v %v", resp.StatusCode, "GET", url)
+		return nil, DASError{URL: url, Method: "GET", StatusCode: resp.StatusCode}
 	}
 
 	return resp, nil
 
+}
+
+type DASError struct {
+	URL        string
+	Method     string
+	StatusCode int
+}
+
+func (e DASError) Error() string {
+	return fmt.Sprintf("DAS returned unexpected status code (%v) for %v %v", e.StatusCode, e.Method, e.URL)
 }
 
 func (c *DASClient) JSON(path string, params ...DASParams) (*DASResponse, error) {
@@ -150,16 +160,10 @@ func mapV1SystemToSystemAndSecretConfig(client *DASClient, v1 *v1System) (*confi
 		}
 	}
 
-	var err error
-	system.Files, err = getNonGitFiles(client, v1.Id)
-	if err != nil {
-		return nil, nil, err
-	}
-
 	return &system, secret, nil
 }
 
-func getNonGitFiles(client *DASClient, id string) (config.Files, error) {
+func getNonGitFilesForSystem(client *DASClient, id string) (config.Files, error) {
 
 	log.Printf("Fetching bundle for system %q...", id)
 
@@ -320,6 +324,11 @@ func doExport(params exportParams) error {
 			return err
 		}
 
+		sc.Files, err = getNonGitFilesForSystem(&c, system.Id)
+		if err != nil {
+			return err
+		}
+
 		output.Systems[sc.Name] = sc
 
 		if secret != nil {
@@ -351,12 +360,16 @@ func doExport(params exportParams) error {
 }
 
 type v1System struct {
-	Id            string `json:"id"`
-	Name          string `json:"name"`
-	Type          string `json:"type"`
+	Id       string `json:"id"`
+	Name     string `json:"name"`
+	Type     string `json:"type"`
+	Policies []struct {
+		Id string `json:"id"`
+	} `json:"policies"`
 	SourceControl *struct {
 		Origin v1GitRepoConfig `json:"origin"`
 	} `json:"source_control"`
+	MatchingStacks []string `json:"matching_stacks"`
 }
 
 type v1Secret struct {
@@ -373,8 +386,12 @@ type v1Library struct {
 }
 
 type v1Stack struct {
-	Name          string `json:"name"`
-	Id            string `json:"id"`
+	Name     string `json:"name"`
+	Id       string `json:"id"`
+	Type     string `json:"type"`
+	Policies []struct {
+		Id string `json:"id"`
+	} `json:"policies"`
 	SourceControl *struct {
 		UseWorkspaceSettings bool            `json:"use_workspace_settings"`
 		Origin               v1GitRepoConfig `json:"origin"`
@@ -415,4 +432,8 @@ type v1Decision struct {
 	Path   string       `json:"path"`
 	Input  *interface{} `json:"input"`
 	Result *interface{} `json:"result"`
+}
+
+type v1Policy struct {
+	Modules map[string]string `json:"modules"`
 }
