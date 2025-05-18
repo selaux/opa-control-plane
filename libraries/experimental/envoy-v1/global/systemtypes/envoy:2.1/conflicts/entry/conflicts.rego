@@ -67,7 +67,7 @@ main["outcome"] = {
 	"http_status": status_code,
 	"stacks": stacks_outcome,
 	"policy_type": type,
-	"system_type": data.self.metadata.system_type,
+	"system_type": "template.envoy:2.1"
 }
 
 stacks_outcome[stack_id] = x {
