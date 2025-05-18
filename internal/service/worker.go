@@ -27,10 +27,10 @@ var (
 type SystemWorker struct {
 	systemConfig   *config.System
 	libraryConfigs []*config.Library
+	stackConfigs   []*config.Stack
 	synchronizers  []Synchronizer
 	system         *builder.SystemSpec
 	libraries      []*builder.LibrarySpec
-	files          []*builder.FileSpec
 	storage        s3.ObjectStorage
 	changed        chan struct{}
 	done           chan struct{}
@@ -40,8 +40,8 @@ type Synchronizer interface {
 	Execute(ctx context.Context) error
 }
 
-func NewSystemWorker(system *config.System, libraries []*config.Library) *SystemWorker {
-	return &SystemWorker{systemConfig: system, libraryConfigs: libraries, done: make(chan struct{})}
+func NewSystemWorker(system *config.System, libraries []*config.Library, stacks []*config.Stack) *SystemWorker {
+	return &SystemWorker{systemConfig: system, libraryConfigs: libraries, stackConfigs: stacks, done: make(chan struct{})}
 }
 
 func (worker *SystemWorker) WithSynchronizers(synchronizers []Synchronizer) *SystemWorker {
@@ -59,11 +59,6 @@ func (worker *SystemWorker) WithLibraries(libraries []*builder.LibrarySpec) *Sys
 	return worker
 }
 
-func (worker *SystemWorker) WithFiles(files []*builder.FileSpec) *SystemWorker {
-	worker.files = files
-	return worker
-}
-
 func (worker *SystemWorker) WithStorage(storage s3.ObjectStorage) *SystemWorker {
 	worker.storage = storage
 	return worker
@@ -78,8 +73,8 @@ func (worker *SystemWorker) Done() bool {
 	}
 }
 
-func (worker *SystemWorker) UpdateConfig(system *config.System, libraries []*config.Library) {
-	if system == nil || !worker.systemConfig.Equal(system) || !config.EqualLibraries(worker.libraryConfigs, libraries) {
+func (worker *SystemWorker) UpdateConfig(system *config.System, libraries []*config.Library, stacks []*config.Stack) {
+	if system == nil || !worker.systemConfig.Equal(system) || !config.EqualLibraries(worker.libraryConfigs, libraries) || !config.EqualStacks(worker.stackConfigs, stacks) {
 		select {
 		case <-worker.changed:
 		default:
@@ -104,28 +99,14 @@ func (w *SystemWorker) Execute() time.Time {
 	}
 
 	// Wipe any old files synchronized during the previous run to avoid deleted files in database/http from reappearing to system bundles.
-	for _, file := range w.files {
-		if file.Path == "" {
-			continue
+	for _, lib := range w.libraries {
+		if next, ok := removeDir(lib.FileDir); ok {
+			return next
 		}
+	}
 
-		if _, err := os.Stat(file.Path); os.IsNotExist(err) {
-			continue
-		}
-
-		files, err := os.ReadDir(file.Path)
-		if err != nil {
-			log.Printf("failed to read directory %q: %v", file.Path, err)
-			return time.Now().Add(errorDelay)
-		}
-
-		for _, f := range files {
-			err := os.RemoveAll(filepath.Join(file.Path, f.Name()))
-			if err != nil {
-				log.Printf("failed to remove file %q: %v", filepath.Join(file.Path, f.Name()), err)
-				return time.Now().Add(errorDelay)
-			}
-		}
+	if next, ok := removeDir(w.system.FileDir); ok {
+		return next
 	}
 
 	for _, synchronizer := range w.synchronizers {
@@ -141,7 +122,6 @@ func (w *SystemWorker) Execute() time.Time {
 	b := builder.New().
 		WithSystemSpec(w.system).
 		WithLibrarySpecs(w.libraries).
-		WithFileSpecs(w.files).
 		WithOutput(buffer)
 
 	err := b.Build(ctx)
@@ -158,4 +138,31 @@ func (w *SystemWorker) Execute() time.Time {
 	}
 
 	return time.Now().Add(successDelay)
+}
+
+func removeDir(path string) (time.Time, bool) {
+
+	if path == "" {
+		return time.Time{}, false
+	}
+
+	if _, err := os.Stat(path); os.IsNotExist(err) {
+		return time.Time{}, false
+	}
+
+	files, err := os.ReadDir(path)
+	if err != nil {
+		log.Printf("failed to read directory %q: %v", path, err)
+		return time.Now().Add(errorDelay), true
+	}
+
+	for _, f := range files {
+		err := os.RemoveAll(filepath.Join(path, f.Name()))
+		if err != nil {
+			log.Printf("failed to remove file %q: %v", filepath.Join(path, f.Name()), err)
+			return time.Now().Add(errorDelay), true
+		}
+	}
+
+	return time.Time{}, false
 }

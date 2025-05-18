@@ -76,6 +76,7 @@ func (d *Database) InitDB(ctx context.Context, persistenceDir string) error {
 	stmts := []string{
 		`CREATE TABLE IF NOT EXISTS systems (
 			id TEXT PRIMARY KEY,
+			labels TEXT,
 			repo TEXT NOT NULL,
 			ref TEXT,
 			gitcommit TEXT,
@@ -91,6 +92,12 @@ func (d *Database) InitDB(ctx context.Context, persistenceDir string) error {
 			ref TEXT,
 			gitcommit TEXT,
 			path TEXT
+		);`,
+		`CREATE TABLE IF NOT EXISTS stacks (
+			id TEXT PRIMARY KEY,
+			selector TEXT NOT NULL,
+			library_id TEXT NOT NULL,
+			FOREIGN KEY (library_id) REFERENCES libraries(id)
 		);`,
 		`CREATE TABLE IF NOT EXISTS secrets (
 			id TEXT PRIMARY KEY,
@@ -119,6 +126,13 @@ func (d *Database) InitDB(ctx context.Context, persistenceDir string) error {
 			config TEXT NOT NULL,
 			PRIMARY KEY (system_id, name),
 			FOREIGN KEY (system_id) REFERENCES systems(id)
+		);`,
+		`CREATE TABLE IF NOT EXISTS systems_requirements (
+			system_id TEXT NOT NULL,
+			library_id TEXT NOT NULL,
+			PRIMARY KEY (system_id, library_id),
+			FOREIGN KEY (system_id) REFERENCES systems(id),
+			FOREIGN KEY (library_id) REFERENCES libraries(id)
 		);`,
 		`CREATE TABLE IF NOT EXISTS libraries_secrets (
 			library_id TEXT NOT NULL,
@@ -222,6 +236,10 @@ func (d *Database) LoadConfig(_ context.Context, configFile string) error {
 		return err
 	}
 
+	if err := d.loadStacks(root); err != nil {
+		return err
+	}
+
 	return nil
 }
 
@@ -234,6 +252,7 @@ func (d *Database) ListSystemsWithGitCredentials() ([]*config.System, error) {
 
 	rows, err := txn.Query(`SELECT
         systems.id AS system_id,
+		systems.labels,
         systems.repo,
         systems.ref,
         systems.gitcommit,
@@ -243,14 +262,17 @@ func (d *Database) ListSystemsWithGitCredentials() ([]*config.System, error) {
 		systems.s3bucket,
 		systems.s3key,
         secrets.id AS secret_id,
-		systems_secrets.ref_type as secret_ref_type,
-        secrets.value AS secret_value
+		systems_secrets.ref_type AS secret_ref_type,
+        secrets.value AS secret_value,
+		systems_requirements.library_id AS req_lib
     FROM
         systems
     LEFT JOIN
         systems_secrets ON systems.id = systems_secrets.system_id
     LEFT JOIN
         secrets ON systems_secrets.secret_id = secrets.id
+	LEFT JOIN
+		systems_requirements ON systems.id = systems_requirements.system_id
 	WHERE (systems.s3bucket IS NOT NULL) AND
 		((systems_secrets.ref_type = 'git_credentials' AND secrets.value IS NOT NULL) OR systems_secrets.ref_type IS NULL) OR
 		systems_secrets.ref_type = 'aws'`)
@@ -263,10 +285,12 @@ func (d *Database) ListSystemsWithGitCredentials() ([]*config.System, error) {
 
 	for rows.Next() {
 		var systemId, repo string
+		var labels *string
 		var secretId, secretRefType, secretValue *string
 		var ref, gitCommit, path *string
 		var s3url, s3region, s3bucket, s3key *string
-		if err := rows.Scan(&systemId, &repo, &ref, &gitCommit, &path, &s3url, &s3region, &s3bucket, &s3key, &secretId, &secretRefType, &secretValue); err != nil {
+		var reqLib *string
+		if err := rows.Scan(&systemId, &labels, &repo, &ref, &gitCommit, &path, &s3url, &s3region, &s3bucket, &s3key, &secretId, &secretRefType, &secretValue, &reqLib); err != nil {
 			return nil, err
 		}
 
@@ -278,6 +302,13 @@ func (d *Database) ListSystemsWithGitCredentials() ([]*config.System, error) {
 					Repo: repo,
 				},
 			}
+
+			if labels != nil {
+				if err := json.Unmarshal([]byte(*labels), &system.Labels); err != nil {
+					return nil, fmt.Errorf("failed to unmarshal labels for %q: %w", system.Name, err)
+				}
+			}
+
 			systemMap[systemId] = system
 
 			if ref != nil {
@@ -316,6 +347,10 @@ func (d *Database) ListSystemsWithGitCredentials() ([]*config.System, error) {
 					system.ObjectStorage.AmazonS3.Credentials = s.Ref()
 				}
 			}
+		}
+
+		if reqLib != nil {
+			system.Requirements = append(system.Requirements, config.Requirement{Library: reqLib})
 		}
 	}
 
@@ -486,6 +521,49 @@ WHERE (libraries_secrets.ref_type = 'git_credentials' AND secrets.value IS NOT N
 
 }
 
+func (d *Database) ListStacks() ([]*config.Stack, error) {
+	txn, err := d.db.Begin()
+	if err != nil {
+		return nil, err
+	}
+	defer txn.Commit()
+
+	rows, err := txn.Query(`SELECT
+        stacks.id AS stack_id,
+        stacks.selector,
+        stacks.library_id
+    FROM
+        stacks`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var stacks []*config.Stack
+
+	for rows.Next() {
+		var stackId, selectorJSON, libraryId string
+		if err := rows.Scan(&stackId, &selectorJSON, &libraryId); err != nil {
+			return nil, err
+		}
+
+		var selector config.Selector
+		if err := json.Unmarshal([]byte(selectorJSON), &selector); err != nil {
+			return nil, err
+		}
+
+		stack := &config.Stack{
+			Name:     stackId,
+			Selector: selector,
+		}
+
+		stack.Source.Library = &libraryId
+		stacks = append(stacks, stack)
+	}
+
+	return stacks, nil
+}
+
 func (d *Database) QueryLibraryData(id string) (*DataCursor, error) {
 	return d.queryData("libraries_data", "library_id", id)
 }
@@ -548,8 +626,14 @@ func (d *Database) loadSystems(root *config.Root) error {
 			s3bucket = &system.ObjectStorage.AmazonS3.Bucket
 			s3key = &system.ObjectStorage.AmazonS3.Key
 		}
-		if _, err := d.db.Exec(`INSERT OR REPLACE INTO systems (id, repo, ref, gitcommit, path, s3url, s3region, s3bucket, s3key) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-			system.Name, system.Git.Repo, system.Git.Reference, system.Git.Commit, system.Git.Path, s3url, s3region, s3bucket, s3key); err != nil {
+
+		bs, err := json.Marshal(system.Labels)
+		if err != nil {
+			return err
+		}
+
+		if _, err := d.db.Exec(`INSERT OR REPLACE INTO systems (id, labels, repo, ref, gitcommit, path, s3url, s3region, s3bucket, s3key) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			system.Name, string(bs), system.Git.Repo, system.Git.Reference, system.Git.Commit, system.Git.Path, s3url, s3region, s3bucket, s3key); err != nil {
 			return err
 		}
 
@@ -577,6 +661,15 @@ func (d *Database) loadSystems(root *config.Root) error {
 		for path, data := range system.Files {
 			if _, err := d.db.Exec(`INSERT OR REPLACE INTO systems_data (system_id, path, data) VALUES (?, ?, ?)`, name, path, data); err != nil {
 				return err
+			}
+		}
+
+		for _, src := range system.Requirements {
+			if src.Library != nil {
+				// TODO: add support for mounts on requirements; currently that is only used internally for stacks.
+				if _, err := d.db.Exec(`INSERT OR REPLACE INTO systems_requirements (system_id, library_id) VALUES (?, ?)`, name, src.Library); err != nil {
+					return err
+				}
 			}
 		}
 	}
@@ -646,6 +739,32 @@ func (d *Database) loadSecrets(root *config.Root) error {
 		} else {
 			if _, err := d.db.Exec(`INSERT OR REPLACE INTO secrets (id) VALUES (?)`, secret.Name); err != nil {
 				return err
+			}
+		}
+	}
+
+	return nil
+}
+
+func (d *Database) loadStacks(root *config.Root) error {
+	var names []string
+	for _, stack := range root.Stacks {
+		names = append(names, stack.Name)
+	}
+
+	sort.Strings(names)
+
+	for _, name := range names {
+		stack := root.Stacks[name]
+
+		bs, err := json.Marshal(stack.Selector)
+		if err != nil {
+			return fmt.Errorf("failed to marshal selector for stack %q: %w", name, err)
+		}
+
+		if stack.Source.Library != nil {
+			if _, err := d.db.Exec(`INSERT OR REPLACE INTO stacks (id, selector, library_id) VALUES (?, ?, ?)`, stack.Name, string(bs), stack.Source.Library); err != nil {
+				return fmt.Errorf("failed to insert stack %q: %w", name, err)
 			}
 		}
 	}

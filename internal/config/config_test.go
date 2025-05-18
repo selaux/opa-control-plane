@@ -88,3 +88,56 @@ func TestFilesMarshallingRoundtrip(t *testing.T) {
 	}
 
 }
+
+func TestSelectorMatch(t *testing.T) {
+	cases := []struct {
+		labels   string
+		selector string
+		exp      bool
+	}{
+		{
+			labels:   `{foo: bar}`,
+			selector: `{foo: []}`,
+			exp:      true,
+		},
+		{
+			labels:   `{foo: bar}`,
+			selector: `{foo: [bar]}`,
+			exp:      true,
+		},
+		{
+			labels:   `{foo: bar}`,
+			selector: `{foo: [baz, bar]}`,
+			exp:      true,
+		},
+		{
+			labels:   `{foo: bar, baz: qux}`,
+			selector: `{foo: [baz, bar], baz: [qux]}`,
+			exp:      true,
+		},
+		{
+			labels:   `{foo: bar, baz: qux}`,
+			selector: `{foo: [baz, bar], qux: [corge]}`,
+			exp:      false,
+		},
+	}
+
+	for _, tc := range cases {
+		labels := config.Labels{}
+		selector := config.Selector{}
+		if err := yaml.Unmarshal([]byte(tc.labels), &labels); err != nil {
+			t.Fatal(err)
+		}
+		if err := yaml.Unmarshal([]byte(tc.selector), &selector); err != nil {
+			t.Fatal(err)
+		}
+		match := selector.Matches(labels)
+		if tc.exp {
+			if !match {
+				t.Fatalf("expected match for selector %v and labels %v", selector, labels)
+			}
+		} else if match {
+			t.Fatalf("expected no match for selector %v and labels %v", selector, labels)
+		}
+	}
+}

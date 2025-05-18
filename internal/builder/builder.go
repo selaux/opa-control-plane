@@ -12,25 +12,25 @@ import (
 
 	"github.com/open-policy-agent/opa/ast"
 	"github.com/open-policy-agent/opa/bundle"
+	"github.com/tsandall/lighthouse/internal/config"
 )
 
 type LibrarySpec struct {
+	Name    string
 	Roots   []ast.Ref
-	RootDir string
+	RepoDir string
+	FileDir string
 }
 
 type SystemSpec struct {
-	RootDir string
-}
-
-type FileSpec struct {
-	Path string // Directory on disk holding files to include in the bundle.
+	RepoDir      string
+	FileDir      string
+	Requirements []config.Requirement
 }
 
 type Builder struct {
 	systemSpec   *SystemSpec
 	librarySpecs []*LibrarySpec
-	fileSpecs    []*FileSpec
 	output       io.Writer
 }
 
@@ -53,11 +53,6 @@ func (b *Builder) WithLibrarySpecs(librarySpecs []*LibrarySpec) *Builder {
 	return b
 }
 
-func (b *Builder) WithFileSpecs(fileSpecs []*FileSpec) *Builder {
-	b.fileSpecs = fileSpecs
-	return b
-}
-
 func (b *Builder) Build(ctx context.Context) error {
 
 	// NOTE(tsandall): if roots cannot be computed for any library then we will bail
@@ -68,39 +63,80 @@ func (b *Builder) Build(ctx context.Context) error {
 	for i := range b.librarySpecs {
 		if b.librarySpecs[i].Roots == nil {
 			var err error
-			b.librarySpecs[i].Roots, err = getRootsForRepo(b.librarySpecs[i].RootDir)
+			// TODO(tsandall): add support for lib datasources here; need to include their roots)
+			dirs := []string{}
+			if b.librarySpecs[i].FileDir != "" {
+				dirs = append(dirs, b.librarySpecs[i].FileDir)
+			}
+			if b.librarySpecs[i].RepoDir != "" {
+				dirs = append(dirs, b.librarySpecs[i].RepoDir)
+			}
+			b.librarySpecs[i].Roots, err = getRootsForRepo(dirs...)
 			if err != nil {
-				return err
+				return fmt.Errorf("failed to get library roots: %w", err)
 			}
 		}
 	}
 
-	toBuild := map[string]struct{}{}
-	var toProcess []string
+	toBuild := map[string]struct{}{} // set of paths to include in bundle
+	var toAnalyze []string           // set of paths to analyze for depedencies
 
-	if b.systemSpec.RootDir != "" {
-		toBuild[b.systemSpec.RootDir] = struct{}{}
-		var err error
-		toProcess, err = listRegoFilesRecursive(b.systemSpec.RootDir)
+	if b.systemSpec.RepoDir != "" {
+		toBuild[b.systemSpec.RepoDir] = struct{}{}
+		files, err := listRegoFilesRecursive(b.systemSpec.RepoDir)
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to list system repo: %w", err)
+		}
+		toAnalyze = append(toAnalyze, files...)
+	}
+
+	if b.systemSpec.FileDir != "" {
+		toBuild[b.systemSpec.FileDir] = struct{}{}
+		files, err := listRegoFilesRecursive(b.systemSpec.FileDir)
+		if err != nil {
+			return fmt.Errorf("failed to list system files: %w", err)
+		}
+		toAnalyze = append(toAnalyze, files...)
+	}
+
+	addedLibs := map[*LibrarySpec]struct{}{}
+
+	// closure to add libraries into build that is reused for adding
+	// requirements and system/namespace dependencies to build and analysis set
+	addLibToBuild := func(l *LibrarySpec) error {
+		if l.RepoDir != "" {
+			toBuild[l.RepoDir] = struct{}{}
+			files, err := listRegoFilesRecursive(l.RepoDir)
+			if err != nil {
+				return err
+			}
+			toAnalyze = append(toAnalyze, files...)
+		}
+		if l.FileDir != "" {
+			toBuild[l.FileDir] = struct{}{}
+			files, err := listRegoFilesRecursive(l.FileDir)
+			if err != nil {
+				return err
+			}
+			toAnalyze = append(toAnalyze, files...)
+		}
+		addedLibs[l] = struct{}{}
+		return nil
+	}
+
+	for _, req := range b.systemSpec.Requirements {
+		if req.Library != nil {
+			for _, l := range b.librarySpecs {
+				if err := addLibToBuild(l); err != nil {
+					return err
+				}
+			}
 		}
 	}
 
-	// Add the files unconditionally to the build list.
-	for _, spec := range b.fileSpecs {
-		toBuild[spec.Path] = struct{}{}
-		files, err := listRegoFilesRecursive(spec.Path)
-		if err != nil {
-			return err
-		}
-
-		toProcess = append(toProcess, files...)
-	}
-
-	for len(toProcess) > 0 {
+	for len(toAnalyze) > 0 {
 		var next string
-		next, toProcess = toProcess[0], toProcess[1:]
+		next, toAnalyze = toAnalyze[0], toAnalyze[1:]
 		bs, err := os.ReadFile(next)
 		if err != nil {
 			return err
@@ -127,17 +163,14 @@ func (b *Builder) Build(ctx context.Context) error {
 			}
 
 			for _, l := range b.librarySpecs {
-				if _, ok := toBuild[l.RootDir]; ok {
+				if _, ok := addedLibs[l]; ok {
 					continue
 				}
 				for _, root := range l.Roots {
 					if root.HasPrefix(p) || p.HasPrefix(root) {
-						toBuild[l.RootDir] = struct{}{}
-						files, err := listRegoFilesRecursive(l.RootDir)
-						if err != nil {
+						if err := addLibToBuild(l); err != nil {
 							errInner = err
 						}
-						toProcess = append(toProcess, files...)
 						break
 					}
 				}
@@ -146,6 +179,10 @@ func (b *Builder) Build(ctx context.Context) error {
 			// If the extra files were to be added conditionally, check for matching here.
 			return false
 		})
+
+		if errInner != nil {
+			return err
+		}
 	}
 
 	sortedSrcs := make([]string, 0, len(toBuild))
@@ -280,24 +317,31 @@ func walkRegoFilesRecursive(root string, fn func(path string, fi os.FileInfo) er
 	})
 }
 
-func getRootsForRepo(dir string) ([]ast.Ref, error) {
+func getRootsForRepo(dirs ...string) ([]ast.Ref, error) {
 	set := ast.NewSet()
 
-	err := walkRegoFilesRecursive(dir, func(path string, _ os.FileInfo) error {
+	for _, dir := range dirs {
 
-		bs, err := os.ReadFile(path)
+		err := walkRegoFilesRecursive(dir, func(path string, _ os.FileInfo) error {
+
+			bs, err := os.ReadFile(path)
+			if err != nil {
+				return err
+			}
+
+			module, err := ast.ParseModule(path, string(bs))
+			if err != nil {
+				return err
+			}
+
+			set.Add(ast.NewTerm(module.Package.Path))
+			return nil
+		})
+
 		if err != nil {
-			return err
+			return nil, err
 		}
-
-		module, err := ast.ParseModule(path, string(bs))
-		if err != nil {
-			return err
-		}
-
-		set.Add(ast.NewTerm(module.Package.Path))
-		return nil
-	})
+	}
 
 	sl := set.Slice()
 	result := make([]ast.Ref, len(sl))
@@ -305,5 +349,5 @@ func getRootsForRepo(dir string) ([]ast.Ref, error) {
 		result[i] = sl[i].Value.(ast.Ref)
 	}
 
-	return result, err
+	return result, nil
 }

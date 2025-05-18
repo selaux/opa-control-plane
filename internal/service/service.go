@@ -10,6 +10,7 @@ import (
 
 	_ "github.com/mattn/go-sqlite3"
 	"github.com/tsandall/lighthouse/internal/builder"
+	"github.com/tsandall/lighthouse/internal/config"
 	"github.com/tsandall/lighthouse/internal/database"
 	"github.com/tsandall/lighthouse/internal/gitsync"
 	"github.com/tsandall/lighthouse/internal/httpsync"
@@ -80,11 +81,19 @@ func (s *Service) launchWorkers(ctx context.Context) {
 	systems, err := s.database.ListSystemsWithGitCredentials()
 	if err != nil {
 		log.Println("error listing systems:", err)
+		return
 	}
 
 	libraries, err := s.database.ListLibrariesWithGitCredentials()
 	if err != nil {
 		log.Println("error listing libraries:", err)
+		return
+	}
+
+	stacks, err := s.database.ListStacks()
+	if err != nil {
+		log.Println("error listing stacks:", err)
+		return
 	}
 
 	activeSystems := make(map[string]struct{})
@@ -100,7 +109,7 @@ func (s *Service) launchWorkers(ctx context.Context) {
 		}
 
 		if _, ok := activeSystems[id]; !ok {
-			w.UpdateConfig(nil, nil)
+			w.UpdateConfig(nil, nil, nil)
 		}
 	}
 
@@ -109,28 +118,33 @@ func (s *Service) launchWorkers(ctx context.Context) {
 
 	for _, system := range systems {
 		if w, ok := s.workers[system.Name]; ok {
-			w.UpdateConfig(system, libraries)
+			w.UpdateConfig(system, libraries, stacks)
 			continue
 		}
 
 		log.Println("(re)starting worker for system:", system.Name)
 
-		ss := &builder.SystemSpec{}
-
-		systemFileDir := path.Join(s.persistenceDir, "files", md5sum(system.Name))
-		fs := []*builder.FileSpec{{Path: systemFileDir}}
+		ss := &builder.SystemSpec{
+			FileDir: path.Join(s.persistenceDir, "files", md5sum(system.Name)),
+		}
 
 		syncs := []Synchronizer{
-			sqlsync.NewSQLSystemDataSynchronizer(systemFileDir, &s.database, system.Name),
+			sqlsync.NewSQLSystemDataSynchronizer(ss.FileDir, &s.database, system.Name),
 		}
 
 		if system.Git.Repo != "" {
 			repoDir := path.Join(s.persistenceDir, "repos", md5sum(system.Name))
-			ss.RootDir = repoDir
+			ss.RepoDir = repoDir
 			if system.Git.Path != nil {
-				ss.RootDir = path.Join(ss.RootDir, *system.Git.Path)
+				ss.RepoDir = path.Join(ss.RepoDir, *system.Git.Path)
 			}
 			syncs = append(syncs, gitsync.New(repoDir, system.Git))
+		}
+
+		for _, req := range system.Requirements {
+			if req.Library != nil {
+				ss.Requirements = append(ss.Requirements, req)
+			}
 		}
 
 		for _, datasource := range system.Datasources {
@@ -138,20 +152,23 @@ func (s *Service) launchWorkers(ctx context.Context) {
 			case "http":
 				url, _ := datasource.Config["url"].(string)
 				credentials := datasource.Credentials
-				syncs = append(syncs, httpsync.New(path.Join(systemFileDir, datasource.Path, "data.json"), url, credentials))
+				syncs = append(syncs, httpsync.New(path.Join(ss.FileDir, datasource.Path, "data.json"), url, credentials))
 			}
 		}
 
 		var ls []*builder.LibrarySpec
 		for _, l := range libraries {
 
-			libSpec := &builder.LibrarySpec{}
+			libSpec := &builder.LibrarySpec{
+				Name:    l.Name,
+				FileDir: path.Join(s.persistenceDir, "files", md5sum(system.Name)),
+			}
 
 			if l.Git.Repo != "" {
 				libRepoDir := path.Join(s.persistenceDir, "repos", md5sum(system.Name+"@"+l.Name))
-				libSpec.RootDir = libRepoDir
+				libSpec.RepoDir = libRepoDir
 				if l.Git.Path != nil {
-					libSpec.RootDir = path.Join(libSpec.RootDir, *l.Git.Path)
+					libSpec.RepoDir = path.Join(libSpec.RepoDir, *l.Git.Path)
 				}
 				ls = append(ls, libSpec)
 				syncs = append(syncs, gitsync.New(libRepoDir, l.Git))
@@ -162,13 +179,18 @@ func (s *Service) launchWorkers(ctx context.Context) {
 				case "http":
 					url, _ := datasource.Config["url"].(string)
 					credentials := datasource.Credentials
-					syncs = append(syncs, httpsync.New(path.Join(systemFileDir, datasource.Path, "data.json"), url, credentials))
+					// TODO(tsandall): should this use library file dir?
+					syncs = append(syncs, httpsync.New(path.Join(ss.FileDir, datasource.Path, "data.json"), url, credentials))
 				}
 			}
 
-			libFileDir := path.Join(s.persistenceDir, "files", md5sum(system.Name)+"@"+l.Name)
-			syncs = append(syncs, sqlsync.NewSQLLibraryDataSynchronizer(libFileDir, &s.database, l.Name))
-			fs = append(fs, &builder.FileSpec{Path: libFileDir})
+			syncs = append(syncs, sqlsync.NewSQLLibraryDataSynchronizer(libSpec.FileDir, &s.database, l.Name))
+		}
+
+		for _, stack := range stacks {
+			if stack.Selector.Matches(system.Labels) {
+				ss.Requirements = append(ss.Requirements, config.Requirement{Library: stack.Source.Library})
+			}
 		}
 
 		storage, err := s3.New(ctx, system.ObjectStorage)
@@ -177,10 +199,9 @@ func (s *Service) launchWorkers(ctx context.Context) {
 			continue
 		}
 
-		w := NewSystemWorker(system, libraries).
+		w := NewSystemWorker(system, libraries, stacks).
 			WithSystem(ss).
 			WithLibraries(ls).
-			WithFiles(fs).
 			WithSynchronizers(syncs).
 			WithStorage(storage)
 		s.pool.Add(w.Execute)

@@ -3,6 +3,7 @@ package service_test
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"html/template"
 	"net/http"
 	"net/http/httptest"
@@ -373,6 +374,292 @@ func TestFromConfigWithouthGit(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+}
+
+func TestFromConfigWithRequirements(t *testing.T) {
+	rootDir, _, err := tempfs.MakeTempFS("", "lighthouse_e2e_requirements", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	t.Log("Root Directory:", rootDir)
+
+	// Create a mock S3 service with a test bucket
+	mock, s3TS := testS3Service(t, "test")
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	configPath := path.Join(rootDir, "config.yaml")
+	persistenceDir := path.Join(rootDir, "data")
+
+	tmpl, err := template.New("config").Parse(`{
+		systems: {
+			TestSystem: {
+				object_storage: {
+					aws: {
+						url: {{ .MockS3URL }},
+						bucket: test,
+						key: bundle.tar.gz,
+						region: mock-region,
+					}
+				},
+				files: {
+					"app.rego": {{ .AppRego }}
+				},
+				requirements: [{library: TestLibrary}]
+			}
+		},
+		libraries: {
+			TestLibrary: {
+				files: {
+					"main.rego": {{ .LibRego }}
+				}
+			}
+		}
+	}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	buf := bytes.NewBuffer(nil)
+	err = tmpl.Execute(buf, struct {
+		MockS3URL string
+		AppRego   string
+		LibRego   string
+	}{
+		MockS3URL: s3TS.URL,
+		AppRego:   base64.StdEncoding.EncodeToString([]byte("package app\np := 7")),
+		LibRego:   base64.StdEncoding.EncodeToString([]byte("package main\nmain := data.app.p")),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	err = os.WriteFile(configPath, buf.Bytes(), 0644)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	svc := service.New().WithConfigFile(configPath).WithPersistenceDir(persistenceDir)
+
+	doneCh := make(chan error)
+
+	go func() {
+		doneCh <- svc.Run(ctx)
+	}()
+
+	for {
+		obj, err := mock.GetObject("test", "bundle.tar.gz", nil)
+
+		if err != nil {
+			if gofakes3.HasErrorCode(err, gofakes3.ErrNoSuchKey) {
+				time.Sleep(time.Millisecond)
+				continue
+			}
+			t.Fatal(err)
+		}
+
+		b, err := bundle.NewReader(obj.Contents).Read()
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		expectedRego := map[string]string{
+			"app.rego":  "package app\np := 7",
+			"main.rego": "package main\nmain := data.app.p",
+		}
+
+		if len(expectedRego) != len(b.Modules) {
+			t.Fatalf("expected %v modules but got %v", len(expectedRego), len(b.Modules))
+		}
+
+		got := map[string]string{}
+		for _, mf := range b.Modules {
+			got[strings.TrimPrefix(mf.Path, "/")] = string(mf.Raw)
+		}
+
+		for k := range expectedRego {
+			if expectedRego[k] != got[k] {
+				for k, v := range got {
+					t.Logf("Got %v:\n%v", k, v)
+				}
+				t.Fatalf("Expected %v:\n%v", k, expectedRego[k])
+			}
+		}
+
+		break
+	}
+
+	cancel()
+	err = <-doneCh
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestFromConfigWithStacks(t *testing.T) {
+
+	// TODO(tsandall): these e2e tests follow a common pattern that we could
+	// abstract a bit... it would make each e2e test much more concise.
+
+	rootDir, _, err := tempfs.MakeTempFS("", "lighthouse_e2e_stacks", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	t.Log("Root Directory:", rootDir)
+
+	// Create a mock S3 service with a test bucket
+	mock, s3TS := testS3Service(t, "test")
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	configPath := path.Join(rootDir, "config.yaml")
+	persistenceDir := path.Join(rootDir, "data")
+
+	tmpl, err := template.New("config").Parse(`{
+		systems: {
+			TestSystem: {
+				labels: {
+					app: payments,
+					env: production
+				},
+				object_storage: {
+					aws: {
+						url: {{ .MockS3URL }},
+						bucket: test,
+						key: bundle.tar.gz,
+						region: mock-region,
+					}
+				},
+				files: {
+					"app.rego": {{ .AppRego }}
+				},
+				requirements: [
+					{library: TestLibConflicts}
+				]
+			}
+		},
+		libraries: {
+			TestLib: {
+				files: {
+					"stacks/foo/foo.rego": {{ .LibRego }}
+				}
+			},
+			TestLibConflicts: {
+				files: {
+					"main.rego": {{ .MainRego }}
+				}
+			}
+		},
+		stacks: {
+			TestStack: {
+				selector: {
+					env: [production]
+				},
+				source: {
+					library: TestLib
+				}
+			}
+		}
+	}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	mainRego := `
+		package main
+
+		main := x if {
+			x := stack_result
+			x >= data.app.p
+		} else := x {
+			x := data.app.p
+		}
+
+		stack_result := max([x | x := data.stacks[_].p])
+	`
+
+	buf := bytes.NewBuffer(nil)
+	err = tmpl.Execute(buf, struct {
+		MockS3URL string
+		AppRego   string
+		LibRego   string
+		MainRego  string
+	}{
+		MockS3URL: s3TS.URL,
+		AppRego:   base64.StdEncoding.EncodeToString([]byte("package app\np := 7")),
+		LibRego:   base64.StdEncoding.EncodeToString([]byte("package stacks.foo\np := 8")),
+		MainRego:  base64.StdEncoding.EncodeToString([]byte(mainRego)),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	err = os.WriteFile(configPath, buf.Bytes(), 0644)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	svc := service.New().WithConfigFile(configPath).WithPersistenceDir(persistenceDir)
+
+	doneCh := make(chan error)
+
+	go func() {
+		doneCh <- svc.Run(ctx)
+	}()
+
+	for {
+		obj, err := mock.GetObject("test", "bundle.tar.gz", nil)
+
+		if err != nil {
+			if gofakes3.HasErrorCode(err, gofakes3.ErrNoSuchKey) {
+				time.Sleep(time.Millisecond)
+				continue
+			}
+			t.Fatal(err)
+		}
+
+		b, err := bundle.NewReader(obj.Contents).Read()
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		expectedRego := map[string]string{
+			"app.rego":            "package app\np := 7",
+			"stacks/foo/foo.rego": "package stacks.foo\np := 8",
+			"main.rego":           mainRego,
+		}
+
+		if len(expectedRego) != len(b.Modules) {
+			t.Fatalf("expected %v modules but got %v", len(expectedRego), len(b.Modules))
+		}
+
+		got := map[string]string{}
+		for _, mf := range b.Modules {
+			got[strings.TrimPrefix(mf.Path, "/")] = string(mf.Raw)
+		}
+
+		for k := range expectedRego {
+			if expectedRego[k] != got[k] {
+				for k, v := range got {
+					t.Logf("Got %v:\n%v", k, v)
+				}
+				t.Fatalf("Expected %v:\n%v", k, expectedRego[k])
+			}
+		}
+
+		break
+	}
+
+	cancel()
+	err = <-doneCh
+	if err != nil {
+		t.Fatal(err)
+	}
+
 }
 
 func testS3Service(t *testing.T, bucket string) (*s3mem.Backend, *httptest.Server) {

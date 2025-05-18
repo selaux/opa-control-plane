@@ -26,6 +26,7 @@ type Metadata struct {
 type Root struct {
 	Metadata  Metadata            `yaml:"metadata,omitempty"`
 	Systems   map[string]*System  `yaml:"systems,omitempty"`
+	Stacks    map[string]*Stack   `yaml:"stacks,omitempty"`
 	Libraries map[string]*Library `yaml:"libraries,omitempty"`
 	Secrets   map[string]*Secret  `yaml:"secrets,omitempty"`
 	Database  Database            `yaml:"database,omitempty"`
@@ -71,6 +72,10 @@ func (r *Root) UnmarshalYAML(node *yaml.Node) error {
 		}
 	}
 
+	for name, stack := range raw.Stacks {
+		stack.Name = name
+	}
+
 	*r = Root(raw) // Assign the unmarshaled data back to the original struct
 	return nil
 }
@@ -78,10 +83,22 @@ func (r *Root) UnmarshalYAML(node *yaml.Node) error {
 // System defines the configuration for a Lighthouse System.
 type System struct {
 	Name          string        `yaml:"-"`
+	Labels        Labels        `yaml:"labels,omitempty"`
 	Git           Git           `yaml:"git,omitempty"`
 	ObjectStorage ObjectStorage `yaml:"object_storage,omitempty"`
 	Datasources   []Datasource  `yaml:"datasources,omitempty"`
 	Files         Files         `yaml:"files,omitempty"`
+	Requirements  []Requirement `yaml:"requirements,omitempty"`
+}
+
+type Labels map[string]string
+
+type Requirement struct {
+	Library *string `yaml:"library,omitempty"`
+}
+
+func (a Requirement) Equal(b Requirement) bool {
+	return stringEqual(a.Library, b.Library)
 }
 
 type Files map[string]string
@@ -132,7 +149,19 @@ func (s *System) Equal(other *System) bool {
 		return false
 	}
 
-	return s.Name == other.Name && s.Git.Equal(&other.Git) && s.ObjectStorage.Equal(&other.ObjectStorage) && equalDatasources(s.Datasources, other.Datasources) && s.Files.Equal(other.Files)
+	return s.Name == other.Name && s.Git.Equal(&other.Git) && s.ObjectStorage.Equal(&other.ObjectStorage) && equalDatasources(s.Datasources, other.Datasources) && s.Files.Equal(other.Files) && equalRequirements(s, other)
+}
+
+func equalRequirements(a *System, b *System) bool {
+	if len(a.Requirements) != len(b.Requirements) {
+		return false
+	}
+	for k := range a.Requirements {
+		if !a.Requirements[k].Equal(b.Requirements[k]) {
+			return false
+		}
+	}
+	return true
 }
 
 // Library defines the configuration for a Lighthouse Library.
@@ -153,6 +182,80 @@ func (s *Library) Equal(other *Library) bool {
 	}
 
 	return s.Name == other.Name && s.Git.Equal(&other.Git) && equalDatasources(s.Datasources, other.Datasources) && s.Files.Equal(other.Files)
+}
+
+// Stack defines the configuration for a Lighthouse Stack.
+type Stack struct {
+	Name     string   `yaml:"-"`
+	Selector Selector `yaml:"selector"`
+	Source   struct {
+		Library *string `yaml:"library,omitempty"`
+	} `yaml:"source,omitempty"`
+}
+
+func (a *Stack) Equal(other *Stack) bool {
+	if a == other {
+		return true
+	}
+	if a == nil || other == nil {
+		return false
+	}
+	return a.Name == other.Name && a.Selector.Equal(other.Selector) && stringEqual(a.Source.Library, other.Source.Library)
+}
+
+type Selector map[string][]string
+
+func (s Selector) Matches(labels Labels) bool {
+	for expLabel, expValues := range s {
+		v, ok := labels[expLabel]
+		if !ok {
+			return false
+		}
+		found := len(expValues) == 0 // empty selector value matches any label value
+		for _, ev := range expValues {
+			// TODO(tsandall): add support for glob matching
+			if ev == v {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return false
+		}
+	}
+	return true
+}
+
+func (s Selector) Equal(other Selector) bool {
+	if len(s) != len(other) {
+		return false
+	}
+	for k := range s {
+		if !equalStringSets(s[k], other[k]) {
+			return false
+		}
+	}
+	return true
+}
+
+func equalStringSets(a, b []string) bool {
+	sa := make(map[string]struct{})
+	for i := range a {
+		sa[a[i]] = struct{}{}
+	}
+	sb := make(map[string]struct{})
+	for i := range b {
+		sb[b[i]] = struct{}{}
+	}
+	if len(sa) != len(sb) {
+		return false
+	}
+	for k := range sa {
+		if _, ok := sb[k]; !ok {
+			return false
+		}
+	}
+	return true
 }
 
 // Git defines the Git synchronization configuration used by Lighthouse
@@ -431,6 +534,34 @@ func EqualLibraries(a, b []*Library) bool {
 	}
 
 	n := make(map[string]*Library, len(b))
+	for _, lib := range b {
+		n[lib.Name] = lib
+	}
+
+	if len(m) != len(n) {
+		return false
+	}
+
+	for id, a := range m {
+		b, ok := n[id]
+		if !ok {
+			return false
+		}
+		if !a.Equal(b) {
+			return false
+		}
+	}
+
+	return true
+}
+
+func EqualStacks(a, b []*Stack) bool {
+	m := make(map[string]*Stack, len(a))
+	for _, lib := range a {
+		m[lib.Name] = lib
+	}
+
+	n := make(map[string]*Stack, len(b))
 	for _, lib := range b {
 		n[lib.Name] = lib
 	}
