@@ -46,7 +46,7 @@ func TestService(t *testing.T) {
 		systems: {
 			TestSystem: {
 				git: {
-					repo: {{ .RemoteGitDir }},
+					repo: {{ .GitURL }},
 					reference: refs/heads/master,
 					path: "app/",
 				},
@@ -76,7 +76,7 @@ func TestService(t *testing.T) {
 		libraries: {
 			TestLibrary: {
 				git: {
-					repo: {{ .RemoteGitDir }},
+					repo: {{ .GitURL }},
 					reference: refs/heads/master,
 					path: "lib/",
 				},
@@ -105,8 +105,8 @@ func TestService(t *testing.T) {
 				"Datasource2JSON": `{"key": "value2"}`,
 			},
 			gitFiles: map[string]string{
-				"app/app.rego": "AppRego",
-				"lib/lib.rego": "LibRego",
+				"app/app.rego": "{{ .AppRego }}",
+				"lib/lib.rego": "{{ .LibRego }}",
 			},
 			httpEndpoints: map[string]string{
 				"/datasource1": "{{ .Datasource1JSON }}",
@@ -326,9 +326,7 @@ func TestService(t *testing.T) {
 
 			if len(test.gitFiles) > 0 {
 				for name, content := range test.gitFiles {
-					if s, ok := test.contentParameters[content]; ok {
-						content = s
-					}
+					content = formatTemplate(t, content, test.contentParameters)
 
 					if err := os.MkdirAll(path.Dir(path.Join(remoteGitDir, name)), 0755); err != nil {
 						t.Fatal(err)
@@ -375,9 +373,9 @@ func TestService(t *testing.T) {
 			persistenceDir := path.Join(rootDir, "data")
 
 			parameters := map[string]string{
-				"RemoteGitDir": remoteGitDir,
-				"S3URL":        s3TS.URL,
-				"HTTPURL":      httpTS.URL,
+				"GitURL":  remoteGitDir,
+				"S3URL":   s3TS.URL,
+				"HTTPURL": httpTS.URL,
 			}
 			for k, v := range test.contentParameters {
 				parameters[k] = base64.StdEncoding.EncodeToString([]byte(v))
