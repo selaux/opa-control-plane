@@ -109,15 +109,15 @@ func TestService(t *testing.T) {
 				"lib/lib.rego": "LibRego",
 			},
 			httpEndpoints: map[string]string{
-				"/datasource1": "Datasource1JSON",
-				"/datasource2": "Datasource2JSON",
+				"/datasource1": "{{ .Datasource1JSON }}",
+				"/datasource2": "{{ .Datasource2JSON }}",
 			},
 			expectedBundle: expectedBundle{
 				Rego: map[string]string{
-					"foo.rego": "FooRego",
-					"app.rego": "AppRego",
-					"lib.rego": "LibRego",
-					"bar.rego": "BarRego",
+					"foo.rego": "{{ .FooRego }}",
+					"app.rego": "{{ .AppRego }}",
+					"lib.rego": "{{ .LibRego }}",
+					"bar.rego": "{{ .BarRego }}",
 				},
 				Data: `{
 					"datasource1": {{ .Datasource1JSON }},
@@ -182,15 +182,15 @@ func TestService(t *testing.T) {
 				"Datasource2JSON": `{"key": "value2"}`,
 			},
 			httpEndpoints: map[string]string{
-				"/datasource1": "Datasource1JSON",
-				"/datasource2": "Datasource2JSON",
+				"/datasource1": "{{ .Datasource1JSON }}",
+				"/datasource2": "{{ .Datasource2JSON }}",
 			},
 			expectedBundle: expectedBundle{
 				Rego: map[string]string{
-					"foo.rego":     "FooRego",
-					"app/app.rego": "AppRego",
-					"lib/lib.rego": "LibRego",
-					"bar.rego":     "BarRego",
+					"foo.rego":     "{{ .FooRego }}",
+					"app/app.rego": "{{ .AppRego }}",
+					"lib/lib.rego": "{{ .LibRego }}",
+					"bar.rego":     "{{ .BarRego }}",
 				},
 				Data: `{
 					"datasource1": {{ .Datasource1JSON }},
@@ -231,8 +231,8 @@ func TestService(t *testing.T) {
 			},
 			expectedBundle: expectedBundle{
 				Rego: map[string]string{
-					"app.rego":  "AppRego",
-					"main.rego": "LibRego",
+					"app.rego":  "{{ .AppRego }}",
+					"main.rego": "{{ .LibRego }}",
 				},
 			},
 		},
@@ -302,9 +302,9 @@ func TestService(t *testing.T) {
 			},
 			expectedBundle: expectedBundle{
 				Rego: map[string]string{
-					"app.rego":            "AppRego",
-					"stacks/foo/foo.rego": "LibRego",
-					"main.rego":           "MainRego",
+					"app.rego":            "{{ .AppRego }}",
+					"stacks/foo/foo.rego": "{{ .LibRego }}",
+					"main.rego":           "{{ .MainRego }}",
 				},
 			},
 		},
@@ -362,9 +362,7 @@ func TestService(t *testing.T) {
 			// Create a mock S3 service with a test bucket and a mock HTTP service to serve the datasource.
 
 			for name, content := range test.httpEndpoints {
-				if s, ok := test.contentParameters[content]; ok {
-					test.httpEndpoints[name] = s
-				}
+				test.httpEndpoints[name] = formatTemplate(t, content, test.contentParameters)
 			}
 
 			mock, s3TS := testS3Service(t, "test")
@@ -376,13 +374,7 @@ func TestService(t *testing.T) {
 			configPath := path.Join(rootDir, "config.yaml")
 			persistenceDir := path.Join(rootDir, "data")
 
-			tmpl, err := template.New("config").Parse(test.config)
-			if err != nil {
-				t.Fatal(err)
-			}
-
-			buf := bytes.NewBuffer(nil)
-			parameters := map[string]interface{}{
+			parameters := map[string]string{
 				"RemoteGitDir": remoteGitDir,
 				"S3URL":        s3TS.URL,
 				"HTTPURL":      httpTS.URL,
@@ -390,12 +382,10 @@ func TestService(t *testing.T) {
 			for k, v := range test.contentParameters {
 				parameters[k] = base64.StdEncoding.EncodeToString([]byte(v))
 			}
-			err = tmpl.Execute(buf, parameters)
-			if err != nil {
-				t.Fatal(err)
-			}
 
-			err = os.WriteFile(configPath, buf.Bytes(), 0644)
+			s := formatTemplate(t, test.config, parameters)
+
+			err = os.WriteFile(configPath, []byte(s), 0644)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -434,39 +424,18 @@ func TestService(t *testing.T) {
 				}
 
 				for k := range test.expectedBundle.Rego {
-					rego := test.expectedBundle.Rego[k]
-					if s, ok := test.contentParameters[rego]; ok {
-						rego = s
-					}
+					rego := formatTemplate(t, test.expectedBundle.Rego[k], test.contentParameters)
 					if rego != got[k] {
-						t.Fatalf("exp:\n%v\n\ngot:\n%v", test.expectedBundle.Rego[k], got[k])
+						t.Fatalf("exp:\n%v\n\ngot:\n%v", rego, got[k])
 					}
 				}
 
 				var expectedData interface{}
 
 				if test.expectedBundle.Data != "" {
-					buf := bytes.NewBuffer(nil)
-					parameters := map[string]interface{}{
-						"RemoteGitDir": remoteGitDir,
-						"S3URL":        s3TS.URL,
-						"HTTPURL":      httpTS.URL,
-					}
-					for k, v := range test.contentParameters {
-						parameters[k] = v
-					}
+					data := formatTemplate(t, test.expectedBundle.Data, test.contentParameters)
 
-					tmpl, err := template.New("data").Parse(test.expectedBundle.Data)
-					if err != nil {
-						t.Fatal(err)
-					}
-
-					err = tmpl.Execute(buf, parameters)
-					if err != nil {
-						t.Fatal(err)
-					}
-
-					if err := json.Unmarshal(buf.Bytes(), &expectedData); err != nil {
+					if err := json.Unmarshal([]byte(data), &expectedData); err != nil {
 						t.Fatalf("failed to unmarshal expected data: %v", err)
 					}
 				} else {
@@ -487,6 +456,25 @@ func TestService(t *testing.T) {
 			}
 		})
 	}
+}
+
+func formatTemplate(t *testing.T, templateStr string, contentParameters map[string]string) string {
+	buf := bytes.NewBuffer(nil)
+	parameters := map[string]interface{}{}
+	for k, v := range contentParameters {
+		parameters[k] = v
+	}
+
+	tmpl, err := template.New("data").Parse(templateStr)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	err = tmpl.Execute(buf, parameters)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(buf.Bytes())
 }
 
 func testS3Service(t *testing.T, bucket string) (*s3mem.Backend, *httptest.Server) {
