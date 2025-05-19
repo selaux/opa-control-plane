@@ -69,7 +69,7 @@ func TestService(t *testing.T) {
 					}
 				],
 				files: {
-					"foo.rego": {{ .FooRego }}
+					"foo.rego": {{ base64encode .FooRego }}
 				}
 			}
 		},
@@ -91,7 +91,7 @@ func TestService(t *testing.T) {
 					}
 				],
 				files: {
-					"bar.rego": {{ .BarRego }}
+					"bar.rego": {{ base64encode .BarRego }}
 				}
 			}
 		}
@@ -149,8 +149,8 @@ func TestService(t *testing.T) {
 					}
 				],
 				files: {
-					"app/app.rego": {{ .AppRego }},
-					"foo.rego": {{ .FooRego }}
+					"app/app.rego": {{ base64encode .AppRego }},
+					"foo.rego": {{ base64encode .FooRego }}
 				}
 			}
 		},
@@ -167,8 +167,8 @@ func TestService(t *testing.T) {
 					}
 				],
 				files: {
-					"bar.rego": {{ .BarRego }},
-					"lib/lib.rego": {{ .LibRego }}
+					"bar.rego": {{ base64encode .BarRego }},
+					"lib/lib.rego": {{ base64encode .LibRego }}
 				}
 			}
 		}
@@ -212,7 +212,7 @@ func TestService(t *testing.T) {
 					}
 				},
 				files: {
-					"app.rego": {{ .AppRego }}
+					"app.rego": {{ base64encode .AppRego }}
 				},
 				requirements: [{library: TestLibrary}]
 			}
@@ -220,7 +220,7 @@ func TestService(t *testing.T) {
 		libraries: {
 			TestLibrary: {
 				files: {
-					"main.rego": {{ .LibRego }}
+					"main.rego": {{ base64encode .LibRego }}
 				}
 			}
 		}
@@ -254,7 +254,7 @@ func TestService(t *testing.T) {
 					}
 				},
 				files: {
-					"app.rego": {{ .AppRego }}
+					"app.rego": {{ base64encode .AppRego }}
 				},
 				requirements: [
 					{library: TestLibConflicts}
@@ -264,12 +264,12 @@ func TestService(t *testing.T) {
 		libraries: {
 			TestLib: {
 				files: {
-					"stacks/foo/foo.rego": {{ .LibRego }}
+					"stacks/foo/foo.rego": {{ base64encode .LibRego }}
 				}
 			},
 			TestLibConflicts: {
 				files: {
-					"main.rego": {{ .MainRego }}
+					"main.rego": {{ base64encode .MainRego }}
 				}
 			}
 		},
@@ -378,7 +378,7 @@ func TestService(t *testing.T) {
 				"HTTPURL": httpTS.URL,
 			}
 			for k, v := range test.contentParameters {
-				parameters[k] = base64.StdEncoding.EncodeToString([]byte(v))
+				parameters[k] = v
 			}
 
 			s := formatTemplate(t, test.config, parameters)
@@ -463,7 +463,13 @@ func formatTemplate(t *testing.T, templateStr string, contentParameters map[stri
 		parameters[k] = v
 	}
 
-	tmpl, err := template.New("data").Parse(templateStr)
+	funcs := template.FuncMap{
+		"base64encode": func(s string) (string, error) {
+			return base64.StdEncoding.EncodeToString([]byte(s)), nil
+		},
+	}
+
+	tmpl, err := template.New("data").Funcs(funcs).Parse(templateStr)
 	if err != nil {
 		t.Fatal(err)
 	}
