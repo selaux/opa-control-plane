@@ -12,7 +12,7 @@ test_system_allow_egress {
 	ans := entry.main with data.policy as system
 		with data.stacks as {}
 		with input as input_request
-		with data.self.metadata.system_type as "envoy"
+
 
 	ans.allowed == true
 	ans.headers["x-ext-auth-allow"] == "yes"
@@ -29,7 +29,7 @@ test_system_allow_ingress {
 	ans := entry.main with data.policy as system
 		with data.stacks as {}
 		with input as input_request
-		with data.self.metadata.system_type as "envoy"
+
 
 	ans.allowed == true
 	ans.headers["x-ext-auth-allow"] == "yes"
@@ -47,7 +47,7 @@ test_stack_egress {
 	ans := entry.main with entry.applicable_stacks as applicable_stacks
 		with data.stacks.stack1.policy as stack1
 		with input as input_request
-		with data.self.metadata.system_type as "envoy"
+
 
 	ans.allowed == false
 	ans.headers["x-ext-auth-allow"] == "no"
@@ -67,7 +67,7 @@ test_stack_ingress {
 	ans := entry.main with entry.applicable_stacks as applicable_stacks
 		with data.stacks.stack1.policy as stack1
 		with input as input_request
-		with data.self.metadata.system_type as "envoy"
+
 
 	ans.allowed == true
 	ans.headers["x-ext-auth-allow"] == "yes"
@@ -87,7 +87,7 @@ test_stack_ingress_allow_Deny {
 	ans := entry.main with entry.applicable_stacks as applicable_stacks
 		with data.stacks.stack1.policy as stack1
 		with input as input_request
-		with data.self.metadata.system_type as "envoy"
+
 
 	ans.allowed == false
 	ans.headers["x-ext-auth-allow"] == "no"
@@ -111,7 +111,7 @@ test_stack_precedence_over_ingress {
 		with data.stacks.stack1.policy as stack1
 		with input as input_request
 		with data.policy as system
-		with data.self.metadata.system_type as "envoy"
+
 
 	ans.allowed == true
 	ans.headers["x-ext-auth-allow"] == "yes"
@@ -134,7 +134,7 @@ test_stack_precedence_over_egress {
 		with data.stacks.stack1.policy as stack1
 		with input as input_request
 		with data.policy as system
-		with data.self.metadata.system_type as "envoy"
+
 
 	ans.allowed == true
 	ans.headers["x-ext-auth-allow"] == "yes"
@@ -157,7 +157,7 @@ test_no_system_no_stacks {
 		with data.stacks.stack1.policy as stack1
 		with input as input_request
 		with data.policy as system
-		with data.self.metadata.system_type as "envoy"
+
 
 	ans.allowed == false
 	ans.headers["x-ext-auth-allow"] == "no"
@@ -177,7 +177,7 @@ test_system_ingress_body {
 		with entry.applicable_stacks as applicable_stacks
 		with data.stacks.stack1.policy as stack1
 		with data.policy as system
-		with data.self.metadata.system_type as "envoy"
+
 
 	ans.allowed == true
 	ans.code == 200
@@ -199,7 +199,7 @@ test_stack_ingress_body {
 		with entry.applicable_stacks as applicable_stacks
 		with data.stacks.stack1.policy as stack1
 		with data.policy as system
-		with data.self.metadata.system_type as "envoy"
+
 
 	ans.allowed == true
 	ans.code == 200
@@ -221,7 +221,7 @@ test_system_egress_body {
 		with entry.applicable_stacks as applicable_stacks
 		with data.stacks.stack1.policy as stack1
 		with data.policy as system
-		with data.self.metadata.system_type as "envoy"
+
 
 	ans.allowed == true
 	ans.code == 200
@@ -243,7 +243,7 @@ test_stack_egress_body {
 		with entry.applicable_stacks as applicable_stacks
 		with data.stacks.stack1.policy as stack1
 		with data.policy as system
-		with data.self.metadata.system_type as "envoy"
+
 
 	ans.allowed == true
 	ans.code == 200
@@ -267,7 +267,7 @@ test_stack_header_conflict {
 		with data.stacks.stack1.policy as stack1
 		with data.stacks.stack2.policy as stack2
 		with data.policy as system
-		with data.self.metadata.system_type as "envoy"
+
 
 	ans.allowed == true
 	ans.code == 200
@@ -289,7 +289,7 @@ test_stack_header_extauth {
 		with entry.applicable_stacks as applicable_stacks
 		with data.stacks.stack1.policy as stack1
 		with data.policy as system
-		with data.self.metadata.system_type as "envoy"
+
 
 	ans.allowed == true
 	ans.code == 200
@@ -316,7 +316,7 @@ test_stack_multi_priority {
 		with data.stacks.stack2.policy as stack2
 		with data.stacks.stack3.policy as stack3
 		with data.policy as system
-		with data.self.metadata.system_type as "envoy"
+
 
 	ans.allowed == true
 	ans.code == 401
@@ -336,7 +336,7 @@ test_stack_deny_over_allow {
 		with data.stacks.stack1.policy as stack1
 		with data.stacks.stack2.policy as stack2
 		with data.policy as system
-		with data.self.metadata.system_type as "envoy"
+
 
 	ans.allowed == false
 	ans.code == 403
@@ -359,7 +359,7 @@ test_system_all_fields {
 	ans := entry.main with data.policy as system
 		with data.stacks as {}
 		with input as input_request
-		with data.self.metadata.system_type as "envoy"
+
 
 	ans.allowed == true
 	ans.headers["x-ext-auth-allow"] == "yes"
@@ -401,7 +401,7 @@ test_stack_all_fields {
 		with entry.applicable_stacks as applicable_stacks
 		with data.stacks.stack1.policy as stack1
 		with input as input_request
-		with data.self.metadata.system_type as "envoy"
+
 
 	ans.allowed == false
 	ans.headers["x-ext-auth-allow"] == "no"
