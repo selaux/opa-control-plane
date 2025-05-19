@@ -20,9 +20,10 @@ import (
 )
 
 type backtestParams struct {
-	configFile string
-	styraURL   string
-	styraToken string
+	configFile   string
+	styraURL     string
+	styraToken   string
+	numDecisions int
 }
 
 func init() {
@@ -42,6 +43,7 @@ func init() {
 
 	cmd.Flags().StringVarP(&params.configFile, "config", "c", "config.yaml", "Path to the configuration file")
 	cmd.Flags().StringVarP(&params.styraURL, "url", "u", "", "Styra tenant URL (e.g., https://expo.styra.com)")
+	cmd.Flags().IntVarP(&params.numDecisions, "decisions", "n", 100, "Number of decisions to backtest")
 
 	RootCommand.AddCommand(
 		cmd,
@@ -101,7 +103,7 @@ func doBacktest(params backtestParams) error {
 	ctx := context.Background()
 
 	for _, system := range cfg.Systems {
-		if err := backtestSystem(ctx, &styra, v1SystemsByName, system, &report); err != nil {
+		if err := backtestSystem(ctx, params.numDecisions, &styra, v1SystemsByName, system, &report); err != nil {
 			report.Systems[system.Name] = err.Error()
 		}
 	}
@@ -116,7 +118,7 @@ func doBacktest(params backtestParams) error {
 	return nil
 }
 
-func backtestSystem(ctx context.Context, styra *DASClient, byName map[string]*v1System, system *config.System, report *backtestReport) error {
+func backtestSystem(ctx context.Context, n int, styra *DASClient, byName map[string]*v1System, system *config.System, report *backtestReport) error {
 
 	v1, ok := byName[system.Name]
 	if !ok {
@@ -126,7 +128,7 @@ func backtestSystem(ctx context.Context, styra *DASClient, byName map[string]*v1
 
 	resp, err := styra.JSON("v1/decisions", DASParams{
 		Query: map[string]string{
-			"limit":  "10",
+			"limit":  fmt.Sprintf("%d", n),
 			"system": v1.Id,
 		},
 	})
