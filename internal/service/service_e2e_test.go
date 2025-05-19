@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/base64"
+	"encoding/json"
 	"html/template"
 	"net/http"
 	"net/http/httptest"
@@ -23,57 +24,19 @@ import (
 	"github.com/tsandall/lighthouse/internal/test/tempfs"
 )
 
-func TestFromConfigWithGit(t *testing.T) {
-
-	rootDir, _, err := tempfs.MakeTempFS("", "lighthouse_e2e_w_git", map[string]string{
-		"remote-git/app/app.rego": "package app\np := data.lib.q",
-		"remote-git/lib/lib.rego": "package lib\nq := data.lib.s",
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	t.Log("Root Directory:", rootDir)
-
-	remoteGitDir := path.Join(rootDir, "remote-git")
-
-	repo, err := git.PlainInit(remoteGitDir, false)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	w, err := repo.Worktree()
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if _, err := w.Add("app/app.rego"); err != nil {
-		t.Fatal(err)
-	}
-
-	if _, err := w.Add("lib/lib.rego"); err != nil {
-		t.Fatal(err)
-	}
-
-	if _, err := w.Commit("Initial commit", &git.CommitOptions{Author: &object.Signature{}}); err != nil {
-		t.Fatal(err)
-	}
-
-	// Create a mock S3 service with a test bucket and a mock HTTP service to serve the datasource.
-
-	mock, s3TS := testS3Service(t, "test")
-	httpTS := testHTTPDataServer(t, map[string]string{
-		"/datasource1": `{"key": "value1"}`,
-		"/datasource2": `{"key": "value2"}`,
-	})
-
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	configPath := path.Join(rootDir, "config.yaml")
-	persistenceDir := path.Join(rootDir, "data")
-
-	tmpl, err := template.New("config").Parse(`{
+func TestService(t *testing.T) {
+	tests := []struct {
+		note            string
+		config          string
+		parameters      map[string]interface{}
+		gitFiles        map[string]string
+		datasourceFiles map[string]string
+		expectedRego    map[string]string
+		expectedData    string
+	}{
+		{
+			note: "TestFromConfigWithGit",
+			config: `{
 		systems: {
 			TestSystem: {
 				git: {
@@ -100,7 +63,7 @@ func TestFromConfigWithGit(t *testing.T) {
 					}
 				],
 				files: {
-					"foo.rego": "cGFja2FnZSBmb28="
+					"foo.rego": {{ .FooRego }}
 				}
 			}
 		},
@@ -122,125 +85,37 @@ func TestFromConfigWithGit(t *testing.T) {
 					}
 				],
 				files: {
-					"bar.rego": "cGFja2FnZSBsaWIKcyA6PSB0cnVl"
+					"bar.rego": {{ .BarRego }}
 				}
 			}
 		}
-	}`)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	buf := bytes.NewBuffer(nil)
-	err = tmpl.Execute(buf, struct {
-		RemoteGitDir    string
-		MockS3URL       string
-		MockHTTPURL     string
-		TestFileContent string
-	}{
-		RemoteGitDir: remoteGitDir,
-		MockS3URL:    s3TS.URL,
-		MockHTTPURL:  httpTS.URL,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	err = os.WriteFile(configPath, buf.Bytes(), 0644)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	svc := service.New().WithConfigFile(configPath).WithPersistenceDir(persistenceDir)
-
-	doneCh := make(chan error)
-
-	go func() {
-		doneCh <- svc.Run(ctx)
-	}()
-
-	for {
-		obj, err := mock.GetObject("test", "bundle.tar.gz", nil)
-
-		if err != nil {
-			if gofakes3.HasErrorCode(err, gofakes3.ErrNoSuchKey) {
-				time.Sleep(time.Millisecond)
-				continue
-			}
-			t.Fatal(err)
-		}
-
-		b, err := bundle.NewReader(obj.Contents).Read()
-		if err != nil {
-			t.Fatal(err)
-		}
-
-		expectedRego := map[string]string{
-			"foo.rego": "package foo",
-			"app.rego": "package app\np := data.lib.q",
-			"lib.rego": "package lib\nq := data.lib.s",
-			"bar.rego": "package lib\ns := true",
-		}
-		expectedData := map[string]interface{}{
-			"datasource1": map[string]interface{}{
-				"key": "value1",
+	}`,
+			parameters: map[string]interface{}{
+				"FooRego": base64.StdEncoding.EncodeToString([]byte("package foo")),
+				"BarRego": base64.StdEncoding.EncodeToString([]byte("package lib\ns := true")),
 			},
-			"datasource2": map[string]interface{}{
-				"key": "value2",
+			gitFiles: map[string]string{
+				"app/app.rego": "package app\np := data.lib.q",
+				"lib/lib.rego": "package lib\nq := data.lib.s",
 			},
-		}
-
-		if len(expectedRego) != len(b.Modules) {
-			t.Fatalf("expected %v modules but got %v", len(expectedRego), len(b.Modules))
-		}
-
-		got := map[string]string{}
-		for _, mf := range b.Modules {
-			got[strings.TrimPrefix(mf.Path, "/")] = string(mf.Raw)
-		}
-
-		for k := range expectedRego {
-			if expectedRego[k] != got[k] {
-				t.Fatalf("exp:\n%v\n\ngot:\n%v", expectedRego[k], got[k])
-			}
-		}
-
-		if !reflect.DeepEqual(b.Data, expectedData) {
-			t.Fatalf("expected data to be %v but got %v", expectedData, b.Data)
-		}
-
-		break
-	}
-
-	cancel()
-	err = <-doneCh
-	if err != nil {
-		t.Fatal(err)
-	}
-}
-
-func TestFromConfigWithouthGit(t *testing.T) {
-	rootDir, _, err := tempfs.MakeTempFS("", "lighthouse_e2e_wo_git", nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	t.Log("Root Directory:", rootDir)
-
-	// Create a mock S3 service with a test bucket and a mock HTTP service to serve the datasource.
-	mock, s3TS := testS3Service(t, "test")
-	httpTS := testHTTPDataServer(t, map[string]string{
-		"/datasource1": `{"key": "value1"}`,
-		"/datasource2": `{"key": "value2"}`,
-	})
-
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	configPath := path.Join(rootDir, "config.yaml")
-	persistenceDir := path.Join(rootDir, "data")
-
-	tmpl, err := template.New("config").Parse(`{
+			datasourceFiles: map[string]string{
+				"/datasource1": `{"key": "value1"}`,
+				"/datasource2": `{"key": "value2"}`,
+			},
+			expectedRego: map[string]string{
+				"foo.rego": "package foo",
+				"app.rego": "package app\np := data.lib.q",
+				"lib.rego": "package lib\nq := data.lib.s",
+				"bar.rego": "package lib\ns := true",
+			},
+			expectedData: `{
+				"datasource1": {"key": "value1"},
+				"datasource2": {"key": "value2"}
+			}`,
+		},
+		{
+			note: "TestFromConfigWithoutGit",
+			config: `{
 		systems: {
 			TestSystem: {
 				object_storage: {
@@ -262,8 +137,8 @@ func TestFromConfigWithouthGit(t *testing.T) {
 					}
 				],
 				files: {
-					"app/app.rego": "cGFja2FnZSBhcHAKcCA6PSBkYXRhLmxpYi5x",
-					"foo.rego": "cGFja2FnZSBmb28="
+					"app/app.rego": {{ .AppRego }},
+					"foo.rego": {{ .FooRego }}
 				}
 			}
 		},
@@ -280,120 +155,36 @@ func TestFromConfigWithouthGit(t *testing.T) {
 					}
 				],
 				files: {
-					"bar.rego": "cGFja2FnZSBsaWIKcyA6PSB0cnVl",
-					"lib/lib.rego": "cGFja2FnZSBsaWIKcSA6PSBkYXRhLmxpYi5z"
+					"bar.rego": {{ .BarRego}},
+					"lib/lib.rego": {{ .LibRego }}
 				}
 			}
 		}
-	}`)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	buf := bytes.NewBuffer(nil)
-	err = tmpl.Execute(buf, struct {
-		MockS3URL       string
-		MockHTTPURL     string
-		TestFileContent string
-	}{
-		MockS3URL:   s3TS.URL,
-		MockHTTPURL: httpTS.URL,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	err = os.WriteFile(configPath, buf.Bytes(), 0644)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	svc := service.New().WithConfigFile(configPath).WithPersistenceDir(persistenceDir)
-
-	doneCh := make(chan error)
-
-	go func() {
-		doneCh <- svc.Run(ctx)
-	}()
-
-	for {
-		obj, err := mock.GetObject("test", "bundle.tar.gz", nil)
-
-		if err != nil {
-			if gofakes3.HasErrorCode(err, gofakes3.ErrNoSuchKey) {
-				time.Sleep(time.Millisecond)
-				continue
-			}
-			t.Fatal(err)
-		}
-
-		b, err := bundle.NewReader(obj.Contents).Read()
-		if err != nil {
-			t.Fatal(err)
-		}
-
-		expectedRego := map[string]string{
-			"foo.rego":     "package foo",
-			"app/app.rego": "package app\np := data.lib.q",
-			"lib/lib.rego": "package lib\nq := data.lib.s",
-			"bar.rego":     "package lib\ns := true",
-		}
-		expectedData := map[string]interface{}{
-			"datasource1": map[string]interface{}{
-				"key": "value1",
+	}`,
+			parameters: map[string]interface{}{
+				"AppRego": base64.StdEncoding.EncodeToString([]byte("package app\np := data.lib.q")),
+				"FooRego": base64.StdEncoding.EncodeToString([]byte("package foo")),
+				"BarRego": base64.StdEncoding.EncodeToString([]byte("package lib\ns := true")),
+				"LibRego": base64.StdEncoding.EncodeToString([]byte("package lib\nq := data.lib.s")),
 			},
-			"datasource2": map[string]interface{}{
-				"key": "value2",
+			datasourceFiles: map[string]string{
+				"/datasource1": `{"key": "value1"}`,
+				"/datasource2": `{"key": "value2"}`,
 			},
-		}
-
-		if len(expectedRego) != len(b.Modules) {
-			t.Fatalf("expected %v modules but got %v", len(expectedRego), len(b.Modules))
-		}
-
-		got := map[string]string{}
-		for _, mf := range b.Modules {
-			got[strings.TrimPrefix(mf.Path, "/")] = string(mf.Raw)
-		}
-
-		for k := range expectedRego {
-			if expectedRego[k] != got[k] {
-				t.Fatalf("exp:\n%v\n\ngot:\n%v", expectedRego[k], got[k])
-			}
-		}
-
-		if !reflect.DeepEqual(b.Data, expectedData) {
-			t.Fatalf("expected data to be %v but got %v", expectedData, b.Data)
-		}
-
-		break
-	}
-
-	cancel()
-	err = <-doneCh
-	if err != nil {
-		t.Fatal(err)
-	}
-}
-
-func TestFromConfigWithRequirements(t *testing.T) {
-	rootDir, _, err := tempfs.MakeTempFS("", "lighthouse_e2e_requirements", nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	t.Log("Root Directory:", rootDir)
-
-	// Create a mock S3 service with a test bucket
-	mock, s3TS := testS3Service(t, "test")
-
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	configPath := path.Join(rootDir, "config.yaml")
-	persistenceDir := path.Join(rootDir, "data")
-
-	tmpl, err := template.New("config").Parse(`{
+			expectedRego: map[string]string{
+				"foo.rego":     "package foo",
+				"app/app.rego": "package app\np := data.lib.q",
+				"lib/lib.rego": "package lib\nq := data.lib.s",
+				"bar.rego":     "package lib\ns := true",
+			},
+			expectedData: `{
+				"datasource1": {"key": "value1"},
+				"datasource2": {"key": "value2"}
+			}`,
+		},
+		{
+			note: "TestFromConfigWithRequirements",
+			config: `{
 		systems: {
 			TestSystem: {
 				object_storage: {
@@ -417,109 +208,19 @@ func TestFromConfigWithRequirements(t *testing.T) {
 				}
 			}
 		}
-	}`)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	buf := bytes.NewBuffer(nil)
-	err = tmpl.Execute(buf, struct {
-		MockS3URL string
-		AppRego   string
-		LibRego   string
-	}{
-		MockS3URL: s3TS.URL,
-		AppRego:   base64.StdEncoding.EncodeToString([]byte("package app\np := 7")),
-		LibRego:   base64.StdEncoding.EncodeToString([]byte("package main\nmain := data.app.p")),
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	err = os.WriteFile(configPath, buf.Bytes(), 0644)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	svc := service.New().WithConfigFile(configPath).WithPersistenceDir(persistenceDir)
-
-	doneCh := make(chan error)
-
-	go func() {
-		doneCh <- svc.Run(ctx)
-	}()
-
-	for {
-		obj, err := mock.GetObject("test", "bundle.tar.gz", nil)
-
-		if err != nil {
-			if gofakes3.HasErrorCode(err, gofakes3.ErrNoSuchKey) {
-				time.Sleep(time.Millisecond)
-				continue
-			}
-			t.Fatal(err)
-		}
-
-		b, err := bundle.NewReader(obj.Contents).Read()
-		if err != nil {
-			t.Fatal(err)
-		}
-
-		expectedRego := map[string]string{
-			"app.rego":  "package app\np := 7",
-			"main.rego": "package main\nmain := data.app.p",
-		}
-
-		if len(expectedRego) != len(b.Modules) {
-			t.Fatalf("expected %v modules but got %v", len(expectedRego), len(b.Modules))
-		}
-
-		got := map[string]string{}
-		for _, mf := range b.Modules {
-			got[strings.TrimPrefix(mf.Path, "/")] = string(mf.Raw)
-		}
-
-		for k := range expectedRego {
-			if expectedRego[k] != got[k] {
-				for k, v := range got {
-					t.Logf("Got %v:\n%v", k, v)
-				}
-				t.Fatalf("Expected %v:\n%v", k, expectedRego[k])
-			}
-		}
-
-		break
-	}
-
-	cancel()
-	err = <-doneCh
-	if err != nil {
-		t.Fatal(err)
-	}
-}
-
-func TestFromConfigWithStacks(t *testing.T) {
-
-	// TODO(tsandall): these e2e tests follow a common pattern that we could
-	// abstract a bit... it would make each e2e test much more concise.
-
-	rootDir, _, err := tempfs.MakeTempFS("", "lighthouse_e2e_stacks", nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	t.Log("Root Directory:", rootDir)
-
-	// Create a mock S3 service with a test bucket
-	mock, s3TS := testS3Service(t, "test")
-
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	configPath := path.Join(rootDir, "config.yaml")
-	persistenceDir := path.Join(rootDir, "data")
-
-	tmpl, err := template.New("config").Parse(`{
+	}`,
+			parameters: map[string]interface{}{
+				"AppRego": base64.StdEncoding.EncodeToString([]byte("package app\np := 7")),
+				"LibRego": base64.StdEncoding.EncodeToString([]byte("package main\nmain := data.app.p")),
+			},
+			expectedRego: map[string]string{
+				"app.rego":  "package app\np := 7",
+				"main.rego": "package main\nmain := data.app.p",
+			},
+		},
+		{
+			note: "TestFromConfigWithStacks",
+			config: `{
 		systems: {
 			TestSystem: {
 				labels: {
@@ -564,12 +265,11 @@ func TestFromConfigWithStacks(t *testing.T) {
 				}
 			}
 		}
-	}`)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	mainRego := `
+	}`,
+			parameters: map[string]interface{}{
+				"AppRego": base64.StdEncoding.EncodeToString([]byte("package app\np := 7")),
+				"LibRego": base64.StdEncoding.EncodeToString([]byte("package stacks.foo\np := 8")),
+				"MainRego": base64.StdEncoding.EncodeToString([]byte(`
 		package main
 
 		main := x if {
@@ -580,86 +280,170 @@ func TestFromConfigWithStacks(t *testing.T) {
 		}
 
 		stack_result := max([x | x := data.stacks[_].p])
-	`
+	`)),
+			},
+			expectedRego: map[string]string{
+				"app.rego":            "package app\np := 7",
+				"stacks/foo/foo.rego": "package stacks.foo\np := 8",
+				"main.rego": `
+		package main
 
-	buf := bytes.NewBuffer(nil)
-	err = tmpl.Execute(buf, struct {
-		MockS3URL string
-		AppRego   string
-		LibRego   string
-		MainRego  string
-	}{
-		MockS3URL: s3TS.URL,
-		AppRego:   base64.StdEncoding.EncodeToString([]byte("package app\np := 7")),
-		LibRego:   base64.StdEncoding.EncodeToString([]byte("package stacks.foo\np := 8")),
-		MainRego:  base64.StdEncoding.EncodeToString([]byte(mainRego)),
-	})
-	if err != nil {
-		t.Fatal(err)
+		main := x if {
+			x := stack_result
+			x >= data.app.p
+		} else := x {
+			x := data.app.p
+		}
+
+		stack_result := max([x | x := data.stacks[_].p])
+	`,
+			},
+		},
 	}
 
-	err = os.WriteFile(configPath, buf.Bytes(), 0644)
-	if err != nil {
-		t.Fatal(err)
-	}
+	for _, test := range tests {
+		t.Run(test.note, func(t *testing.T) {
 
-	svc := service.New().WithConfigFile(configPath).WithPersistenceDir(persistenceDir)
-
-	doneCh := make(chan error)
-
-	go func() {
-		doneCh <- svc.Run(ctx)
-	}()
-
-	for {
-		obj, err := mock.GetObject("test", "bundle.tar.gz", nil)
-
-		if err != nil {
-			if gofakes3.HasErrorCode(err, gofakes3.ErrNoSuchKey) {
-				time.Sleep(time.Millisecond)
-				continue
+			rootDir, _, err := tempfs.MakeTempFS("", test.note, nil)
+			if err != nil {
+				t.Fatal(err)
 			}
-			t.Fatal(err)
-		}
 
-		b, err := bundle.NewReader(obj.Contents).Read()
-		if err != nil {
-			t.Fatal(err)
-		}
+			t.Log("Root Directory:", rootDir)
 
-		expectedRego := map[string]string{
-			"app.rego":            "package app\np := 7",
-			"stacks/foo/foo.rego": "package stacks.foo\np := 8",
-			"main.rego":           mainRego,
-		}
+			// Setup git files if any
 
-		if len(expectedRego) != len(b.Modules) {
-			t.Fatalf("expected %v modules but got %v", len(expectedRego), len(b.Modules))
-		}
+			remoteGitDir := path.Join(rootDir, "remote-git")
 
-		got := map[string]string{}
-		for _, mf := range b.Modules {
-			got[strings.TrimPrefix(mf.Path, "/")] = string(mf.Raw)
-		}
-
-		for k := range expectedRego {
-			if expectedRego[k] != got[k] {
-				for k, v := range got {
-					t.Logf("Got %v:\n%v", k, v)
+			if len(test.gitFiles) > 0 {
+				for name, content := range test.gitFiles {
+					if err := os.MkdirAll(path.Dir(path.Join(remoteGitDir, name)), 0755); err != nil {
+						t.Fatal(err)
+					}
+					if err := os.WriteFile(path.Join(remoteGitDir, name), []byte(content), 0644); err != nil {
+						t.Fatal(err)
+					}
 				}
-				t.Fatalf("Expected %v:\n%v", k, expectedRego[k])
+
+				repo, err := git.PlainInit(remoteGitDir, false)
+				if err != nil {
+					t.Fatal(err)
+				}
+
+				w, err := repo.Worktree()
+				if err != nil {
+					t.Fatal(err)
+				}
+
+				for name := range test.gitFiles {
+					if _, err := w.Add(name); err != nil {
+						t.Fatal(err)
+					}
+				}
+
+				if _, err := w.Commit("Initial commit", &git.CommitOptions{Author: &object.Signature{}}); err != nil {
+					t.Fatal(err)
+				}
 			}
-		}
 
-		break
+			// Create a mock S3 service with a test bucket and a mock HTTP service to serve the datasource.
+
+			mock, s3TS := testS3Service(t, "test")
+			httpTS := testHTTPDataServer(t, test.datasourceFiles)
+
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+
+			configPath := path.Join(rootDir, "config.yaml")
+			persistenceDir := path.Join(rootDir, "data")
+
+			tmpl, err := template.New("config").Parse(test.config)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			buf := bytes.NewBuffer(nil)
+			parameters := map[string]interface{}{
+				"RemoteGitDir": remoteGitDir,
+				"MockS3URL":    s3TS.URL,
+				"MockHTTPURL":  httpTS.URL,
+			}
+			for k, v := range test.parameters {
+				parameters[k] = v
+			}
+			err = tmpl.Execute(buf, parameters)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			err = os.WriteFile(configPath, buf.Bytes(), 0644)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			svc := service.New().WithConfigFile(configPath).WithPersistenceDir(persistenceDir)
+
+			doneCh := make(chan error)
+
+			go func() {
+				doneCh <- svc.Run(ctx)
+			}()
+
+			for {
+				obj, err := mock.GetObject("test", "bundle.tar.gz", nil)
+
+				if err != nil {
+					if gofakes3.HasErrorCode(err, gofakes3.ErrNoSuchKey) {
+						time.Sleep(time.Millisecond)
+						continue
+					}
+					t.Fatal(err)
+				}
+
+				b, err := bundle.NewReader(obj.Contents).Read()
+				if err != nil {
+					t.Fatal(err)
+				}
+
+				if len(test.expectedRego) != len(b.Modules) {
+					t.Fatalf("expected %v modules but got %v", len(test.expectedRego), len(b.Modules))
+				}
+
+				got := map[string]string{}
+				for _, mf := range b.Modules {
+					got[strings.TrimPrefix(mf.Path, "/")] = string(mf.Raw)
+				}
+
+				for k := range test.expectedRego {
+					if test.expectedRego[k] != got[k] {
+						t.Fatalf("exp:\n%v\n\ngot:\n%v", test.expectedRego[k], got[k])
+					}
+				}
+
+				var expectedData interface{}
+
+				if test.expectedData != "" {
+					if err := json.Unmarshal([]byte(test.expectedData), &expectedData); err != nil {
+						t.Fatalf("failed to unmarshal expected data: %v", err)
+					}
+				} else {
+					expectedData = map[string]interface{}{}
+				}
+
+				if !reflect.DeepEqual(b.Data, expectedData) {
+					t.Fatalf("expected data to be %v but got %v", expectedData, b.Data)
+				}
+
+				break
+			}
+
+			cancel()
+			err = <-doneCh
+			if err != nil {
+				t.Fatal(err)
+			}
+		})
 	}
-
-	cancel()
-	err = <-doneCh
-	if err != nil {
-		t.Fatal(err)
-	}
-
 }
 
 func testS3Service(t *testing.T, bucket string) (*s3mem.Backend, *httptest.Server) {
