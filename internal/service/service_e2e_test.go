@@ -28,7 +28,7 @@ func TestService(t *testing.T) {
 	tests := []struct {
 		note            string
 		config          string
-		parameters      map[string]interface{}
+		fileParameters  map[string]string
 		gitFiles        map[string]string
 		datasourceFiles map[string]string
 		expectedRego    map[string]string
@@ -46,7 +46,7 @@ func TestService(t *testing.T) {
 				},
 				object_storage: {
 					aws: {
-						url: {{ .MockS3URL }},
+						url: {{ .S3URL }},
 						bucket: test,
 						key: bundle.tar.gz,
 						region: mock-region,
@@ -58,7 +58,7 @@ func TestService(t *testing.T) {
 						path: "datasource1",
 						type: "http",
 						config: {
-							url: {{ .MockHTTPURL }}/datasource1
+							url: {{ .HTTPURL }}/datasource1
 						}
 					}
 				],
@@ -80,7 +80,7 @@ func TestService(t *testing.T) {
 						path: "datasource2",
 						type: "http",
 						config: {
-							url: {{ .MockHTTPURL }}/datasource2
+							url: {{ .HTTPURL }}/datasource2
 						}
 					}
 				],
@@ -90,23 +90,25 @@ func TestService(t *testing.T) {
 			}
 		}
 	}`,
-			parameters: map[string]interface{}{
-				"FooRego": base64.StdEncoding.EncodeToString([]byte("package foo")),
-				"BarRego": base64.StdEncoding.EncodeToString([]byte("package lib\ns := true")),
+			fileParameters: map[string]string{
+				"AppRego": "package app\np := data.lib.q",
+				"LibRego": "package lib\nq := data.lib.s",
+				"FooRego": "package foo",
+				"BarRego": "package lib\ns := true",
 			},
 			gitFiles: map[string]string{
-				"app/app.rego": "package app\np := data.lib.q",
-				"lib/lib.rego": "package lib\nq := data.lib.s",
+				"app/app.rego": "AppRego",
+				"lib/lib.rego": "LibRego",
 			},
 			datasourceFiles: map[string]string{
 				"/datasource1": `{"key": "value1"}`,
 				"/datasource2": `{"key": "value2"}`,
 			},
 			expectedRego: map[string]string{
-				"foo.rego": "package foo",
-				"app.rego": "package app\np := data.lib.q",
-				"lib.rego": "package lib\nq := data.lib.s",
-				"bar.rego": "package lib\ns := true",
+				"foo.rego": "FooRego",
+				"app.rego": "AppRego",
+				"lib.rego": "LibRego",
+				"bar.rego": "BarRego",
 			},
 			expectedData: `{
 				"datasource1": {"key": "value1"},
@@ -120,7 +122,7 @@ func TestService(t *testing.T) {
 			TestSystem: {
 				object_storage: {
 					aws: {
-						url: {{ .MockS3URL }},
+						url: {{ .S3URL }},
 						bucket: test,
 						key: bundle.tar.gz,
 						region: mock-region,
@@ -132,7 +134,7 @@ func TestService(t *testing.T) {
 						path: "datasource1",
 						type: "http",
 						config: {
-							url: {{ .MockHTTPURL }}/datasource1
+							url: {{ .HTTPURL }}/datasource1
 						}
 					}
 				],
@@ -150,32 +152,32 @@ func TestService(t *testing.T) {
 						path: "datasource2",
 						type: "http",
 						config: {
-							url: {{ .MockHTTPURL }}/datasource2
+							url: {{ .HTTPURL }}/datasource2
 						}
 					}
 				],
 				files: {
-					"bar.rego": {{ .BarRego}},
+					"bar.rego": {{ .BarRego }},
 					"lib/lib.rego": {{ .LibRego }}
 				}
 			}
 		}
 	}`,
-			parameters: map[string]interface{}{
-				"AppRego": base64.StdEncoding.EncodeToString([]byte("package app\np := data.lib.q")),
-				"FooRego": base64.StdEncoding.EncodeToString([]byte("package foo")),
-				"BarRego": base64.StdEncoding.EncodeToString([]byte("package lib\ns := true")),
-				"LibRego": base64.StdEncoding.EncodeToString([]byte("package lib\nq := data.lib.s")),
+			fileParameters: map[string]string{
+				"AppRego": "package app\np := data.lib.q",
+				"FooRego": "package foo",
+				"BarRego": "package lib\ns := true",
+				"LibRego": "package lib\nq := data.lib.s",
 			},
 			datasourceFiles: map[string]string{
 				"/datasource1": `{"key": "value1"}`,
 				"/datasource2": `{"key": "value2"}`,
 			},
 			expectedRego: map[string]string{
-				"foo.rego":     "package foo",
-				"app/app.rego": "package app\np := data.lib.q",
-				"lib/lib.rego": "package lib\nq := data.lib.s",
-				"bar.rego":     "package lib\ns := true",
+				"foo.rego":     "FooRego",
+				"app/app.rego": "AppRego",
+				"lib/lib.rego": "LibRego",
+				"bar.rego":     "BarRego",
 			},
 			expectedData: `{
 				"datasource1": {"key": "value1"},
@@ -189,7 +191,7 @@ func TestService(t *testing.T) {
 			TestSystem: {
 				object_storage: {
 					aws: {
-						url: {{ .MockS3URL }},
+						url: {{ .S3URL }},
 						bucket: test,
 						key: bundle.tar.gz,
 						region: mock-region,
@@ -209,13 +211,13 @@ func TestService(t *testing.T) {
 			}
 		}
 	}`,
-			parameters: map[string]interface{}{
-				"AppRego": base64.StdEncoding.EncodeToString([]byte("package app\np := 7")),
-				"LibRego": base64.StdEncoding.EncodeToString([]byte("package main\nmain := data.app.p")),
+			fileParameters: map[string]string{
+				"AppRego": "package app\np := 7",
+				"LibRego": "package main\nmain := data.app.p",
 			},
 			expectedRego: map[string]string{
-				"app.rego":  "package app\np := 7",
-				"main.rego": "package main\nmain := data.app.p",
+				"app.rego":  "AppRego",
+				"main.rego": "LibRego",
 			},
 		},
 		{
@@ -229,7 +231,7 @@ func TestService(t *testing.T) {
 				},
 				object_storage: {
 					aws: {
-						url: {{ .MockS3URL }},
+						url: {{ .S3URL }},
 						bucket: test,
 						key: bundle.tar.gz,
 						region: mock-region,
@@ -266,26 +268,10 @@ func TestService(t *testing.T) {
 			}
 		}
 	}`,
-			parameters: map[string]interface{}{
-				"AppRego": base64.StdEncoding.EncodeToString([]byte("package app\np := 7")),
-				"LibRego": base64.StdEncoding.EncodeToString([]byte("package stacks.foo\np := 8")),
-				"MainRego": base64.StdEncoding.EncodeToString([]byte(`
-		package main
-
-		main := x if {
-			x := stack_result
-			x >= data.app.p
-		} else := x {
-			x := data.app.p
-		}
-
-		stack_result := max([x | x := data.stacks[_].p])
-	`)),
-			},
-			expectedRego: map[string]string{
-				"app.rego":            "package app\np := 7",
-				"stacks/foo/foo.rego": "package stacks.foo\np := 8",
-				"main.rego": `
+			fileParameters: map[string]string{
+				"AppRego": "package app\np := 7",
+				"LibRego": "package stacks.foo\np := 8",
+				"MainRego": `
 		package main
 
 		main := x if {
@@ -297,6 +283,11 @@ func TestService(t *testing.T) {
 
 		stack_result := max([x | x := data.stacks[_].p])
 	`,
+			},
+			expectedRego: map[string]string{
+				"app.rego":            "AppRego",
+				"stacks/foo/foo.rego": "LibRego",
+				"main.rego":           "MainRego",
 			},
 		},
 	}
@@ -317,6 +308,10 @@ func TestService(t *testing.T) {
 
 			if len(test.gitFiles) > 0 {
 				for name, content := range test.gitFiles {
+					if s, ok := test.fileParameters[content]; ok {
+						content = s
+					}
+
 					if err := os.MkdirAll(path.Dir(path.Join(remoteGitDir, name)), 0755); err != nil {
 						t.Fatal(err)
 					}
@@ -365,11 +360,11 @@ func TestService(t *testing.T) {
 			buf := bytes.NewBuffer(nil)
 			parameters := map[string]interface{}{
 				"RemoteGitDir": remoteGitDir,
-				"MockS3URL":    s3TS.URL,
-				"MockHTTPURL":  httpTS.URL,
+				"S3URL":        s3TS.URL,
+				"HTTPURL":      httpTS.URL,
 			}
-			for k, v := range test.parameters {
-				parameters[k] = v
+			for k, v := range test.fileParameters {
+				parameters[k] = base64.StdEncoding.EncodeToString([]byte(v))
 			}
 			err = tmpl.Execute(buf, parameters)
 			if err != nil {
@@ -415,7 +410,11 @@ func TestService(t *testing.T) {
 				}
 
 				for k := range test.expectedRego {
-					if test.expectedRego[k] != got[k] {
+					rego := test.expectedRego[k]
+					if s, ok := test.fileParameters[rego]; ok {
+						rego = s
+					}
+					if rego != got[k] {
 						t.Fatalf("exp:\n%v\n\ngot:\n%v", test.expectedRego[k], got[k])
 					}
 				}
