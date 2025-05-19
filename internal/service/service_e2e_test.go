@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
-	"html/template"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -13,6 +12,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"text/template"
 	"time"
 
 	"github.com/go-git/go-git/v5"
@@ -25,14 +25,20 @@ import (
 )
 
 func TestService(t *testing.T) {
+	type expectedBundle struct {
+		Rego map[string]string
+		Data string
+	}
 	tests := []struct {
-		note            string
-		config          string
-		fileParameters  map[string]string
-		gitFiles        map[string]string
-		datasourceFiles map[string]string
-		expectedRego    map[string]string
-		expectedData    string
+		note              string
+		config            string
+		contentParameters map[string]string
+		gitFiles          map[string]string
+		httpEndpoints     map[string]string
+		expectedBundle    struct {
+			Rego map[string]string
+			Data string
+		}
 	}{
 		{
 			note: "TestFromConfigWithGit",
@@ -90,30 +96,34 @@ func TestService(t *testing.T) {
 			}
 		}
 	}`,
-			fileParameters: map[string]string{
-				"AppRego": "package app\np := data.lib.q",
-				"LibRego": "package lib\nq := data.lib.s",
-				"FooRego": "package foo",
-				"BarRego": "package lib\ns := true",
+			contentParameters: map[string]string{
+				"AppRego":         "package app\np := data.lib.q",
+				"LibRego":         "package lib\nq := data.lib.s",
+				"FooRego":         "package foo",
+				"BarRego":         "package lib\ns := true",
+				"Datasource1JSON": `{"key": "value1"}`,
+				"Datasource2JSON": `{"key": "value2"}`,
 			},
 			gitFiles: map[string]string{
 				"app/app.rego": "AppRego",
 				"lib/lib.rego": "LibRego",
 			},
-			datasourceFiles: map[string]string{
-				"/datasource1": `{"key": "value1"}`,
-				"/datasource2": `{"key": "value2"}`,
+			httpEndpoints: map[string]string{
+				"/datasource1": "Datasource1JSON",
+				"/datasource2": "Datasource2JSON",
 			},
-			expectedRego: map[string]string{
-				"foo.rego": "FooRego",
-				"app.rego": "AppRego",
-				"lib.rego": "LibRego",
-				"bar.rego": "BarRego",
+			expectedBundle: expectedBundle{
+				Rego: map[string]string{
+					"foo.rego": "FooRego",
+					"app.rego": "AppRego",
+					"lib.rego": "LibRego",
+					"bar.rego": "BarRego",
+				},
+				Data: `{
+					"datasource1": {{ .Datasource1JSON }},
+					"datasource2": {{ .Datasource2JSON }}
+				}`,
 			},
-			expectedData: `{
-				"datasource1": {"key": "value1"},
-				"datasource2": {"key": "value2"}
-			}`,
 		},
 		{
 			note: "TestFromConfigWithoutGit",
@@ -163,26 +173,30 @@ func TestService(t *testing.T) {
 			}
 		}
 	}`,
-			fileParameters: map[string]string{
-				"AppRego": "package app\np := data.lib.q",
-				"FooRego": "package foo",
-				"BarRego": "package lib\ns := true",
-				"LibRego": "package lib\nq := data.lib.s",
+			contentParameters: map[string]string{
+				"AppRego":         "package app\np := data.lib.q",
+				"FooRego":         "package foo",
+				"BarRego":         "package lib\ns := true",
+				"LibRego":         "package lib\nq := data.lib.s",
+				"Datasource1JSON": `{"key": "value1"}`,
+				"Datasource2JSON": `{"key": "value2"}`,
 			},
-			datasourceFiles: map[string]string{
-				"/datasource1": `{"key": "value1"}`,
-				"/datasource2": `{"key": "value2"}`,
+			httpEndpoints: map[string]string{
+				"/datasource1": "Datasource1JSON",
+				"/datasource2": "Datasource2JSON",
 			},
-			expectedRego: map[string]string{
-				"foo.rego":     "FooRego",
-				"app/app.rego": "AppRego",
-				"lib/lib.rego": "LibRego",
-				"bar.rego":     "BarRego",
+			expectedBundle: expectedBundle{
+				Rego: map[string]string{
+					"foo.rego":     "FooRego",
+					"app/app.rego": "AppRego",
+					"lib/lib.rego": "LibRego",
+					"bar.rego":     "BarRego",
+				},
+				Data: `{
+					"datasource1": {{ .Datasource1JSON }},
+					"datasource2": {{ .Datasource2JSON }}
+				}`,
 			},
-			expectedData: `{
-				"datasource1": {"key": "value1"},
-				"datasource2": {"key": "value2"}
-			}`,
 		},
 		{
 			note: "TestFromConfigWithRequirements",
@@ -211,13 +225,15 @@ func TestService(t *testing.T) {
 			}
 		}
 	}`,
-			fileParameters: map[string]string{
+			contentParameters: map[string]string{
 				"AppRego": "package app\np := 7",
 				"LibRego": "package main\nmain := data.app.p",
 			},
-			expectedRego: map[string]string{
-				"app.rego":  "AppRego",
-				"main.rego": "LibRego",
+			expectedBundle: expectedBundle{
+				Rego: map[string]string{
+					"app.rego":  "AppRego",
+					"main.rego": "LibRego",
+				},
 			},
 		},
 		{
@@ -268,7 +284,7 @@ func TestService(t *testing.T) {
 			}
 		}
 	}`,
-			fileParameters: map[string]string{
+			contentParameters: map[string]string{
 				"AppRego": "package app\np := 7",
 				"LibRego": "package stacks.foo\np := 8",
 				"MainRego": `
@@ -284,10 +300,12 @@ func TestService(t *testing.T) {
 		stack_result := max([x | x := data.stacks[_].p])
 	`,
 			},
-			expectedRego: map[string]string{
-				"app.rego":            "AppRego",
-				"stacks/foo/foo.rego": "LibRego",
-				"main.rego":           "MainRego",
+			expectedBundle: expectedBundle{
+				Rego: map[string]string{
+					"app.rego":            "AppRego",
+					"stacks/foo/foo.rego": "LibRego",
+					"main.rego":           "MainRego",
+				},
 			},
 		},
 	}
@@ -308,7 +326,7 @@ func TestService(t *testing.T) {
 
 			if len(test.gitFiles) > 0 {
 				for name, content := range test.gitFiles {
-					if s, ok := test.fileParameters[content]; ok {
+					if s, ok := test.contentParameters[content]; ok {
 						content = s
 					}
 
@@ -343,8 +361,14 @@ func TestService(t *testing.T) {
 
 			// Create a mock S3 service with a test bucket and a mock HTTP service to serve the datasource.
 
+			for name, content := range test.httpEndpoints {
+				if s, ok := test.contentParameters[content]; ok {
+					test.httpEndpoints[name] = s
+				}
+			}
+
 			mock, s3TS := testS3Service(t, "test")
-			httpTS := testHTTPDataServer(t, test.datasourceFiles)
+			httpTS := testHTTPDataServer(t, test.httpEndpoints)
 
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
@@ -363,7 +387,7 @@ func TestService(t *testing.T) {
 				"S3URL":        s3TS.URL,
 				"HTTPURL":      httpTS.URL,
 			}
-			for k, v := range test.fileParameters {
+			for k, v := range test.contentParameters {
 				parameters[k] = base64.StdEncoding.EncodeToString([]byte(v))
 			}
 			err = tmpl.Execute(buf, parameters)
@@ -400,8 +424,8 @@ func TestService(t *testing.T) {
 					t.Fatal(err)
 				}
 
-				if len(test.expectedRego) != len(b.Modules) {
-					t.Fatalf("expected %v modules but got %v", len(test.expectedRego), len(b.Modules))
+				if len(test.expectedBundle.Rego) != len(b.Modules) {
+					t.Fatalf("expected %v modules but got %v", len(test.expectedBundle.Rego), len(b.Modules))
 				}
 
 				got := map[string]string{}
@@ -409,20 +433,40 @@ func TestService(t *testing.T) {
 					got[strings.TrimPrefix(mf.Path, "/")] = string(mf.Raw)
 				}
 
-				for k := range test.expectedRego {
-					rego := test.expectedRego[k]
-					if s, ok := test.fileParameters[rego]; ok {
+				for k := range test.expectedBundle.Rego {
+					rego := test.expectedBundle.Rego[k]
+					if s, ok := test.contentParameters[rego]; ok {
 						rego = s
 					}
 					if rego != got[k] {
-						t.Fatalf("exp:\n%v\n\ngot:\n%v", test.expectedRego[k], got[k])
+						t.Fatalf("exp:\n%v\n\ngot:\n%v", test.expectedBundle.Rego[k], got[k])
 					}
 				}
 
 				var expectedData interface{}
 
-				if test.expectedData != "" {
-					if err := json.Unmarshal([]byte(test.expectedData), &expectedData); err != nil {
+				if test.expectedBundle.Data != "" {
+					buf := bytes.NewBuffer(nil)
+					parameters := map[string]interface{}{
+						"RemoteGitDir": remoteGitDir,
+						"S3URL":        s3TS.URL,
+						"HTTPURL":      httpTS.URL,
+					}
+					for k, v := range test.contentParameters {
+						parameters[k] = v
+					}
+
+					tmpl, err := template.New("data").Parse(test.expectedBundle.Data)
+					if err != nil {
+						t.Fatal(err)
+					}
+
+					err = tmpl.Execute(buf, parameters)
+					if err != nil {
+						t.Fatal(err)
+					}
+
+					if err := json.Unmarshal(buf.Bytes(), &expectedData); err != nil {
 						t.Fatalf("failed to unmarshal expected data: %v", err)
 					}
 				} else {
