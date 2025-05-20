@@ -179,8 +179,7 @@ func (s *Service) launchWorkers(ctx context.Context) {
 				case "http":
 					url, _ := datasource.Config["url"].(string)
 					credentials := datasource.Credentials
-					// TODO(tsandall): should this use library file dir?
-					syncs = append(syncs, httpsync.New(path.Join(ss.FileDir, datasource.Path, "data.json"), url, credentials))
+					syncs = append(syncs, httpsync.New(path.Join(libSpec.FileDir, datasource.Path, "data.json"), url, credentials))
 				}
 			}
 
