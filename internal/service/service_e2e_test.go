@@ -451,9 +451,9 @@ func TestService(t *testing.T) {
 
 					// Filter out the git hidden directories and database file constructed.
 
-					switch {
-					case strings.Index(path, "/.git/") != -1:
-					case path == "/sqlite.db":
+					switch slashPath := filepath.ToSlash(path); {
+					case strings.Contains(slashPath, "/.git/"):
+					case slashPath == "/sqlite.db":
 					default:
 						files = append(files, path)
 					}
