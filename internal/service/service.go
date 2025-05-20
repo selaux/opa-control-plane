@@ -124,7 +124,7 @@ func (s *Service) launchWorkers(ctx context.Context) {
 		log.Println("(re)starting worker for system:", system.Name)
 
 		sources := []*builder.Source{
-			&builder.Source{
+			{
 				Name: system.Name,
 				Dirs: []builder.Dir{{Path: path.Join(s.persistenceDir, "files", md5sum(system.Name)), Wipe: true}},
 			},
@@ -185,9 +185,7 @@ func (s *Service) launchWorkers(ctx context.Context) {
 				}
 			}
 
-			for _, r := range l.Requirements {
-				src.Requirements = append(src.Requirements, r)
-			}
+			src.Requirements = append(src.Requirements, l.Requirements...)
 
 			syncs = append(syncs, sqlsync.NewSQLLibraryDataSynchronizer(src.Dirs[0].Path, &s.database, l.Name))
 			sources = append(sources, src)

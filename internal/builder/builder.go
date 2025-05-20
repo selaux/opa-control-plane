@@ -189,20 +189,6 @@ func (b *Builder) Build(ctx context.Context) error {
 	return bundle.Write(b.output, result)
 }
 
-func listRegoFilesRecursive(roots ...string) ([]string, error) {
-	var files []string
-	for _, root := range roots {
-		err := walkRegoFilesRecursive(root, func(path string, fi os.FileInfo) error {
-			files = append(files, path)
-			return nil
-		})
-		if err != nil {
-			return nil, err
-		}
-	}
-	return files, nil
-}
-
 func walkRegoFilesRecursive(root string, fn func(path string, fi os.FileInfo) error) error {
 	return filepath.Walk(root, func(path string, fi os.FileInfo, err error) error {
 		if err != nil {
