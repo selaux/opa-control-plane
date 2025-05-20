@@ -10,7 +10,6 @@ import (
 
 	_ "github.com/mattn/go-sqlite3"
 	"github.com/tsandall/lighthouse/internal/builder"
-	"github.com/tsandall/lighthouse/internal/config"
 	"github.com/tsandall/lighthouse/internal/database"
 	"github.com/tsandall/lighthouse/internal/gitsync"
 	"github.com/tsandall/lighthouse/internal/httpsync"
@@ -124,26 +123,30 @@ func (s *Service) launchWorkers(ctx context.Context) {
 
 		log.Println("(re)starting worker for system:", system.Name)
 
-		ss := &builder.SystemSpec{
-			FileDir: path.Join(s.persistenceDir, "files", md5sum(system.Name)),
+		sources := []*builder.Source{
+			&builder.Source{
+				Name: system.Name,
+				Dirs: []builder.Dir{{Path: path.Join(s.persistenceDir, "files", md5sum(system.Name)), Wipe: true}},
+			},
 		}
 
 		syncs := []Synchronizer{
-			sqlsync.NewSQLSystemDataSynchronizer(ss.FileDir, &s.database, system.Name),
+			sqlsync.NewSQLSystemDataSynchronizer(sources[0].Dirs[0].Path, &s.database, system.Name),
 		}
 
 		if system.Git.Repo != "" {
 			repoDir := path.Join(s.persistenceDir, "repos", md5sum(system.Name))
-			ss.RepoDir = repoDir
-			if system.Git.Path != nil {
-				ss.RepoDir = path.Join(ss.RepoDir, *system.Git.Path)
-			}
 			syncs = append(syncs, gitsync.New(repoDir, system.Git))
+			srcDir := repoDir
+			if system.Git.Path != nil {
+				srcDir = path.Join(srcDir, *system.Git.Path)
+			}
+			sources[0].Dirs = append(sources[0].Dirs, builder.Dir{Path: srcDir})
 		}
 
-		for _, req := range system.Requirements {
-			if req.Library != nil {
-				ss.Requirements = append(ss.Requirements, req)
+		for _, r := range system.Requirements {
+			if r.Library != nil {
+				sources[0].Requirements = append(sources[0].Requirements, r)
 			}
 		}
 
@@ -152,44 +155,47 @@ func (s *Service) launchWorkers(ctx context.Context) {
 			case "http":
 				url, _ := datasource.Config["url"].(string)
 				credentials := datasource.Credentials
-				syncs = append(syncs, httpsync.New(path.Join(ss.FileDir, datasource.Path, "data.json"), url, credentials))
+				syncs = append(syncs, httpsync.New(path.Join(sources[0].Dirs[0].Path, datasource.Path, "data.json"), url, credentials))
 			}
 		}
 
-		var ls []*builder.LibrarySpec
 		for _, l := range libraries {
 
-			libSpec := &builder.LibrarySpec{
-				Name:    l.Name,
-				FileDir: path.Join(s.persistenceDir, "files", md5sum(system.Name+"@"+l.Name)),
+			src := &builder.Source{
+				Name: l.Name,
+				Dirs: []builder.Dir{{Path: path.Join(s.persistenceDir, "files", md5sum(system.Name+"@"+l.Name)), Wipe: true}},
 			}
 
 			if l.Git.Repo != "" {
-				libRepoDir := path.Join(s.persistenceDir, "repos", md5sum(system.Name+"@"+l.Name))
-				libSpec.RepoDir = libRepoDir
+				repoDir := path.Join(s.persistenceDir, "repos", md5sum(system.Name+"@"+l.Name))
+				syncs = append(syncs, gitsync.New(repoDir, l.Git))
+				srcDir := repoDir
 				if l.Git.Path != nil {
-					libSpec.RepoDir = path.Join(libSpec.RepoDir, *l.Git.Path)
+					srcDir = path.Join(srcDir, *l.Git.Path)
 				}
-				syncs = append(syncs, gitsync.New(libRepoDir, l.Git))
+				src.Dirs = append(src.Dirs, builder.Dir{Path: srcDir})
 			}
-
-			ls = append(ls, libSpec)
 
 			for _, datasource := range l.Datasources {
 				switch datasource.Type {
 				case "http":
 					url, _ := datasource.Config["url"].(string)
 					credentials := datasource.Credentials
-					syncs = append(syncs, httpsync.New(path.Join(libSpec.FileDir, datasource.Path, "data.json"), url, credentials))
+					syncs = append(syncs, httpsync.New(path.Join(src.Dirs[0].Path, datasource.Path, "data.json"), url, credentials))
 				}
 			}
 
-			syncs = append(syncs, sqlsync.NewSQLLibraryDataSynchronizer(libSpec.FileDir, &s.database, l.Name))
+			for _, r := range l.Requirements {
+				src.Requirements = append(src.Requirements, r)
+			}
+
+			syncs = append(syncs, sqlsync.NewSQLLibraryDataSynchronizer(src.Dirs[0].Path, &s.database, l.Name))
+			sources = append(sources, src)
 		}
 
 		for _, stack := range stacks {
 			if stack.Selector.Matches(system.Labels) {
-				ss.Requirements = append(ss.Requirements, config.Requirement{Library: stack.Source.Library})
+				sources[0].Requirements = append(sources[0].Requirements, stack.Requirements...)
 			}
 		}
 
@@ -200,8 +206,7 @@ func (s *Service) launchWorkers(ctx context.Context) {
 		}
 
 		w := NewSystemWorker(system, libraries, stacks).
-			WithSystem(ss).
-			WithLibraries(ls).
+			WithSources(sources).
 			WithSynchronizers(syncs).
 			WithStorage(storage)
 		s.pool.Add(w.Execute)

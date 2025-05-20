@@ -149,15 +149,15 @@ func (s *System) Equal(other *System) bool {
 		return false
 	}
 
-	return s.Name == other.Name && s.Git.Equal(&other.Git) && s.ObjectStorage.Equal(&other.ObjectStorage) && equalDatasources(s.Datasources, other.Datasources) && s.Files.Equal(other.Files) && equalRequirements(s, other)
+	return s.Name == other.Name && s.Git.Equal(&other.Git) && s.ObjectStorage.Equal(&other.ObjectStorage) && equalDatasources(s.Datasources, other.Datasources) && s.Files.Equal(other.Files) && equalRequirements(s.Requirements, other.Requirements)
 }
 
-func equalRequirements(a *System, b *System) bool {
-	if len(a.Requirements) != len(b.Requirements) {
+func equalRequirements(a, b []Requirement) bool {
+	if len(a) != len(b) {
 		return false
 	}
-	for k := range a.Requirements {
-		if !a.Requirements[k].Equal(b.Requirements[k]) {
+	for k := range a {
+		if !a[k].Equal(b[k]) {
 			return false
 		}
 	}
@@ -166,10 +166,11 @@ func equalRequirements(a *System, b *System) bool {
 
 // Library defines the configuration for a Lighthouse Library.
 type Library struct {
-	Name        string       `yaml:"-"`
-	Git         Git          `yaml:"git,omitempty"`
-	Datasources []Datasource `yaml:"datasources,omitempty"`
-	Files       Files        `yaml:"files,omitempty"`
+	Name         string        `yaml:"-"`
+	Git          Git           `yaml:"git,omitempty"`
+	Datasources  []Datasource  `yaml:"datasources,omitempty"`
+	Files        Files         `yaml:"files,omitempty"`
+	Requirements []Requirement `yaml:"requirements,omitempty"`
 }
 
 func (s *Library) Equal(other *Library) bool {
@@ -181,16 +182,14 @@ func (s *Library) Equal(other *Library) bool {
 		return false
 	}
 
-	return s.Name == other.Name && s.Git.Equal(&other.Git) && equalDatasources(s.Datasources, other.Datasources) && s.Files.Equal(other.Files)
+	return s.Name == other.Name && s.Git.Equal(&other.Git) && equalDatasources(s.Datasources, other.Datasources) && s.Files.Equal(other.Files) && equalRequirements(s.Requirements, other.Requirements)
 }
 
 // Stack defines the configuration for a Lighthouse Stack.
 type Stack struct {
-	Name     string   `yaml:"-"`
-	Selector Selector `yaml:"selector"`
-	Source   struct {
-		Library *string `yaml:"library,omitempty"`
-	} `yaml:"source,omitempty"`
+	Name         string        `yaml:"-"`
+	Selector     Selector      `yaml:"selector"`
+	Requirements []Requirement `yaml:"requirements,omitempty"`
 }
 
 func (a *Stack) Equal(other *Stack) bool {
@@ -200,7 +199,7 @@ func (a *Stack) Equal(other *Stack) bool {
 	if a == nil || other == nil {
 		return false
 	}
-	return a.Name == other.Name && a.Selector.Equal(other.Selector) && stringEqual(a.Source.Library, other.Source.Library)
+	return a.Name == other.Name && a.Selector.Equal(other.Selector) && equalRequirements(a.Requirements, other.Requirements)
 }
 
 type Selector map[string][]string

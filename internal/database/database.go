@@ -95,9 +95,7 @@ func (d *Database) InitDB(ctx context.Context, persistenceDir string) error {
 		);`,
 		`CREATE TABLE IF NOT EXISTS stacks (
 			id TEXT PRIMARY KEY,
-			selector TEXT NOT NULL,
-			library_id TEXT NOT NULL,
-			FOREIGN KEY (library_id) REFERENCES libraries(id)
+			selector TEXT NOT NULL
 		);`,
 		`CREATE TABLE IF NOT EXISTS secrets (
 			id TEXT PRIMARY KEY,
@@ -133,6 +131,20 @@ func (d *Database) InitDB(ctx context.Context, persistenceDir string) error {
 			PRIMARY KEY (system_id, library_id),
 			FOREIGN KEY (system_id) REFERENCES systems(id),
 			FOREIGN KEY (library_id) REFERENCES libraries(id)
+		);`,
+		`CREATE TABLE IF NOT EXISTS stacks_requirements (
+			stack_id TEXT NOT NULL,
+			library_id TEXT NOT NULL,
+			PRIMARY KEY (stack_id, library_id),
+			FOREIGN KEY (stack_id) REFERENCES stacks(id),
+			FOREIGN KEY (library_id) REFERENCES libraries(id)
+		);`,
+		`CREATE TABLE IF NOT EXISTS libraries_requirements (
+			library_id TEXT NOT NULL,
+			requirement_id TEXT NOT NULL,
+			PRIMARY KEY (library_id, requirement_id),
+			FOREIGN KEY (library_id) REFERENCES libraries(id),
+			FOREIGN KEY (requirement_id) REFERENCES libraries(id)
 		);`,
 		`CREATE TABLE IF NOT EXISTS libraries_secrets (
 			library_id TEXT NOT NULL,
@@ -416,13 +428,16 @@ func (d *Database) ListLibrariesWithGitCredentials() ([]*config.Library, error) 
 	libraries.path,
 	secrets.id AS secret_id,
 	libraries_secrets.ref_type as secret_ref_type,
-	secrets.value AS secret_value
+	secrets.value AS secret_value,
+	libraries_requirements.requirement_id
 FROM
 	libraries
 LEFT JOIN
 	libraries_secrets ON libraries.id = libraries_secrets.library_id
 LEFT JOIN
 	secrets ON libraries_secrets.secret_id = secrets.id
+LEFT JOIN
+	libraries_requirements ON libraries.id = libraries_requirements.library_id = libraries.id
 WHERE (libraries_secrets.ref_type = 'git_credentials' AND secrets.value IS NOT NULL) OR libraries_secrets.ref_type IS NULL`)
 	if err != nil {
 		return nil, err
@@ -435,7 +450,8 @@ WHERE (libraries_secrets.ref_type = 'git_credentials' AND secrets.value IS NOT N
 		var libraryId, repo string
 		var secretId, secretRefType, secretValue *string
 		var ref, gitCommit, path *string
-		if err := rows.Scan(&libraryId, &repo, &ref, &gitCommit, &path, &secretId, &secretRefType, &secretValue); err != nil {
+		var requirementId *string
+		if err := rows.Scan(&libraryId, &repo, &ref, &gitCommit, &path, &secretId, &secretRefType, &secretValue, &requirementId); err != nil {
 			return nil, err
 		}
 
@@ -470,6 +486,10 @@ WHERE (libraries_secrets.ref_type = 'git_credentials' AND secrets.value IS NOT N
 			case "git_credentials":
 				library.Git.Credentials = s.Ref()
 			}
+		}
+
+		if requirementId != nil {
+			library.Requirements = append(library.Requirements, config.Requirement{Library: requirementId})
 		}
 	}
 
@@ -531,15 +551,18 @@ func (d *Database) ListStacks() ([]*config.Stack, error) {
 	rows, err := txn.Query(`SELECT
         stacks.id AS stack_id,
         stacks.selector,
-        stacks.library_id
+        stacks_requirements.library_id
     FROM
-        stacks`)
+        stacks
+	LEFT JOIN
+		stacks_requirements ON stacks.id = stacks_requirements.stack_id`)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 
 	var stacks []*config.Stack
+	stacksMap := map[string]*config.Stack{}
 
 	for rows.Next() {
 		var stackId, selectorJSON, libraryId string
@@ -552,12 +575,19 @@ func (d *Database) ListStacks() ([]*config.Stack, error) {
 			return nil, err
 		}
 
-		stack := &config.Stack{
-			Name:     stackId,
-			Selector: selector,
+		stack, ok := stacksMap[stackId]
+		if !ok {
+			stack = &config.Stack{
+				Name:     stackId,
+				Selector: selector,
+			}
+			stacksMap[stackId] = stack
 		}
 
-		stack.Source.Library = &libraryId
+		stack.Requirements = append(stack.Requirements, config.Requirement{
+			Library: &libraryId,
+		})
+
 		stacks = append(stacks, stack)
 	}
 
@@ -712,6 +742,14 @@ func (d *Database) loadLibraries(root *config.Root) error {
 				return err
 			}
 		}
+
+		for _, r := range library.Requirements {
+			if r.Library != nil {
+				if _, err := d.db.Exec(`INSERT OR REPLACE INTO libraries_requirements (library_id, requirement_id) VALUES (?, ?)`, name, r.Library); err != nil {
+					return err
+				}
+			}
+		}
 	}
 
 	return nil
@@ -762,9 +800,16 @@ func (d *Database) loadStacks(root *config.Root) error {
 			return fmt.Errorf("failed to marshal selector for stack %q: %w", name, err)
 		}
 
-		if stack.Source.Library != nil {
-			if _, err := d.db.Exec(`INSERT OR REPLACE INTO stacks (id, selector, library_id) VALUES (?, ?, ?)`, stack.Name, string(bs), stack.Source.Library); err != nil {
-				return fmt.Errorf("failed to insert stack %q: %w", name, err)
+		if _, err := d.db.Exec(`INSERT OR REPLACE INTO stacks (id, selector) VALUES (?, ?)`, stack.Name, string(bs)); err != nil {
+			return fmt.Errorf("failed to insert stack %q: %w", name, err)
+		}
+
+		for _, r := range stack.Requirements {
+			if r.Library != nil {
+				// TODO: add support for mounts on requirements; currently that is only used internally for stacks.
+				if _, err := d.db.Exec(`INSERT OR REPLACE INTO stacks_requirements (stack_id, library_id) VALUES (?, ?)`, name, r.Library); err != nil {
+					return err
+				}
 			}
 		}
 	}

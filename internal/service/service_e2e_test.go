@@ -72,7 +72,10 @@ func TestService(t *testing.T) {
 				],
 				files: {
 					"foo.rego": {{ base64encode .FooRego }}
-				}
+				},
+				requirements: [
+					{library: TestLibrary},
+				]
 			}
 		},
 		libraries: {
@@ -163,7 +166,10 @@ func TestService(t *testing.T) {
 				files: {
 					"app/app.rego": {{ base64encode .AppRego }},
 					"foo.rego": {{ base64encode .FooRego }}
-				}
+				},
+				requirements: [
+					{library: TestLibrary}
+				]
 			}
 		},
 		libraries: {
@@ -302,9 +308,7 @@ func TestService(t *testing.T) {
 				selector: {
 					env: [production]
 				},
-				source: {
-					library: TestLib
-				}
+				requirements: [{library: TestLib}]
 			}
 		}
 	}`,

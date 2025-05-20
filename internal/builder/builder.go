@@ -7,7 +7,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"sort"
 	"strings"
 
 	"github.com/open-policy-agent/opa/ast"
@@ -15,23 +14,20 @@ import (
 	"github.com/tsandall/lighthouse/internal/config"
 )
 
-type LibrarySpec struct {
-	Name    string
-	Roots   []ast.Ref
-	RepoDir string
-	FileDir string
-}
-
-type SystemSpec struct {
-	RepoDir      string
-	FileDir      string
+type Source struct {
+	Name         string
+	Dirs         []Dir
 	Requirements []config.Requirement
 }
 
+type Dir struct {
+	Path string // local fs path to source files
+	Wipe bool   // bit indicates if worker should delete directory before synchronization
+}
+
 type Builder struct {
-	systemSpec   *SystemSpec
-	librarySpecs []*LibrarySpec
-	output       io.Writer
+	sources []*Source
+	output  io.Writer
 }
 
 func New() *Builder {
@@ -43,154 +39,59 @@ func (b *Builder) WithOutput(w io.Writer) *Builder {
 	return b
 }
 
-func (b *Builder) WithSystemSpec(ss *SystemSpec) *Builder {
-	b.systemSpec = ss
+func (b *Builder) WithSources(srcs []*Source) *Builder {
+	b.sources = srcs
 	return b
 }
 
-func (b *Builder) WithLibrarySpecs(librarySpecs []*LibrarySpec) *Builder {
-	b.librarySpecs = librarySpecs
-	return b
+type PackageConflictErr struct {
+	A, B       *Source
+	PkgA, PkgB *ast.Package
+}
+
+func (err *PackageConflictErr) Error() string {
+	// TODO(tsandall): once mounts are available improve to suggest
+	return fmt.Sprintf("%v in %q conflicts with %v in %q", err.PkgA, err.A.Name, err.PkgB, err.B.Name)
 }
 
 func (b *Builder) Build(ctx context.Context) error {
 
-	// NOTE(tsandall): if roots cannot be computed for any library then we will bail
-	// this means that libraries must be syntactically valid when synched otherwise
-	// all builds will stop.
-	// TODO(tsandall): precompute if this becomes a bottleneck
-
-	for i := range b.librarySpecs {
-		if b.librarySpecs[i].Roots == nil {
-			var err error
-			// TODO(tsandall): add support for lib datasources here; need to include their roots)
-			dirs := []string{}
-			if b.librarySpecs[i].FileDir != "" {
-				dirs = append(dirs, b.librarySpecs[i].FileDir)
-			}
-			if b.librarySpecs[i].RepoDir != "" {
-				dirs = append(dirs, b.librarySpecs[i].RepoDir)
-			}
-			b.librarySpecs[i].Roots, err = getRootsForRepo(dirs...)
-			if err != nil {
-				return fmt.Errorf("failed to get library roots: %w", err)
-			}
-		}
+	var existingRoots []ast.Ref
+	toProcess := []*Source{b.sources[0]}
+	toBuild := []Dir{}
+	sourceMap := make(map[string]*Source)
+	for _, src := range b.sources {
+		sourceMap[src.Name] = src
 	}
 
-	toBuild := map[string]struct{}{} // set of paths to include in bundle
-	var toAnalyze []string           // set of paths to analyze for depedencies
+	rootMap := map[string]*Source{}
 
-	if b.systemSpec.RepoDir != "" {
-		toBuild[b.systemSpec.RepoDir] = struct{}{}
-		files, err := listRegoFilesRecursive(b.systemSpec.RepoDir)
+	for len(toProcess) > 0 {
+		var next *Source
+		next, toProcess = toProcess[0], toProcess[1:]
+		// TODO(tsandall): add roots for datasources
+		newRoots, err := getRootsForDirs(next.Dirs)
 		if err != nil {
-			return fmt.Errorf("failed to list system repo: %w", err)
+			return fmt.Errorf("%v: %w", next.Name, err)
 		}
-		toAnalyze = append(toAnalyze, files...)
-	}
-
-	if b.systemSpec.FileDir != "" {
-		toBuild[b.systemSpec.FileDir] = struct{}{}
-		files, err := listRegoFilesRecursive(b.systemSpec.FileDir)
-		if err != nil {
-			return fmt.Errorf("failed to list system files: %w", err)
-		}
-		toAnalyze = append(toAnalyze, files...)
-	}
-
-	addedLibs := map[*LibrarySpec]struct{}{}
-
-	// closure to add libraries into build that is reused for adding
-	// requirements and system/namespace dependencies to build and analysis set
-	addLibToBuild := func(l *LibrarySpec) error {
-		if l.RepoDir != "" {
-			toBuild[l.RepoDir] = struct{}{}
-			files, err := listRegoFilesRecursive(l.RepoDir)
-			if err != nil {
-				return err
+		for _, root := range newRoots {
+			if rootsOverlap(existingRoots, root) {
+				return &PackageConflictErr{A: rootMap[existingRoots[0].String()], PkgA: &ast.Package{Path: existingRoots[0]}, B: next, PkgB: &ast.Package{Path: root}}
 			}
-			toAnalyze = append(toAnalyze, files...)
+			rootMap[root.String()] = next
 		}
-		if l.FileDir != "" {
-			toBuild[l.FileDir] = struct{}{}
-			files, err := listRegoFilesRecursive(l.FileDir)
-			if err != nil {
-				return err
-			}
-			toAnalyze = append(toAnalyze, files...)
-		}
-		addedLibs[l] = struct{}{}
-		return nil
-	}
-
-	for _, req := range b.systemSpec.Requirements {
-		if req.Library != nil {
-			for _, l := range b.librarySpecs {
-				if err := addLibToBuild(l); err != nil {
-					return err
+		existingRoots = append(existingRoots, newRoots...)
+		toBuild = append(toBuild, next.Dirs...)
+		for _, r := range next.Requirements {
+			if r.Library != nil {
+				src, ok := sourceMap[*r.Library]
+				if !ok {
+					return fmt.Errorf("missing library %q", *r.Library)
 				}
+				toProcess = append(toProcess, src)
 			}
 		}
 	}
-
-	for len(toAnalyze) > 0 {
-		var next string
-		next, toAnalyze = toAnalyze[0], toAnalyze[1:]
-		bs, err := os.ReadFile(next)
-		if err != nil {
-			return err
-		}
-
-		module, err := ast.ParseModule(next, string(bs))
-		if err != nil {
-			return err
-		}
-
-		var errInner error
-
-		ast.WalkRefs(module, func(r ast.Ref) bool {
-			if errInner != nil {
-				return true
-			}
-
-			// only data refs can introduce library dependencies so skip
-			// everything else (e.g., input.foo, f(x)[_], etc.) but be sure to
-			// continue recursing so we visit all nodes.
-			p := r.ConstantPrefix()
-			if !p.HasPrefix(ast.DefaultRootRef) {
-				return false
-			}
-
-			for _, l := range b.librarySpecs {
-				if _, ok := addedLibs[l]; ok {
-					continue
-				}
-				for _, root := range l.Roots {
-					if root.HasPrefix(p) || p.HasPrefix(root) {
-						if err := addLibToBuild(l); err != nil {
-							errInner = err
-						}
-						break
-					}
-				}
-			}
-
-			// If the extra files were to be added conditionally, check for matching here.
-			return false
-		})
-
-		if errInner != nil {
-			return err
-		}
-	}
-
-	sortedSrcs := make([]string, 0, len(toBuild))
-	for k := range toBuild {
-		sortedSrcs = append(sortedSrcs, k)
-	}
-
-	sort.Strings(sortedSrcs)
 
 	// NOTE(tsandall): we want control over the filenames in the emitted bundle
 	// so that we don't include information about the filesystem where the build
@@ -201,8 +102,8 @@ func (b *Builder) Build(ctx context.Context) error {
 	var result bundle.Bundle
 	result.Data = map[string]interface{}{}
 
-	for _, srcDir := range sortedSrcs {
-		err := filepath.Walk(srcDir, func(path string, fi os.FileInfo, err error) error {
+	for _, srcDir := range toBuild {
+		err := filepath.Walk(srcDir.Path, func(path string, fi os.FileInfo, err error) error {
 			if err != nil {
 				return err
 			}
@@ -222,7 +123,7 @@ func (b *Builder) Build(ctx context.Context) error {
 				}
 			} else if filepath.Ext(path) == ".rego" {
 				result.Modules = append(result.Modules, bundle.ModuleFile{
-					Path: strings.TrimPrefix(path, srcDir),
+					Path: strings.TrimPrefix(path, srcDir.Path),
 					Raw:  bs,
 				})
 
@@ -233,7 +134,7 @@ func (b *Builder) Build(ctx context.Context) error {
 					return err
 				}
 
-				path = strings.TrimPrefix(path, srcDir)
+				path = strings.TrimPrefix(path, srcDir.Path)
 				dirpath := strings.TrimLeft(filepath.ToSlash(filepath.Dir(path)), "/.")
 
 				var key []string
@@ -317,12 +218,12 @@ func walkRegoFilesRecursive(root string, fn func(path string, fi os.FileInfo) er
 	})
 }
 
-func getRootsForRepo(dirs ...string) ([]ast.Ref, error) {
+func getRootsForDirs(dirs []Dir) ([]ast.Ref, error) {
 	set := ast.NewSet()
 
 	for _, dir := range dirs {
 
-		err := walkRegoFilesRecursive(dir, func(path string, _ os.FileInfo) error {
+		err := walkRegoFilesRecursive(dir.Path, func(path string, _ os.FileInfo) error {
 
 			bs, err := os.ReadFile(path)
 			if err != nil {
@@ -350,4 +251,13 @@ func getRootsForRepo(dirs ...string) ([]ast.Ref, error) {
 	}
 
 	return result, nil
+}
+
+func rootsOverlap(roots []ast.Ref, root ast.Ref) bool {
+	for _, other := range roots {
+		if other.HasPrefix(root) || root.HasPrefix(other) {
+			return true
+		}
+	}
+	return false
 }

@@ -29,8 +29,7 @@ type SystemWorker struct {
 	libraryConfigs []*config.Library
 	stackConfigs   []*config.Stack
 	synchronizers  []Synchronizer
-	system         *builder.SystemSpec
-	libraries      []*builder.LibrarySpec
+	sources        []*builder.Source
 	storage        s3.ObjectStorage
 	changed        chan struct{}
 	done           chan struct{}
@@ -49,13 +48,8 @@ func (worker *SystemWorker) WithSynchronizers(synchronizers []Synchronizer) *Sys
 	return worker
 }
 
-func (worker *SystemWorker) WithSystem(system *builder.SystemSpec) *SystemWorker {
-	worker.system = system
-	return worker
-}
-
-func (worker *SystemWorker) WithLibraries(libraries []*builder.LibrarySpec) *SystemWorker {
-	worker.libraries = libraries
+func (worker *SystemWorker) WithSources(sources []*builder.Source) *SystemWorker {
+	worker.sources = sources
 	return worker
 }
 
@@ -99,14 +93,14 @@ func (w *SystemWorker) Execute() time.Time {
 	}
 
 	// Wipe any old files synchronized during the previous run to avoid deleted files in database/http from reappearing to system bundles.
-	for _, lib := range w.libraries {
-		if next, ok := removeDir(lib.FileDir); ok {
-			return next
+	for _, src := range w.sources {
+		for _, dir := range src.Dirs {
+			if dir.Wipe {
+				if next, ok := removeDir(dir.Path); ok {
+					return next
+				}
+			}
 		}
-	}
-
-	if next, ok := removeDir(w.system.FileDir); ok {
-		return next
 	}
 
 	for _, synchronizer := range w.synchronizers {
@@ -120,8 +114,7 @@ func (w *SystemWorker) Execute() time.Time {
 	buffer := bytes.NewBuffer(nil)
 
 	b := builder.New().
-		WithSystemSpec(w.system).
-		WithLibrarySpecs(w.libraries).
+		WithSources(w.sources).
 		WithOutput(buffer)
 
 	err := b.Build(ctx)

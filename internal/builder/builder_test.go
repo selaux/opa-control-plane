@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
-	"path/filepath"
 	"strings"
 	"testing"
 
@@ -19,174 +18,212 @@ import (
 
 func TestBuilder(t *testing.T) {
 
-	type libSpecMock struct {
-		Repo  map[string]string
-		Files map[string]string
+	type sourceMock struct {
+		name         string
+		files        map[string]string
+		requirements []string
 	}
 
 	cases := []struct {
-		note               string
-		systemRepo         map[string]string
-		systemFiles        map[string]string
-		systemRequirements []string
-		libs               []libSpecMock
-		exp                map[string]string
+		note     string
+		sources  []sourceMock
+		exp      map[string]string
+		expError error
 	}{
 		{
-			note: "trivial case",
-			systemRepo: map[string]string{
-				"/x/x.rego": `package x
-				p := 7`,
+			note: "no requirements",
+			sources: []sourceMock{
+				{
+					files: map[string]string{
+						"/x/x.rego": `package x
+						p := 7`,
+						"/x/y/data.json": `{"A": 7}`,
+					},
+				},
 			},
 			exp: map[string]string{
 				"/x/x.rego": `package x
 				p := 7`,
+				"/data.json": `{"x":{"y":{"A":7}}}`,
 			},
 		},
 		{
-			note: "library deps",
-			systemRepo: map[string]string{
-				"/x/x.rego": `package x
-				p := data.lib0.q`,
+			note: "multiple requirements",
+			sources: []sourceMock{
+				{
+					files: map[string]string{
+						"/x/x.rego": `package x
+						import rego.v1
+						p if data.lib1.q`,
+					},
+					requirements: []string{"lib1"},
+				},
+				{
+					files: map[string]string{
+						"/lib1.rego": `package lib1
+						import rego.v1
+						q if data.lib2.r`,
+					},
+					requirements: []string{"lib2"},
+					name:         "lib1",
+				},
+				{
+					files: map[string]string{
+						"/lib2.rego": `package lib2
+						import rego.v1
+						r if input.x > 7`,
+					},
+					name: "lib2",
+				},
+				{
+					// this source should not show up
+					files: map[string]string{
+						"/lib3.rego": `package lib3`,
+					},
+					name: "lib3",
+				},
 			},
-			libs: []libSpecMock{{
-				Repo: map[string]string{"lib0.rego": `package lib0
-				q := data.lib2.r`},
-			}, {
-				Repo: map[string]string{"libUnused.rego": `package libUnused
-				s := 42`},
-			}, {
-				Repo: map[string]string{"lib2.rego": `package lib2
-				r := 42`},
-			}},
 			exp: map[string]string{
 				"/x/x.rego": `package x
-				p := data.lib0.q`,
-				"/lib0.rego": `package lib0
-				q := data.lib2.r`,
+				import rego.v1
+				p if data.lib1.q`,
+				"/lib1.rego": `package lib1
+				import rego.v1
+				q if data.lib2.r`,
 				"/lib2.rego": `package lib2
-				r := 42`,
+				import rego.v1
+				r if input.x > 7`,
 			},
 		},
 		{
-			note: "system files: root",
-			systemRepo: map[string]string{
-				"/x/x.rego": `package x
-				p := data.lib0.q`,
-			},
-			systemFiles: map[string]string{
-				"foo/file0.rego": `package file0
-				f := 42`,
-				"data.json": `{"c":3}`,
-			},
-			exp: map[string]string{
-				"/x/x.rego": `package x
-				p := data.lib0.q`,
-				"/foo/file0.rego": `package file0
-				f := 42`,
-				"/data.json": `{"c":3}`,
-			},
-		},
-		{
-			note: "system files: non-root",
-			systemRepo: map[string]string{
-				"/x/x.rego": `package x
-				p := data.lib0.q`,
-			},
-			systemFiles: map[string]string{
-				"foo/file0.rego": `package file0
-				f := 42`,
-				"bar/data.json":     `{"a": 1, "b": 2}`,
-				"baz/bar/data.json": `{"c": 3, "d": 4}`,
-				"qux/data.json":     `[1,2]`,
-			},
-			exp: map[string]string{
-				"/x/x.rego": `package x
-				p := data.lib0.q`,
-				"/foo/file0.rego": `package file0
-				f := 42`,
-				"/data.json": `{"bar":{"a":1,"b":2},"baz":{"bar":{"c":3,"d":4}},"qux":[1,2]}`,
-			},
-		},
-		{
-			note: "library files",
-			systemRepo: map[string]string{
-				"/x/x.rego": `package x
-				p := data.lib0.q`,
-			},
-			libs: []libSpecMock{
-				{Files: map[string]string{"z.rego": "package lib0\nq := data.lib1.r"}},
-				{Files: map[string]string{"DONOTINCLUDE.rego": "package lib999\nq := data.lib1.r"}},
-				{Files: map[string]string{"w.rego": "package lib1\nr := 7"}},
-			},
-			exp: map[string]string{
-				"/x/x.rego": `package x
-				p := data.lib0.q`,
-				"/z.rego": "package lib0\nq := data.lib1.r",
-				"/w.rego": "package lib1\nr := 7",
-			},
-		},
-		{
-			note: "requirements",
-			systemRepo: map[string]string{
-				"/x/x.rego": "package x\np := 7",
-			},
-			systemRequirements: []string{"lib0"},
-			libs: []libSpecMock{
-				{Files: map[string]string{
-					"main.rego": "package main\nmain := data.x.p",
-				}},
-			},
-			exp: map[string]string{
-				"/x/x.rego":  "package x\np := 7",
-				"/main.rego": "package main\nmain := data.x.p",
-			},
-		},
-		{
-			note: "nested refs",
-			systemRepo: map[string]string{
-				"x.rego": `
-					package x
-					p := f([data.lib.r])[_]  # parses as ref(call(...), var(_))
-				`,
-			},
-			libs: []libSpecMock{{
-				Repo: map[string]string{"y.rego": `
-					package lib
+			note: "package conflict: same",
+			sources: []sourceMock{
+				{
+					name: "system",
+					files: map[string]string{
+						"x.rego": `package x
+						p := data.lib1.q`,
+					},
+					requirements: []string{"lib1"},
+				},
+				{
+					name: "lib1",
+					files: map[string]string{
+						"lib1.rego": `package lib1
+						p := data.lib1.q`,
+					},
+					requirements: []string{"lib2"},
+				},
+				{
+					name: "lib2",
+					files: map[string]string{
+						"lib2.rego": `package lib2
+						q := 7`,
+						// add another file that generates a conflict error
+						"lib2_other.rego": `package x
 
-					r := 7`},
-			}},
-			exp: map[string]string{
-				"/x.rego": `
-					package x
-					p := f([data.lib.r])[_]  # parses as ref(call(...), var(_))
-				`,
-				"/y.rego": `
-					package lib
-
-					r := 7`,
+						r := 7`,
+					},
+				},
 			},
+			expError: fmt.Errorf(`package x in "system" conflicts with package x in "lib2"`),
+		},
+		{
+			note: "package conflict: prefix",
+			sources: []sourceMock{
+				{
+					name: "system",
+					files: map[string]string{
+						"x.rego": `package x
+						p := data.lib1.q`,
+					},
+					requirements: []string{"lib1"},
+				},
+				{
+					name: "lib1",
+					files: map[string]string{
+						"lib1.rego": `package lib1
+						p := data.lib1.q`,
+					},
+					requirements: []string{"lib2"},
+				},
+				{
+					name: "lib2",
+					files: map[string]string{
+						"lib2.rego": `package lib2
+						q := 7`,
+						// add another file that generates a conflict error
+						"lib2_other.rego": `package x.y.z
+
+						r := 7`,
+					},
+				},
+			},
+			expError: fmt.Errorf(`package x in "system" conflicts with package x.y.z in "lib2"`),
+		},
+		{
+			note: "package conflict: prefix (reverse)",
+			sources: []sourceMock{
+				{
+					name: "system",
+					files: map[string]string{
+						"x.rego": `package x.y
+						p := data.lib1.q`,
+					},
+					requirements: []string{"lib1"},
+				},
+				{
+					name: "lib1",
+					files: map[string]string{
+						"lib1.rego": `package lib1
+						p := data.lib1.q`,
+					},
+					requirements: []string{"lib2"},
+				},
+				{
+					name: "lib2",
+					files: map[string]string{
+						"lib2.rego": `package lib2
+						q := 7`,
+						// add another file that generates a conflict error
+						"lib2_other.rego": `package x
+
+						r := 7`,
+					},
+				},
+			},
+			expError: fmt.Errorf(`package x.y in "system" conflicts with package x in "lib2"`),
+		},
+		{
+			note: "missing library",
+			sources: []sourceMock{
+				{
+					files: map[string]string{
+						"x.rego": `package x
+						p := data.lib1.q`,
+					},
+					requirements: []string{"libX"},
+				},
+				{
+					name: "lib1",
+					files: map[string]string{
+						"lib1.rego": `package lib1
+						p := data.lib1.q`,
+					},
+				},
+			},
+			expError: fmt.Errorf("missing library \"libX\""),
 		},
 	}
 
 	for _, tc := range cases {
 		t.Run(tc.note, func(b *testing.T) {
 			allFiles := map[string]string{}
-			for f, src := range tc.systemRepo {
-				allFiles[filepath.Join("system", f)] = trimLeadingWhitespace(src)
-			}
 
-			for i, mock := range tc.libs {
-				for f, src := range mock.Repo {
-					allFiles[filepath.Join(fmt.Sprintf("lib%d", i), f)] = trimLeadingWhitespace(src)
+			for i, src := range tc.sources {
+				for k, v := range src.files {
+					allFiles[fmt.Sprintf("src%d/%v", i, k)] = trimLeadingWhitespace(v)
 				}
-				for f, src := range mock.Files {
-					allFiles[filepath.Join(fmt.Sprintf("lib%dFiles", i), f)] = trimLeadingWhitespace(src)
-				}
-			}
-
-			for f, src := range tc.systemFiles {
-				allFiles[filepath.Join("systemFiles", f)] = trimLeadingWhitespace(src)
 			}
 
 			for f, src := range tc.exp {
@@ -197,41 +234,34 @@ func TestBuilder(t *testing.T) {
 
 				buf := bytes.NewBuffer(nil)
 
-				var libSpecs []*builder.LibrarySpec
-
-				for i := range tc.libs {
-					ls := &builder.LibrarySpec{}
-					if len(tc.libs[i].Repo) > 0 {
-						ls.RepoDir = filepath.Join(root, fmt.Sprintf("lib%d", i))
+				var srcs []*builder.Source
+				for i, src := range tc.sources {
+					var rs []config.Requirement
+					for i := range src.requirements {
+						rs = append(rs, config.Requirement{Library: &src.requirements[i]})
 					}
-					if len(tc.libs[i].Files) > 0 {
-						ls.FileDir = filepath.Join(root, fmt.Sprintf("lib%dFiles", i))
-					}
-					libSpecs = append(libSpecs, ls)
+					srcs = append(srcs, &builder.Source{
+						Name:         src.name,
+						Dirs:         []builder.Dir{{Path: fmt.Sprintf("%v/src%d", root, i)}},
+						Requirements: rs,
+					})
 				}
-
-				ss := &builder.SystemSpec{}
-
-				if len(tc.systemRepo) > 0 {
-					ss.RepoDir = filepath.Join(root, "system")
-				}
-
-				if len(tc.systemFiles) > 0 {
-					ss.FileDir = filepath.Join(root, "systemFiles")
-				}
-
-				for _, req := range tc.systemRequirements {
-					ss.Requirements = append(ss.Requirements, config.Requirement{Library: &req})
-				}
-
 				b := builder.New().
-					WithSystemSpec(ss).
-					WithLibrarySpecs(libSpecs).
+					WithSources(srcs).
 					WithOutput(buf)
 
 				err := b.Build(context.Background())
 				if err != nil {
-					t.Fatal(err)
+					if tc.expError != nil {
+						if err.Error() == tc.expError.Error() {
+							return
+						}
+						t.Fatalf("Got: %v\nExpected: %v", err, tc.expError)
+					} else {
+						t.Fatal(err)
+					}
+				} else if tc.expError != nil {
+					t.Fatalf("Build succeeded but expected error: %v", tc.expError)
 				}
 
 				bundle, err := bundle.NewReader(buf).Read()
