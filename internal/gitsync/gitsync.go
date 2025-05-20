@@ -39,7 +39,6 @@ func (s *Synchronizer) Execute(ctx context.Context) error {
 
 	authMethod, err := s.auth(ctx)
 	if err != nil {
-		// TODO: Validate the config earlier.
 		return err
 	}
 
