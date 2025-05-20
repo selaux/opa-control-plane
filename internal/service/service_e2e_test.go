@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
@@ -30,12 +31,13 @@ func TestService(t *testing.T) {
 		Data string
 	}
 	tests := []struct {
-		note              string
-		config            string
-		contentParameters map[string]string
-		gitFiles          map[string]string
-		httpEndpoints     map[string]string
-		expectedBundle    struct {
+		note               string
+		config             string
+		contentParameters  map[string]string
+		gitFiles           map[string]string
+		httpEndpoints      map[string]string
+		expectedFilesystem []string
+		expectedBundle     struct {
 			Rego map[string]string
 			Data string
 		}
@@ -112,6 +114,16 @@ func TestService(t *testing.T) {
 				"/datasource1": "{{ .Datasource1JSON }}",
 				"/datasource2": "{{ .Datasource2JSON }}",
 			},
+			expectedFilesystem: []string{
+				"/files/651b945976b07287063e8967060724a4/datasource1/data.json", // system
+				"/files/651b945976b07287063e8967060724a4/foo.rego",
+				"/files/dd60a95cf9945e13a93d823fed9753ed/bar.rego", // library
+				"/files/dd60a95cf9945e13a93d823fed9753ed/datasource2/data.json",
+				"/repos/651b945976b07287063e8967060724a4/app/app.rego", // system git clone
+				"/repos/651b945976b07287063e8967060724a4/lib/lib.rego",
+				"/repos/dd60a95cf9945e13a93d823fed9753ed/app/app.rego", // library git clone
+				"/repos/dd60a95cf9945e13a93d823fed9753ed/lib/lib.rego",
+			},
 			expectedBundle: expectedBundle{
 				Rego: map[string]string{
 					"foo.rego": "{{ .FooRego }}",
@@ -185,6 +197,14 @@ func TestService(t *testing.T) {
 				"/datasource1": "{{ .Datasource1JSON }}",
 				"/datasource2": "{{ .Datasource2JSON }}",
 			},
+			expectedFilesystem: []string{
+				"/files/651b945976b07287063e8967060724a4/app/app.rego", // system
+				"/files/651b945976b07287063e8967060724a4/datasource1/data.json",
+				"/files/651b945976b07287063e8967060724a4/foo.rego",
+				"/files/dd60a95cf9945e13a93d823fed9753ed/bar.rego", // library
+				"/files/dd60a95cf9945e13a93d823fed9753ed/datasource2/data.json",
+				"/files/dd60a95cf9945e13a93d823fed9753ed/lib/lib.rego",
+			},
 			expectedBundle: expectedBundle{
 				Rego: map[string]string{
 					"foo.rego":     "{{ .FooRego }}",
@@ -228,6 +248,10 @@ func TestService(t *testing.T) {
 			contentParameters: map[string]string{
 				"AppRego": "package app\np := 7",
 				"LibRego": "package main\nmain := data.app.p",
+			},
+			expectedFilesystem: []string{
+				"/files/651b945976b07287063e8967060724a4/app.rego",  // system
+				"/files/dd60a95cf9945e13a93d823fed9753ed/main.rego", // library
 			},
 			expectedBundle: expectedBundle{
 				Rego: map[string]string{
@@ -299,6 +323,11 @@ func TestService(t *testing.T) {
 
 		stack_result := max([x | x := data.stacks[_].p])
 	`,
+			},
+			expectedFilesystem: []string{
+				"/files/58e247fc3935d8ea3fc0841eb200cfc7/main.rego",           // lib conflicts
+				"/files/651b945976b07287063e8967060724a4/app.rego",            // l1b
+				"/files/eddeac02e8901c7e34c59b0e2b6efe30/stacks/foo/foo.rego", // stacks
 			},
 			expectedBundle: expectedBundle{
 				Rego: map[string]string{
@@ -407,6 +436,40 @@ func TestService(t *testing.T) {
 					t.Fatal(err)
 				}
 
+				// Check the filesystem layout used to construct the bundle.
+
+				var files []string
+				err = filepath.Walk(persistenceDir, func(path string, info os.FileInfo, err error) error {
+					if err != nil {
+						return err
+					}
+					if info.IsDir() {
+						return nil
+					}
+
+					path = strings.TrimPrefix(path, persistenceDir)
+
+					// Filter out the git hidden directories and database file constructed.
+
+					switch {
+					case strings.Index(path, "/.git/") != -1:
+					case path == "/sqlite.db":
+					default:
+						files = append(files, path)
+					}
+
+					return nil
+				})
+				if err != nil {
+					t.Fatal(err)
+				}
+
+				if !reflect.DeepEqual(files, test.expectedFilesystem) {
+					t.Fatalf("expected files on disk: %v, got: %v", test.expectedFilesystem, files)
+				}
+
+				// Check the bundle contents.
+
 				b, err := bundle.NewReader(obj.Contents).Read()
 				if err != nil {
 					t.Fatal(err)
@@ -478,7 +541,7 @@ func formatTemplate(t *testing.T, templateStr string, contentParameters map[stri
 	if err != nil {
 		t.Fatal(err)
 	}
-	return string(buf.Bytes())
+	return buf.String()
 }
 
 func testS3Service(t *testing.T, bucket string) (*s3mem.Backend, *httptest.Server) {

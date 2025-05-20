@@ -161,7 +161,7 @@ func (s *Service) launchWorkers(ctx context.Context) {
 
 			libSpec := &builder.LibrarySpec{
 				Name:    l.Name,
-				FileDir: path.Join(s.persistenceDir, "files", md5sum(system.Name)),
+				FileDir: path.Join(s.persistenceDir, "files", md5sum(system.Name+"@"+l.Name)),
 			}
 
 			if l.Git.Repo != "" {
@@ -170,9 +170,10 @@ func (s *Service) launchWorkers(ctx context.Context) {
 				if l.Git.Path != nil {
 					libSpec.RepoDir = path.Join(libSpec.RepoDir, *l.Git.Path)
 				}
-				ls = append(ls, libSpec)
 				syncs = append(syncs, gitsync.New(libRepoDir, l.Git))
 			}
+
+			ls = append(ls, libSpec)
 
 			for _, datasource := range l.Datasources {
 				switch datasource.Type {
