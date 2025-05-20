@@ -516,9 +516,7 @@ func TestService(t *testing.T) {
 			}
 		}
 		t.Run(test.note, func(t *testing.T) {
-			tempfs.WithTempFS(nil, func(rootDir string) {
-				f(t, rootDir)
-			})
+			tempfs.WithTempFS(t, nil, f)
 		})
 	}
 }

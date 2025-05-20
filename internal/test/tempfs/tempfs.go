@@ -3,17 +3,23 @@ package tempfs
 import (
 	"os"
 	"path/filepath"
+	"testing"
 )
 
 /* copied from https://github.com/open-policy-agent/opa/blob/main/v1/util/test/tempfs.go */
 
-func WithTempFS(files map[string]string, f func(string)) {
+func WithTempFS(t *testing.T, files map[string]string, f func(t *testing.T, dir string)) {
 	rootDir, cleanup, err := makeTempFS("", "lighthouse_test", files)
 	if err != nil {
 		panic(err)
 	}
-	defer cleanup()
-	f(rootDir)
+	defer func() {
+		if !t.Failed() {
+			cleanup()
+		}
+	}()
+
+	f(t, rootDir)
 }
 
 // makeTempFS creates a temporary directory structure for test purposes rooted at root.

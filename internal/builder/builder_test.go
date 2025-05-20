@@ -230,7 +230,7 @@ func TestBuilder(t *testing.T) {
 				tc.exp[f] = trimLeadingWhitespace(src)
 			}
 
-			tempfs.WithTempFS(allFiles, func(root string) {
+			tempfs.WithTempFS(t, allFiles, func(t *testing.T, root string) {
 
 				buf := bytes.NewBuffer(nil)
 
