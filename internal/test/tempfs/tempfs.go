@@ -8,7 +8,7 @@ import (
 /* copied from https://github.com/open-policy-agent/opa/blob/main/v1/util/test/tempfs.go */
 
 func WithTempFS(files map[string]string, f func(string)) {
-	rootDir, cleanup, err := MakeTempFS("", "lighthouse_test", files)
+	rootDir, cleanup, err := makeTempFS("", "lighthouse_test", files)
 	if err != nil {
 		panic(err)
 	}
@@ -16,11 +16,11 @@ func WithTempFS(files map[string]string, f func(string)) {
 	f(rootDir)
 }
 
-// MakeTempFS creates a temporary directory structure for test purposes rooted at root.
+// makeTempFS creates a temporary directory structure for test purposes rooted at root.
 // If root is empty, the dir is created in the default system temp location.
 // If the creation fails, cleanup is nil and the caller does not have to invoke it. If
 // creation succeeds, the caller should invoke cleanup when they are done.
-func MakeTempFS(root, prefix string, files map[string]string) (rootDir string, cleanup func(), err error) {
+func makeTempFS(root, prefix string, files map[string]string) (rootDir string, cleanup func(), err error) {
 
 	rootDir, err = os.MkdirTemp(root, prefix)
 

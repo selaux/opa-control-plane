@@ -340,12 +340,7 @@ func TestService(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		t.Run(test.note, func(t *testing.T) {
-
-			rootDir, _, err := tempfs.MakeTempFS("", test.note, nil)
-			if err != nil {
-				t.Fatal(err)
-			}
+		f := func(t *testing.T, rootDir string) {
 
 			t.Log("Root Directory:", rootDir)
 
@@ -412,7 +407,7 @@ func TestService(t *testing.T) {
 
 			s := formatTemplate(t, test.config, parameters)
 
-			err = os.WriteFile(configPath, []byte(s), 0644)
+			err := os.WriteFile(configPath, []byte(s), 0644)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -515,6 +510,11 @@ func TestService(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
+		}
+		t.Run(test.note, func(t *testing.T) {
+			tempfs.WithTempFS(nil, func(rootDir string) {
+				f(t, rootDir)
+			})
 		})
 	}
 }
