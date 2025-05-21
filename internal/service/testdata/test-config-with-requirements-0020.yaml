@@ -27,12 +27,12 @@ cases:
           }
         }
   content_parameters:
-    app_rego: "package app\np := 7"
-    lib_rego: "package main\nmain := data.app.p"
+    app_rego: &app_rego "package app\np := 7"
+    lib_rego: &lib_rego "package main\nmain := data.app.p"
   expected_filesystem: 
   - "/files/651b945976b07287063e8967060724a4/app.rego" # system
   - "/files/dd60a95cf9945e13a93d823fed9753ed/main.rego" # library
   expected_bundle: 
     rego: 
-      app.rego:  "{{ .app_rego }}"
-      main.rego: "{{ .lib_rego }}"
+      app.rego: *app_rego
+      main.rego: *lib_rego

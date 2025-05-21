@@ -51,15 +51,15 @@ cases:
           }
         }
   content_parameters:
-    app_rego:         "package app\np := data.lib.q"
-    bar_rego:         "package lib\ns := true"
-    foo_rego:         "package foo"
-    lib_rego:         "package lib\nq := data.lib.s"
-    datasource1_json: '{"key": "value1"}'
-    datasource2_json: '{"key": "value2"}'
+    app_rego: &app_rego "package app\np := data.lib.q"
+    bar_rego: &bar_rego "package lib\ns := true"
+    foo_rego: &foo_rego "package foo"
+    lib_rego: &lib_rego "package lib\nq := data.lib.s"
+    datasource1_json: &datasource1_json '{"key": "value1"}'
+    datasource2_json: &datasource2_json '{"key": "value2"}'
   http_endpoints:
-    /datasource1: "{{ .datasource1_json }}"
-    /datasource2: "{{ .datasource2_json }}"
+    /datasource1: *datasource1_json
+    /datasource2: *datasource2_json
   expected_filesystem: 
   - "/files/651b945976b07287063e8967060724a4/app/app.rego" # system
   - "/files/651b945976b07287063e8967060724a4/datasource1/data.json"
@@ -69,10 +69,10 @@ cases:
   - "/files/dd60a95cf9945e13a93d823fed9753ed/lib/lib.rego"
   expected_bundle:
     rego:
-      app/app.rego: "{{ .app_rego }}"
-      bar.rego:     "{{ .bar_rego }}"
-      foo.rego:     "{{ .foo_rego }}"
-      lib/lib.rego: "{{ .lib_rego }}"
+      app/app.rego: *app_rego
+      bar.rego: *bar_rego
+      foo.rego: *foo_rego
+      lib/lib.rego: *lib_rego
     data: |
         {
           "datasource1": {{ .datasource1_json }},

@@ -46,9 +46,9 @@ cases:
           }
         }
   content_parameters:
-    app_rego: "package app\np := 7"
-    lib_rego: "package stacks.foo\np := 8"
-    main_rego: |
+    app_rego: &app_rego "package app\np := 7"
+    lib_rego: &lib_rego "package stacks.foo\np := 8"
+    main_rego: &main_rego |
                 package main
 
                 main := x if {
@@ -65,6 +65,6 @@ cases:
   - "/files/eddeac02e8901c7e34c59b0e2b6efe30/stacks/foo/foo.rego" # stacks
   expected_bundle: 
     rego:
-      app.rego:            "{{ .app_rego }}"
-      main.rego:           "{{ .main_rego }}"
-      stacks/foo/foo.rego: "{{ .lib_rego }}"
+      app.rego:            *app_rego
+      main.rego:           *main_rego
+      stacks/foo/foo.rego: *lib_rego
