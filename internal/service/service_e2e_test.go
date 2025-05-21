@@ -95,18 +95,13 @@ func TestService(t *testing.T) {
 				var obj *gofakes3.Object
 				var err error
 
-				for {
+				for obj == nil && (err == nil || gofakes3.HasErrorCode(err, gofakes3.ErrNoSuchKey)) {
 					obj, err = mock.GetObject("test", "bundle.tar.gz", nil)
+					time.Sleep(time.Millisecond)
+				}
 
-					if err != nil {
-						if gofakes3.HasErrorCode(err, gofakes3.ErrNoSuchKey) {
-							time.Sleep(time.Millisecond)
-							continue
-						}
-						t.Fatal(err)
-					}
-
-					break
+				if err != nil {
+					t.Fatal(err)
 				}
 
 				// Once the bundle was downloaded from S3, check the filesystem layout the service used to
