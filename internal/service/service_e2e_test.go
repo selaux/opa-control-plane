@@ -23,327 +23,32 @@ import (
 	"github.com/open-policy-agent/opa/bundle"
 	"github.com/tsandall/lighthouse/internal/service"
 	"github.com/tsandall/lighthouse/internal/test/tempfs"
+	"gopkg.in/yaml.v3"
 )
 
+// TestCases is a struct that holds a slice of test cases in a YAML file.
+type TestCases struct {
+	Cases []TestCase `yaml:"cases"`
+}
+
+type TestCase struct {
+	Note               string            `yaml:"note"`
+	Config             string            `yaml:"config"`
+	ContentParameters  map[string]string `yaml:"content_parameters"`
+	GitFiles           map[string]string `yaml:"git_files"`
+	HTTPEndpoints      map[string]string `yaml:"http_endpoints"`
+	ExpectedFilesystem []string          `yaml:"expected_filesystem"`
+	ExpectedBundle     ExpectedBundle    `yaml:"expected_bundle"`
+}
+
+type ExpectedBundle struct {
+	Rego map[string]string `yaml:"rego"`
+	Data string            `yaml:"data"`
+}
+
 func TestService(t *testing.T) {
-	type expectedBundle struct {
-		Rego map[string]string
-		Data string
-	}
-	tests := []struct {
-		note               string
-		config             string
-		contentParameters  map[string]string
-		gitFiles           map[string]string
-		httpEndpoints      map[string]string
-		expectedFilesystem []string
-		expectedBundle     struct {
-			Rego map[string]string
-			Data string
-		}
-	}{
-		{
-			note: "TestFromConfigWithGit",
-			config: `{
-		systems: {
-			TestSystem: {
-				git: {
-					repo: {{ .GitURL }},
-					reference: refs/heads/master,
-					path: "app/",
-				},
-				object_storage: {
-					aws: {
-						url: {{ .S3URL }},
-						bucket: test,
-						key: bundle.tar.gz,
-						region: mock-region,
-					}
-				},
-				datasources: [
-					{
-						name: "datasource1",
-						path: "datasource1",
-						type: "http",
-						config: {
-							url: {{ .HTTPURL }}/datasource1
-						}
-					}
-				],
-				files: {
-					"foo.rego": {{ base64encode .FooRego }}
-				},
-				requirements: [
-					{library: TestLibrary},
-				]
-			}
-		},
-		libraries: {
-			TestLibrary: {
-				git: {
-					repo: {{ .GitURL }},
-					reference: refs/heads/master,
-					path: "lib/",
-				},
-				datasources: [
-				{
-						name: "datasource2",
-						path: "datasource2",
-						type: "http",
-						config: {
-							url: {{ .HTTPURL }}/datasource2
-						}
-					}
-				],
-				files: {
-					"bar.rego": {{ base64encode .BarRego }}
-				}
-			}
-		}
-	}`,
-			contentParameters: map[string]string{
-				"AppRego":         "package app\np := data.lib.q",
-				"LibRego":         "package lib\nq := data.lib.s",
-				"FooRego":         "package foo",
-				"BarRego":         "package lib\ns := true",
-				"Datasource1JSON": `{"key": "value1"}`,
-				"Datasource2JSON": `{"key": "value2"}`,
-			},
-			gitFiles: map[string]string{
-				"app/app.rego": "{{ .AppRego }}",
-				"lib/lib.rego": "{{ .LibRego }}",
-			},
-			httpEndpoints: map[string]string{
-				"/datasource1": "{{ .Datasource1JSON }}",
-				"/datasource2": "{{ .Datasource2JSON }}",
-			},
-			expectedFilesystem: []string{
-				"/files/651b945976b07287063e8967060724a4/datasource1/data.json", // system
-				"/files/651b945976b07287063e8967060724a4/foo.rego",
-				"/files/dd60a95cf9945e13a93d823fed9753ed/bar.rego", // library
-				"/files/dd60a95cf9945e13a93d823fed9753ed/datasource2/data.json",
-				"/repos/651b945976b07287063e8967060724a4/app/app.rego", // system git clone
-				"/repos/651b945976b07287063e8967060724a4/lib/lib.rego",
-				"/repos/dd60a95cf9945e13a93d823fed9753ed/app/app.rego", // library git clone
-				"/repos/dd60a95cf9945e13a93d823fed9753ed/lib/lib.rego",
-			},
-			expectedBundle: expectedBundle{
-				Rego: map[string]string{
-					"foo.rego": "{{ .FooRego }}",
-					"app.rego": "{{ .AppRego }}",
-					"lib.rego": "{{ .LibRego }}",
-					"bar.rego": "{{ .BarRego }}",
-				},
-				Data: `{
-					"datasource1": {{ .Datasource1JSON }},
-					"datasource2": {{ .Datasource2JSON }}
-				}`,
-			},
-		},
-		{
-			note: "TestFromConfigWithoutGit",
-			config: `{
-		systems: {
-			TestSystem: {
-				object_storage: {
-					aws: {
-						url: {{ .S3URL }},
-						bucket: test,
-						key: bundle.tar.gz,
-						region: mock-region,
-					}
-				},
-				datasources: [
-					{
-						name: "datasource1",
-						path: "datasource1",
-						type: "http",
-						config: {
-							url: {{ .HTTPURL }}/datasource1
-						}
-					}
-				],
-				files: {
-					"app/app.rego": {{ base64encode .AppRego }},
-					"foo.rego": {{ base64encode .FooRego }}
-				},
-				requirements: [
-					{library: TestLibrary}
-				]
-			}
-		},
-		libraries: {
-			TestLibrary: {
-				datasources: [
-				{
-						name: "datasource2",
-						path: "datasource2",
-						type: "http",
-						config: {
-							url: {{ .HTTPURL }}/datasource2
-						}
-					}
-				],
-				files: {
-					"bar.rego": {{ base64encode .BarRego }},
-					"lib/lib.rego": {{ base64encode .LibRego }}
-				}
-			}
-		}
-	}`,
-			contentParameters: map[string]string{
-				"AppRego":         "package app\np := data.lib.q",
-				"FooRego":         "package foo",
-				"BarRego":         "package lib\ns := true",
-				"LibRego":         "package lib\nq := data.lib.s",
-				"Datasource1JSON": `{"key": "value1"}`,
-				"Datasource2JSON": `{"key": "value2"}`,
-			},
-			httpEndpoints: map[string]string{
-				"/datasource1": "{{ .Datasource1JSON }}",
-				"/datasource2": "{{ .Datasource2JSON }}",
-			},
-			expectedFilesystem: []string{
-				"/files/651b945976b07287063e8967060724a4/app/app.rego", // system
-				"/files/651b945976b07287063e8967060724a4/datasource1/data.json",
-				"/files/651b945976b07287063e8967060724a4/foo.rego",
-				"/files/dd60a95cf9945e13a93d823fed9753ed/bar.rego", // library
-				"/files/dd60a95cf9945e13a93d823fed9753ed/datasource2/data.json",
-				"/files/dd60a95cf9945e13a93d823fed9753ed/lib/lib.rego",
-			},
-			expectedBundle: expectedBundle{
-				Rego: map[string]string{
-					"foo.rego":     "{{ .FooRego }}",
-					"app/app.rego": "{{ .AppRego }}",
-					"lib/lib.rego": "{{ .LibRego }}",
-					"bar.rego":     "{{ .BarRego }}",
-				},
-				Data: `{
-					"datasource1": {{ .Datasource1JSON }},
-					"datasource2": {{ .Datasource2JSON }}
-				}`,
-			},
-		},
-		{
-			note: "TestFromConfigWithRequirements",
-			config: `{
-		systems: {
-			TestSystem: {
-				object_storage: {
-					aws: {
-						url: {{ .S3URL }},
-						bucket: test,
-						key: bundle.tar.gz,
-						region: mock-region,
-					}
-				},
-				files: {
-					"app.rego": {{ base64encode .AppRego }}
-				},
-				requirements: [{library: TestLibrary}]
-			}
-		},
-		libraries: {
-			TestLibrary: {
-				files: {
-					"main.rego": {{ base64encode .LibRego }}
-				}
-			}
-		}
-	}`,
-			contentParameters: map[string]string{
-				"AppRego": "package app\np := 7",
-				"LibRego": "package main\nmain := data.app.p",
-			},
-			expectedFilesystem: []string{
-				"/files/651b945976b07287063e8967060724a4/app.rego",  // system
-				"/files/dd60a95cf9945e13a93d823fed9753ed/main.rego", // library
-			},
-			expectedBundle: expectedBundle{
-				Rego: map[string]string{
-					"app.rego":  "{{ .AppRego }}",
-					"main.rego": "{{ .LibRego }}",
-				},
-			},
-		},
-		{
-			note: "TestFromConfigWithStacks",
-			config: `{
-		systems: {
-			TestSystem: {
-				labels: {
-					app: payments,
-					env: production
-				},
-				object_storage: {
-					aws: {
-						url: {{ .S3URL }},
-						bucket: test,
-						key: bundle.tar.gz,
-						region: mock-region,
-					}
-				},
-				files: {
-					"app.rego": {{ base64encode .AppRego }}
-				},
-				requirements: [
-					{library: TestLibConflicts}
-				]
-			}
-		},
-		libraries: {
-			TestLib: {
-				files: {
-					"stacks/foo/foo.rego": {{ base64encode .LibRego }}
-				}
-			},
-			TestLibConflicts: {
-				files: {
-					"main.rego": {{ base64encode .MainRego }}
-				}
-			}
-		},
-		stacks: {
-			TestStack: {
-				selector: {
-					env: [production]
-				},
-				requirements: [{library: TestLib}]
-			}
-		}
-	}`,
-			contentParameters: map[string]string{
-				"AppRego": "package app\np := 7",
-				"LibRego": "package stacks.foo\np := 8",
-				"MainRego": `
-		package main
 
-		main := x if {
-			x := stack_result
-			x >= data.app.p
-		} else := x {
-			x := data.app.p
-		}
-
-		stack_result := max([x | x := data.stacks[_].p])
-	`,
-			},
-			expectedFilesystem: []string{
-				"/files/58e247fc3935d8ea3fc0841eb200cfc7/main.rego",           // lib conflicts
-				"/files/651b945976b07287063e8967060724a4/app.rego",            // l1b
-				"/files/eddeac02e8901c7e34c59b0e2b6efe30/stacks/foo/foo.rego", // stacks
-			},
-			expectedBundle: expectedBundle{
-				Rego: map[string]string{
-					"app.rego":            "{{ .AppRego }}",
-					"stacks/foo/foo.rego": "{{ .LibRego }}",
-					"main.rego":           "{{ .MainRego }}",
-				},
-			},
-		},
-	}
-
-	for _, test := range tests {
+	for _, test := range loadTestCases(t).Cases {
 		f := func(t *testing.T, rootDir string) {
 
 			t.Log("Root Directory:", rootDir)
@@ -352,9 +57,9 @@ func TestService(t *testing.T) {
 
 			remoteGitDir := path.Join(rootDir, "remote-git")
 
-			if len(test.gitFiles) > 0 {
-				for name, content := range test.gitFiles {
-					content = formatTemplate(t, content, test.contentParameters)
+			if len(test.GitFiles) > 0 {
+				for name, content := range test.GitFiles {
+					content = formatTemplate(t, content, test.ContentParameters)
 
 					if err := os.MkdirAll(path.Dir(path.Join(remoteGitDir, name)), 0755); err != nil {
 						t.Fatal(err)
@@ -374,7 +79,7 @@ func TestService(t *testing.T) {
 					t.Fatal(err)
 				}
 
-				for name := range test.gitFiles {
+				for name := range test.GitFiles {
 					if _, err := w.Add(name); err != nil {
 						t.Fatal(err)
 					}
@@ -387,12 +92,12 @@ func TestService(t *testing.T) {
 
 			// Create a mock S3 service with a test bucket and a mock HTTP service to serve the datasource.
 
-			for name, content := range test.httpEndpoints {
-				test.httpEndpoints[name] = formatTemplate(t, content, test.contentParameters)
+			for name, content := range test.HTTPEndpoints {
+				test.HTTPEndpoints[name] = formatTemplate(t, content, test.ContentParameters)
 			}
 
 			mock, s3TS := testS3Service(t, "test")
-			httpTS := testHTTPDataServer(t, test.httpEndpoints)
+			httpTS := testHTTPDataServer(t, test.HTTPEndpoints)
 
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
@@ -401,15 +106,15 @@ func TestService(t *testing.T) {
 			persistenceDir := path.Join(rootDir, "data")
 
 			parameters := map[string]string{
-				"GitURL":  remoteGitDir,
-				"S3URL":   s3TS.URL,
-				"HTTPURL": httpTS.URL,
+				"git_url":  remoteGitDir,
+				"s3_url":   s3TS.URL,
+				"http_url": httpTS.URL,
 			}
-			for k, v := range test.contentParameters {
+			for k, v := range test.ContentParameters {
 				parameters[k] = v
 			}
 
-			s := formatTemplate(t, test.config, parameters)
+			s := formatTemplate(t, test.Config, parameters)
 
 			err := os.WriteFile(configPath, []byte(s), 0644)
 			if err != nil {
@@ -463,8 +168,8 @@ func TestService(t *testing.T) {
 					t.Fatal(err)
 				}
 
-				if !reflect.DeepEqual(files, test.expectedFilesystem) {
-					t.Fatalf("expected files on disk: %v, got: %v", test.expectedFilesystem, files)
+				if !reflect.DeepEqual(files, test.ExpectedFilesystem) {
+					t.Fatalf("expected files on disk: %v, got: %v", test.ExpectedFilesystem, files)
 				}
 
 				// Check the bundle contents.
@@ -474,8 +179,8 @@ func TestService(t *testing.T) {
 					t.Fatal(err)
 				}
 
-				if len(test.expectedBundle.Rego) != len(b.Modules) {
-					t.Fatalf("expected %v modules but got %v", len(test.expectedBundle.Rego), len(b.Modules))
+				if len(test.ExpectedBundle.Rego) != len(b.Modules) {
+					t.Fatalf("expected %v modules but got %v", len(test.ExpectedBundle.Rego), len(b.Modules))
 				}
 
 				got := map[string]string{}
@@ -483,8 +188,8 @@ func TestService(t *testing.T) {
 					got[strings.TrimPrefix(mf.Path, "/")] = string(mf.Raw)
 				}
 
-				for k := range test.expectedBundle.Rego {
-					rego := formatTemplate(t, test.expectedBundle.Rego[k], test.contentParameters)
+				for k := range test.ExpectedBundle.Rego {
+					rego := formatTemplate(t, test.ExpectedBundle.Rego[k], test.ContentParameters)
 					if rego != got[k] {
 						t.Fatalf("exp:\n%v\n\ngot:\n%v", rego, got[k])
 					}
@@ -492,8 +197,8 @@ func TestService(t *testing.T) {
 
 				var expectedData interface{}
 
-				if test.expectedBundle.Data != "" {
-					data := formatTemplate(t, test.expectedBundle.Data, test.contentParameters)
+				if test.ExpectedBundle.Data != "" {
+					data := formatTemplate(t, test.ExpectedBundle.Data, test.ContentParameters)
 
 					if err := json.Unmarshal([]byte(data), &expectedData); err != nil {
 						t.Fatalf("failed to unmarshal expected data: %v", err)
@@ -515,7 +220,7 @@ func TestService(t *testing.T) {
 				t.Fatal(err)
 			}
 		}
-		t.Run(test.note, func(t *testing.T) {
+		t.Run(test.Note, func(t *testing.T) {
 			tempfs.WithTempFS(t, nil, f)
 		})
 	}
@@ -544,6 +249,44 @@ func formatTemplate(t *testing.T, templateStr string, contentParameters map[stri
 		t.Fatal(err)
 	}
 	return buf.String()
+}
+
+func loadTestCases(t *testing.T) TestCases {
+	var testCases TestCases
+
+	err := filepath.Walk("testdata/", func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+
+		if info.IsDir() {
+			return nil
+		}
+		if !strings.HasSuffix(path, ".yaml") {
+			return nil
+		}
+
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+
+		var cases TestCases
+		err = yaml.Unmarshal(data, &cases)
+		if err != nil {
+			return err
+		}
+
+		testCases.Cases = append(testCases.Cases, cases.Cases...)
+		return nil
+
+	})
+
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	return testCases
 }
 
 func testS3Service(t *testing.T, bucket string) (*s3mem.Backend, *httptest.Server) {

@@ -1,0 +1,70 @@
+cases:
+- note: config with stacks
+  config: |
+        {
+          systems: {
+            TestSystem: {
+              labels: {
+                app: payments,
+                env: production
+              },
+              object_storage: {
+                aws: {
+                  url: {{ .s3_url }},
+                  bucket: test,
+                  key: bundle.tar.gz,
+                  region: mock-region,
+                }
+              },
+              files: {
+                "app.rego": {{ base64encode .app_rego }}
+              },
+              requirements: [
+                {library: TestLibConflicts}
+              ]
+            }
+          },
+          libraries: {
+            TestLib: {
+              files: {
+                "stacks/foo/foo.rego": {{ base64encode .lib_rego }}
+              }
+            },
+            TestLibConflicts: {
+              files: {
+                "main.rego": {{ base64encode .main_rego }}
+              }
+            }
+          },
+          stacks: {
+            TestStack: {
+              selector: {
+                env: [production]
+              },
+              requirements: [{library: TestLib}]
+            }
+          }
+        }
+  content_parameters:
+    app_rego: "package app\np := 7"
+    lib_rego: "package stacks.foo\np := 8"
+    main_rego: |
+                package main
+
+                main := x if {
+                  x := stack_result
+                  x >= data.app.p
+                } else := x {
+                  x := data.app.p
+                }
+
+                stack_result := max([x | x := data.stacks[_].p])
+  expected_filesystem:
+  - "/files/58e247fc3935d8ea3fc0841eb200cfc7/main.rego" # lib conflicts
+  - "/files/651b945976b07287063e8967060724a4/app.rego" # lib
+  - "/files/eddeac02e8901c7e34c59b0e2b6efe30/stacks/foo/foo.rego" # stacks
+  expected_bundle: 
+    rego:
+      app.rego:            "{{ .app_rego }}"
+      main.rego:           "{{ .main_rego }}"
+      stacks/foo/foo.rego: "{{ .lib_rego }}"
