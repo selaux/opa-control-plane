@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
@@ -58,11 +59,11 @@ func init() {
 
 func doMigrate(params migrateParams) error {
 	if params.url == "" {
-		return fmt.Errorf("Please set Styra DAS URL with -u flag (e.g., https://example.styra.com)")
+		return errors.New("please set Styra DAS URL with -u flag (e.g., https://example.styra.com)")
 	}
 
 	if params.token == "" {
-		return fmt.Errorf("Please set STYRA_TOKEN environment variable to token with WorkspaceViewer permission.")
+		return errors.New("please set STYRA_TOKEN environment variable to token with WorkspaceViewer permission")
 	}
 
 	c := DASClient{

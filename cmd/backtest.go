@@ -72,7 +72,7 @@ func doBacktest(params backtestParams) error {
 	}
 
 	if url == "" {
-		return fmt.Errorf("Please provide Styra URL with -u/--url")
+		return fmt.Errorf("please provide Styra URL with -u/--url")
 	}
 
 	styra := DASClient{
@@ -193,13 +193,13 @@ func compareResults(d *v1Decision, rs rego.ResultSet) error {
 
 	if d.Result == nil {
 		if len(rs) > 0 {
-			return fmt.Errorf("Logged decision was undefined but bundle decision was not")
+			return errors.New("logged decision was undefined but bundle decision was not")
 		}
 		return nil
 	}
 
 	if len(rs) == 0 {
-		return fmt.Errorf("Logged decision was defined but bundle decision was not")
+		return errors.New("logged decision was defined but bundle decision was not")
 	}
 
 	a, err := ast.InterfaceToValue(rs[0].Expressions[0].Value)

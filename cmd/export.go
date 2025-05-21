@@ -3,6 +3,7 @@ package cmd
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
@@ -130,7 +131,7 @@ func (c *DASClient) JSON(path string, params ...DASParams) (*DASResponse, error)
 	return &r, decoder.Decode(&r)
 }
 
-func mapV1SystemToSystemAndSecretConfig(client *DASClient, v1 *v1System) (*config.System, *config.Secret, error) {
+func mapV1SystemToSystemAndSecretConfig(_ *DASClient, v1 *v1System) (*config.System, *config.Secret, error) {
 	var system config.System
 	var secret *config.Secret
 
@@ -268,11 +269,11 @@ func mapV1LibraryToLibraryAndSecretConfig(v1 *v1Library) (*config.Library, *conf
 func doExport(params exportParams) error {
 
 	if params.url == "" {
-		return fmt.Errorf("Please set Styra DAS URL with -u flag (e.g., https://example.styra.com)")
+		return errors.New("please set Styra DAS URL with -u flag (e.g., https://example.styra.com)")
 	}
 
 	if params.token == "" {
-		return fmt.Errorf("Please set STYRA_TOKEN environment variable to token with WorkspaceViewer permission.")
+		return errors.New("please set STYRA_TOKEN environment variable to token with WorkspaceViewer permission")
 	}
 
 	c := DASClient{
@@ -372,10 +373,10 @@ type v1System struct {
 	MatchingStacks []string `json:"matching_stacks"`
 }
 
-type v1Secret struct {
-	Name string `json:"name"`
-	Id   string `json:"id"`
-}
+// type v1Secret struct {
+//	Name string `json:"name"`
+//	Id   string `json:"id"`
+// }
 
 type v1Library struct {
 	Id            string `json:"id"`

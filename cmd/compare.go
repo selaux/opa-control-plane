@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
@@ -104,7 +105,7 @@ func doCompare(params compareParams) error {
 	}
 
 	if url == "" {
-		return fmt.Errorf("Please provide Styra URL with -u/--url")
+		return errors.New("please provide Styra URL with -u/--url")
 	}
 
 	var sortedSystems []*config.System
