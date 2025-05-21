@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -51,47 +52,12 @@ func TestService(t *testing.T) {
 
 	for _, test := range loadTestCases(t).Cases {
 		t.Run(test.Note, func(t *testing.T) {
+
 			tempfs.WithTempFS(t, nil, func(t *testing.T, rootDir string) {
 
 				t.Log("Root Directory:", rootDir)
 
-				// Setup git files if any
-
-				remoteGitDir := path.Join(rootDir, "remote-git")
-				if len(test.GitFiles) > 0 {
-					for name, content := range test.GitFiles {
-						content = formatTemplate(t, content, test.ContentParameters)
-
-						if err := os.MkdirAll(path.Dir(path.Join(remoteGitDir, name)), 0755); err != nil {
-							t.Fatal(err)
-						}
-						if err := os.WriteFile(path.Join(remoteGitDir, name), []byte(content), 0644); err != nil {
-							t.Fatal(err)
-						}
-					}
-
-					repo, err := git.PlainInit(remoteGitDir, false)
-					if err != nil {
-						t.Fatal(err)
-					}
-
-					w, err := repo.Worktree()
-					if err != nil {
-						t.Fatal(err)
-					}
-
-					for name := range test.GitFiles {
-						if _, err := w.Add(name); err != nil {
-							t.Fatal(err)
-						}
-					}
-
-					if _, err := w.Commit("Initial commit", &git.CommitOptions{Author: &object.Signature{}}); err != nil {
-						t.Fatal(err)
-					}
-				}
-
-				// Create a mock S3 service with a test bucket and a mock HTTP service to serve the datasource.
+				// Create a mock S3 service with a test bucket and a mock HTTP endpoints to serve the datasource(s).
 
 				for name, content := range test.HTTPEndpoints {
 					test.HTTPEndpoints[name] = formatTemplate(t, content, test.ContentParameters)
@@ -103,32 +69,34 @@ func TestService(t *testing.T) {
 				ctx, cancel := context.WithCancel(context.Background())
 				defer cancel()
 
+				// Setup the filesystem for the test case. Unfortunately, we can't do it with
+				// TempFS as we need the remote git dir to emit the files.
+
 				configPath := path.Join(rootDir, "config.yaml")
 				persistenceDir := path.Join(rootDir, "data")
+				remoteGitDir := path.Join(rootDir, "remote-git")
 
-				parameters := map[string]string{
+				maps.Copy(test.ContentParameters, map[string]string{
 					"git_url":  remoteGitDir,
 					"s3_url":   s3TS.URL,
 					"http_url": httpTS.URL,
-				}
-				for k, v := range test.ContentParameters {
-					parameters[k] = v
-				}
+				})
 
-				s := formatTemplate(t, test.Config, parameters)
+				writeFile(t, configPath, formatTemplate(t, test.Config, test.ContentParameters))
+				writeGitRepo(t, remoteGitDir, test.GitFiles, test.ContentParameters)
 
-				err := os.WriteFile(configPath, []byte(s), 0644)
-				if err != nil {
-					t.Fatal(err)
-				}
+				// Run the service with the config file and persistence dir and poll for a bundle in S3.
 
 				var g errgroup.Group
 				g.Go(func() error {
 					return service.New().WithConfigFile(configPath).WithPersistenceDir(persistenceDir).Run(ctx)
 				})
 
+				var obj *gofakes3.Object
+				var err error
+
 				for {
-					obj, err := mock.GetObject("test", "bundle.tar.gz", nil)
+					obj, err = mock.GetObject("test", "bundle.tar.gz", nil)
 
 					if err != nil {
 						if gofakes3.HasErrorCode(err, gofakes3.ErrNoSuchKey) {
@@ -138,79 +106,81 @@ func TestService(t *testing.T) {
 						t.Fatal(err)
 					}
 
-					// Check the filesystem layout used to construct the bundle.
-
-					var files []string
-					err = filepath.Walk(persistenceDir, func(path string, info os.FileInfo, err error) error {
-						if err != nil {
-							return err
-						}
-						if info.IsDir() {
-							return nil
-						}
-
-						path = strings.TrimPrefix(path, persistenceDir)
-
-						// Filter out the git hidden directories and database file constructed.
-
-						switch slashPath := filepath.ToSlash(path); {
-						case strings.Contains(slashPath, "/.git/"):
-						case slashPath == "/sqlite.db":
-						default:
-							files = append(files, path)
-						}
-
-						return nil
-					})
-					if err != nil {
-						t.Fatal(err)
-					}
-
-					if !reflect.DeepEqual(files, test.ExpectedFilesystem) {
-						t.Fatalf("expected files on disk: %v, got: %v", test.ExpectedFilesystem, files)
-					}
-
-					// Check the bundle contents.
-
-					b, err := bundle.NewReader(obj.Contents).Read()
-					if err != nil {
-						t.Fatal(err)
-					}
-
-					if len(test.ExpectedBundle.Rego) != len(b.Modules) {
-						t.Fatalf("expected %v modules but got %v", len(test.ExpectedBundle.Rego), len(b.Modules))
-					}
-
-					got := map[string]string{}
-					for _, mf := range b.Modules {
-						got[strings.TrimPrefix(mf.Path, "/")] = string(mf.Raw)
-					}
-
-					for k := range test.ExpectedBundle.Rego {
-						rego := formatTemplate(t, test.ExpectedBundle.Rego[k], test.ContentParameters)
-						if rego != got[k] {
-							t.Fatalf("exp:\n%v\n\ngot:\n%v", rego, got[k])
-						}
-					}
-
-					var expectedData interface{}
-
-					if test.ExpectedBundle.Data != "" {
-						data := formatTemplate(t, test.ExpectedBundle.Data, test.ContentParameters)
-
-						if err := json.Unmarshal([]byte(data), &expectedData); err != nil {
-							t.Fatalf("failed to unmarshal expected data: %v", err)
-						}
-					} else {
-						expectedData = map[string]interface{}{}
-					}
-
-					if !reflect.DeepEqual(b.Data, expectedData) {
-						t.Fatalf("expected data to be %v but got %v", expectedData, b.Data)
-					}
-
 					break
 				}
+
+				// Once the bundle was downloaded from S3, check the filesystem layout the service used to
+				// construct the bundle. Filter out the git hidden directories and database file constructed.
+
+				var files []string
+				err = filepath.Walk(persistenceDir, func(path string, info os.FileInfo, err error) error {
+					if err != nil {
+						return err
+					}
+					if info.IsDir() {
+						return nil
+					}
+
+					path = strings.TrimPrefix(path, persistenceDir)
+
+					switch slashPath := filepath.ToSlash(path); {
+					case strings.Contains(slashPath, "/.git/"):
+					case slashPath == "/sqlite.db":
+					default:
+						files = append(files, path)
+					}
+
+					return nil
+				})
+				if err != nil {
+					t.Fatal(err)
+				}
+
+				if !reflect.DeepEqual(files, test.ExpectedFilesystem) {
+					t.Fatalf("expected files on disk: %v, got: %v", test.ExpectedFilesystem, files)
+				}
+
+				// Filesystem layout used to construct the bundle matches the expectations, so check the
+				// actual bundle contents - both Rego and JSON contents.
+
+				b, err := bundle.NewReader(obj.Contents).Read()
+				if err != nil {
+					t.Fatal(err)
+				}
+
+				if len(test.ExpectedBundle.Rego) != len(b.Modules) {
+					t.Fatalf("expected %v modules but got %v", len(test.ExpectedBundle.Rego), len(b.Modules))
+				}
+
+				got := map[string]string{}
+				for _, mf := range b.Modules {
+					got[strings.TrimPrefix(mf.Path, "/")] = string(mf.Raw)
+				}
+
+				for k := range test.ExpectedBundle.Rego {
+					rego := formatTemplate(t, test.ExpectedBundle.Rego[k], test.ContentParameters)
+					if rego != got[k] {
+						t.Fatalf("exp:\n%v\n\ngot:\n%v", rego, got[k])
+					}
+				}
+
+				var expectedData interface{}
+
+				if test.ExpectedBundle.Data != "" {
+					data := formatTemplate(t, test.ExpectedBundle.Data, test.ContentParameters)
+
+					if err := json.Unmarshal([]byte(data), &expectedData); err != nil {
+						t.Fatalf("failed to unmarshal expected data: %v", err)
+					}
+				} else {
+					expectedData = map[string]interface{}{}
+				}
+
+				if !reflect.DeepEqual(b.Data, expectedData) {
+					t.Fatalf("expected data to be %v but got %v", expectedData, b.Data)
+				}
+
+				// Shutdown the service and wait for it to finish.
 
 				cancel()
 				err = g.Wait()
@@ -309,4 +279,42 @@ func testHTTPDataServer(t *testing.T, files map[string]string) *httptest.Server 
 	}))
 	t.Cleanup(ts.Close)
 	return ts
+}
+
+func writeFile(t *testing.T, path string, content string) {
+	if err := os.MkdirAll(filepath.Dir(path), 0777); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func writeGitRepo(t *testing.T, remoteGitDir string, files map[string]string, parameters map[string]string) {
+	for path, content := range files {
+		writeFile(t, filepath.Join(remoteGitDir, path), formatTemplate(t, content, parameters))
+	}
+
+	if len(files) > 0 {
+		repo, err := git.PlainInit(remoteGitDir, false)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		w, err := repo.Worktree()
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		for name := range files {
+			if _, err := w.Add(name); err != nil {
+				t.Fatal(err)
+			}
+		}
+
+		if _, err := w.Commit("Initial commit", &git.CommitOptions{Author: &object.Signature{}}); err != nil {
+			t.Fatal(err)
+		}
+	}
 }
