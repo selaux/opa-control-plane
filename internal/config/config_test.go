@@ -120,6 +120,11 @@ func TestSelectorMatch(t *testing.T) {
 			selector: `{foo: [baz, bar], qux: [corge]}`,
 			exp:      false,
 		},
+		{
+			labels:   `{foo: bar}`,
+			selector: `{foo: [ba*]}`,
+			exp:      true,
+		},
 	}
 
 	for _, tc := range cases {

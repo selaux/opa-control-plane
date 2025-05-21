@@ -9,6 +9,7 @@ import (
 	"os"
 	"reflect"
 
+	"github.com/gobwas/glob"
 	"gopkg.in/yaml.v3"
 )
 
@@ -202,18 +203,22 @@ func (a *Stack) Equal(other *Stack) bool {
 	return a.Name == other.Name && a.Selector.Equal(other.Selector) && equalRequirements(a.Requirements, other.Requirements)
 }
 
-type Selector map[string][]string
+type Selector struct {
+	s map[string][]string
+	m map[string][]glob.Glob // Pre-compiled glob patterns for faster matching
+}
 
-func (s Selector) Matches(labels Labels) bool {
-	for expLabel, expValues := range s {
+// Matches checks if the given labels match the selector.
+func (s *Selector) Matches(labels Labels) bool {
+	for expLabel, expValues := range s.m {
 		v, ok := labels[expLabel]
 		if !ok {
 			return false
 		}
+
 		found := len(expValues) == 0 // empty selector value matches any label value
 		for _, ev := range expValues {
-			// TODO(tsandall): add support for glob matching
-			if ev == v {
+			if ev.Match(v) {
 				found = true
 				break
 			}
@@ -226,15 +231,76 @@ func (s Selector) Matches(labels Labels) bool {
 }
 
 func (s Selector) Equal(other Selector) bool {
-	if len(s) != len(other) {
+	if len(s.s) != len(other.s) {
 		return false
 	}
-	for k := range s {
-		if !equalStringSets(s[k], other[k]) {
+	for k := range s.s {
+		if !equalStringSets(s.s[k], other.s[k]) {
 			return false
 		}
 	}
 	return true
+}
+
+func (s *Selector) UnmarshalYAML(node *yaml.Node) error {
+	raw := make(map[string][]string)
+	if err := node.Decode(&raw); err != nil {
+		return err
+	}
+	*s = Selector{s: make(map[string][]string), m: make(map[string][]glob.Glob)}
+	for key, encodedValue := range raw {
+		var l []glob.Glob
+		for _, v := range encodedValue {
+			g, err := glob.Compile(v)
+			if err != nil {
+				return fmt.Errorf("failed to decode value for key %q: %w", key, err)
+			}
+			l = append(l, g)
+		}
+
+		(*s).s[key] = encodedValue
+		(*s).m[key] = l
+	}
+	return nil
+}
+
+func (s *Selector) MarshalYAML() (interface{}, error) {
+	encodedMap := make(map[string][]string)
+	for key, value := range s.s {
+		encodedMap[key] = value
+	}
+	return encodedMap, nil
+}
+
+func (s *Selector) Get(key string) ([]string, bool) {
+	if s.s == nil {
+		return nil, false
+	}
+
+	v, ok := s.s[key]
+	return v, ok
+}
+
+func (s *Selector) Set(key string, value []string) error {
+	if s.s == nil {
+		s.s = make(map[string][]string)
+		s.m = make(map[string][]glob.Glob)
+	}
+
+	for _, v := range value {
+		g, err := glob.Compile(v)
+		if err != nil {
+			return fmt.Errorf("failed to decode value for key %q: %w", key, err)
+		}
+		s.m[key] = append(s.m[key], g)
+	}
+
+	s.s[key] = value
+	return nil
+}
+
+func (s *Selector) Len() int {
+	return len(s.s)
 }
 
 func equalStringSets(a, b []string) bool {

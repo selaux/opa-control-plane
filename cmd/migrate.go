@@ -206,7 +206,7 @@ func doMigrate(params migrateParams) error {
 	}
 
 	for _, stack := range output.Stacks {
-		if _, ok := stack.Selector["do-not-match"]; ok {
+		if _, ok := stack.Selector.Get("do-not-match"); ok {
 			log.Printf("Stack %q did not match any systems. Consider removing it.", stack.Name)
 		}
 	}
@@ -354,7 +354,14 @@ func migrateV1Stack(client *DASClient, v1 *v1Stack) (*config.Stack, *config.Libr
 	}
 
 	stack.Selector, err = migrateV1Selector(module)
-	stack.Selector["system-type"] = []string{v1.Type}
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("failed to migrate selector policy for %q: %w", v1.Name, err)
+	}
+
+	err = stack.Selector.Set("system-type", []string{v1.Type})
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("failed to set system-type label for %q: %w", v1.Name, err)
+	}
 
 	return &stack, &library, nil, err
 }
@@ -370,7 +377,7 @@ func migrateV1Selector(module *ast.Module) (config.Selector, error) {
 			if innerErr != nil {
 				return true
 			}
-			if len(selector) > 0 {
+			if selector.Len() > 0 {
 				return true
 			}
 			if x.IsAssignment() {
@@ -398,7 +405,13 @@ func migrateV1Selector(module *ast.Module) (config.Selector, error) {
 								innerErr = fmt.Errorf("unexpected selector label structure: %v", ops[1])
 								return true
 							}
-							selector[k] = append(selector[k], s)
+
+							l, _ := selector.Get(k)
+							err := selector.Set(k, append(l, s))
+							if err != nil {
+								innerErr = err
+								return true
+							}
 						}
 					}
 				}
@@ -406,7 +419,7 @@ func migrateV1Selector(module *ast.Module) (config.Selector, error) {
 			return false
 		})
 		if innerErr != nil {
-			return nil, innerErr
+			return config.Selector{}, innerErr
 		}
 	}
 
@@ -415,8 +428,9 @@ func migrateV1Selector(module *ast.Module) (config.Selector, error) {
 	// because otherwise an empty selector matches ALL systems.
 	//
 	// NOTE(tsandall): users should just remove stacks from DAS with empty selectors.
-	if len(selector) == 0 {
-		selector["do-not-match"] = []string{}
+	var err error
+	if selector.Len() == 0 {
+		err = selector.Set("do-not-match", []string{})
 	}
-	return selector, nil
+	return selector, err
 }
