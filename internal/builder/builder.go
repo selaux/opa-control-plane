@@ -128,6 +128,7 @@ func (b *Builder) Build(ctx context.Context) error {
 				})
 
 			} else if filepath.Ext(path) == ".json" {
+				// Merge JSON files in, assuming their paths do not conflict. If conflict, the last one wins.
 				var value interface{}
 				err := json.Unmarshal(bs, &value)
 				if err != nil {
@@ -143,7 +144,6 @@ func (b *Builder) Build(ctx context.Context) error {
 				}
 
 				if len(key) == 0 {
-					// TODO: Not able to merge root and non-root data. Is that ever allowed in bundles?
 					valueAsMap, ok := value.(map[string]interface{})
 					if !ok {
 						return fmt.Errorf("expected root data document to be object (got %T)", value)
