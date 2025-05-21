@@ -126,7 +126,7 @@ func TestBuilder(t *testing.T) {
 					},
 				},
 			},
-			expError: fmt.Errorf(`package x in "system" conflicts with package x in "lib2"`),
+			expError: fmt.Errorf("requirement \"lib2\" contains conflicting package x\n- package x from \"system\""),
 		},
 		{
 			note: "package conflict: prefix",
@@ -159,7 +159,7 @@ func TestBuilder(t *testing.T) {
 					},
 				},
 			},
-			expError: fmt.Errorf(`package x in "system" conflicts with package x.y.z in "lib2"`),
+			expError: fmt.Errorf("requirement \"lib2\" contains conflicting package x.y.z\n- package x from \"system\""),
 		},
 		{
 			note: "package conflict: prefix (reverse)",
@@ -192,7 +192,7 @@ func TestBuilder(t *testing.T) {
 					},
 				},
 			},
-			expError: fmt.Errorf(`package x.y in "system" conflicts with package x in "lib2"`),
+			expError: fmt.Errorf("requirement \"lib2\" contains conflicting package x\n- package x.y from \"system\""),
 		},
 		{
 			note: "missing library",

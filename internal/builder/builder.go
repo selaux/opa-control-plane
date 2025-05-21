@@ -45,13 +45,21 @@ func (b *Builder) WithSources(srcs []*Source) *Builder {
 }
 
 type PackageConflictErr struct {
-	A, B       *Source
-	PkgA, PkgB *ast.Package
+	Requirement *Source
+	Package     *ast.Package
+	rootMap     map[string]*Source
+	overlap     []ast.Ref
 }
 
 func (err *PackageConflictErr) Error() string {
 	// TODO(tsandall): once mounts are available improve to suggest
-	return fmt.Sprintf("%v in %q conflicts with %v in %q", err.PkgA, err.A.Name, err.PkgB, err.B.Name)
+	lines := []string{fmt.Sprintf("requirement %q contains conflicting %v", err.Requirement.Name, err.Package)}
+	for i := range err.overlap {
+		if src, ok := err.rootMap[err.overlap[i].String()]; ok {
+			lines = append(lines, fmt.Sprintf("- %v from %q", &ast.Package{Path: err.overlap[i]}, src.Name))
+		}
+	}
+	return strings.Join(lines, "\n")
 }
 
 func (b *Builder) Build(ctx context.Context) error {
@@ -75,8 +83,13 @@ func (b *Builder) Build(ctx context.Context) error {
 			return fmt.Errorf("%v: %w", next.Name, err)
 		}
 		for _, root := range newRoots {
-			if rootsOverlap(existingRoots, root) {
-				return &PackageConflictErr{A: rootMap[existingRoots[0].String()], PkgA: &ast.Package{Path: existingRoots[0]}, B: next, PkgB: &ast.Package{Path: root}}
+			if overlap := rootsOverlap(existingRoots, root); len(overlap) > 0 {
+				return &PackageConflictErr{
+					Requirement: next,
+					Package:     &ast.Package{Path: root},
+					rootMap:     rootMap,
+					overlap:     overlap,
+				}
 			}
 			rootMap[root.String()] = next
 		}
@@ -239,11 +252,11 @@ func getRootsForDirs(dirs []Dir) ([]ast.Ref, error) {
 	return result, nil
 }
 
-func rootsOverlap(roots []ast.Ref, root ast.Ref) bool {
+func rootsOverlap(roots []ast.Ref, root ast.Ref) (result []ast.Ref) {
 	for _, other := range roots {
 		if other.HasPrefix(root) || root.HasPrefix(other) {
-			return true
+			result = append(result, other)
 		}
 	}
-	return false
+	return result
 }

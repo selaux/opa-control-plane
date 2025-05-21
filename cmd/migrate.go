@@ -236,6 +236,7 @@ func migrateV1System(client *DASClient, state *dasState, v1 *v1System) (*config.
 
 	for _, bi := range builtinLibraries {
 		if bi.Name == v1.Type {
+			// TODO(tsandall): pull N instead of just one (conflicts, mask, authz, etc.)
 			system.Requirements = append(system.Requirements, config.Requirement{
 				Library: &bi.Name,
 			})
