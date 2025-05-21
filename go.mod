@@ -105,7 +105,6 @@ require (
 	golang.org/x/exp v0.0.0-20240909161429-701f63a606c0 // indirect
 	golang.org/x/net v0.39.0 // indirect
 	golang.org/x/oauth2 v0.29.0 // indirect
-	golang.org/x/sync v0.13.0 // indirect
 	golang.org/x/sys v0.32.0 // indirect
 	golang.org/x/text v0.24.0 // indirect
 	golang.org/x/time v0.11.0 // indirect
@@ -137,6 +136,7 @@ require (
 	github.com/johannesboyne/gofakes3 v0.0.0-20250402064820-d479899d8cbe
 	github.com/mattn/go-sqlite3 v1.14.28
 	github.com/open-policy-agent/opa v1.3.0
+	golang.org/x/sync v0.13.0
 	google.golang.org/api v0.229.0
 	gopkg.in/yaml.v3 v3.0.1
 )
