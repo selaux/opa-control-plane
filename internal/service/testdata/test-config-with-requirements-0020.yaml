@@ -22,17 +22,26 @@ cases:
             TestLibrary: {
               files: {
                 "main.rego": {{ base64encode .lib_rego }}
+              },
+              requirements: [{library: TestLibrary2}]
+            },
+            TestLibrary2: {
+              files: {
+                "lib2.rego": {{ base64encode .lib2_rego }}
               }
             }
           }
         }
   content_parameters:
     app_rego: &app_rego "package app\np := 7"
-    lib_rego: &lib_rego "package main\nmain := data.app.p"
-  expected_filesystem: 
+    lib_rego: &lib_rego "package main\nmain := data.lib2.foo(data.app.p)"
+    lib2_rego: &lib2_rego "package lib2\nfoo(x) := x"
+  expected_filesystem:
+  - "/files/02473352e28614faabbbae4a5077a884/lib2.rego" # library 2
   - "/files/651b945976b07287063e8967060724a4/app.rego" # system
   - "/files/dd60a95cf9945e13a93d823fed9753ed/main.rego" # library
-  expected_bundle: 
-    rego: 
+  expected_bundle:
+    rego:
       app.rego: *app_rego
       main.rego: *lib_rego
+      lib2.rego: *lib2_rego

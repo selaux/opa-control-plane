@@ -437,7 +437,7 @@ LEFT JOIN
 LEFT JOIN
 	secrets ON libraries_secrets.secret_id = secrets.id
 LEFT JOIN
-	libraries_requirements ON libraries.id = libraries_requirements.library_id = libraries.id
+	libraries_requirements ON libraries.id = libraries_requirements.library_id
 WHERE (libraries_secrets.ref_type = 'git_credentials' AND secrets.value IS NOT NULL) OR libraries_secrets.ref_type IS NULL`)
 	if err != nil {
 		return nil, err
