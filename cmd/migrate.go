@@ -6,7 +6,9 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/open-policy-agent/opa/ast"
@@ -82,48 +84,12 @@ func doMigrate(params migrateParams) error {
 	output.Metadata.ExportedFrom = params.url
 	output.Metadata.ExportedAt = time.Now().UTC().Format(time.RFC3339)
 
-	log.Println("Fetching v1/systems...")
-	resp, err := c.JSON("v1/systems")
+	state, err := fetchDASState(&c)
 	if err != nil {
 		return err
 	}
 
-	var systems []*v1System
-	err = resp.Decode(&systems)
-	if err != nil {
-		return err
-	}
-
-	log.Printf("Received %d systems.", len(systems))
-
-	log.Println("Fetching v1/libraries...")
-	resp, err = c.JSON("v1/libraries")
-	if err != nil {
-		return err
-	}
-
-	var libraries []*v1Library
-	err = resp.Decode(&libraries)
-	if err != nil {
-		return err
-	}
-
-	log.Printf("Received %d libraries.", len(libraries))
-
-	log.Println("Fetching v1/stacks...")
-	resp, err = c.JSON("v1/stacks")
-	if err != nil {
-		return err
-	}
-
-	var stacks []*v1Stack
-	err = resp.Decode(&stacks)
-	if err != nil {
-		return err
-	}
-	log.Printf("Received %d stacks.", len(stacks))
-
-	for _, library := range libraries {
+	for _, library := range state.LibrariesById {
 		lc, secret, err := mapV1LibraryToLibraryAndSecretConfig(library)
 		if err != nil {
 			return err
@@ -139,8 +105,8 @@ func doMigrate(params migrateParams) error {
 		output.Libraries[bi.Name] = bi
 	}
 
-	for _, system := range systems {
-		sc, secret, err := migrateV1System(&c, system)
+	for _, system := range state.SystemsById {
+		sc, secret, err := migrateV1System(&c, state, system)
 		if err != nil {
 			return err
 		}
@@ -151,8 +117,8 @@ func doMigrate(params migrateParams) error {
 		}
 	}
 
-	for _, stack := range stacks {
-		sc, lc, secret, err := migrateV1Stack(&c, stack)
+	for _, stack := range state.StacksById {
+		sc, lc, secret, err := migrateV1Stack(&c, state, stack)
 		if err != nil {
 			return err
 		}
@@ -165,6 +131,10 @@ func doMigrate(params migrateParams) error {
 		}
 	}
 
+	if err := migrateDependencies(&c, state, &output); err != nil {
+		return err
+	}
+
 	log.Printf("Finished downloading resources from DAS. Printing migration configuration.")
 
 	bs, err := yaml.Marshal(output)
@@ -174,13 +144,8 @@ func doMigrate(params migrateParams) error {
 
 	fmt.Println(string(bs))
 
-	v1StacksById := map[string]*v1Stack{}
-	for _, stack := range stacks {
-		v1StacksById[stack.Id] = stack
-	}
-
 	v1SystemsByName := map[string]*v1System{}
-	for _, system := range systems {
+	for _, system := range state.SystemsById {
 		v1SystemsByName[system.Name] = system
 	}
 
@@ -193,7 +158,7 @@ func doMigrate(params migrateParams) error {
 		}
 		expectedMatches := ast.NewSet()
 		for _, stackId := range v1SystemsByName[system.Name].MatchingStacks {
-			expectedMatches.Add(ast.StringTerm(v1StacksById[stackId].Name))
+			expectedMatches.Add(ast.StringTerm(state.StacksById[stackId].Name))
 		}
 		missing := expectedMatches.Diff(matches)
 		extra := matches.Diff(expectedMatches)
@@ -214,67 +179,46 @@ func doMigrate(params migrateParams) error {
 	return nil
 }
 
-func getGitRoots(client *DASClient, v1 *v1System) ([]string, error) {
-
-	resp, err := client.JSON("v1/systems/" + v1.Id + "/bundles")
-	if err != nil {
-		return nil, err
-	}
-
-	bundles := []*v1Bundle{}
-	if err := resp.Decode(&bundles); err != nil {
-		return nil, err
-	}
-
-	if len(bundles) > 0 {
-		var roots []string
-		for i := range bundles[0].SBOM.Origins {
-			roots = append(roots, bundles[0].SBOM.Origins[i].Roots...)
-		}
-		return roots, nil
-	}
-
-	return nil, nil
-}
-
-func migrateV1System(client *DASClient, v1 *v1System) (*config.System, *config.Secret, error) {
+func migrateV1System(client *DASClient, state *dasState, v1 *v1System) (*config.System, *config.Secret, error) {
 
 	system, secret, err := mapV1SystemToSystemAndSecretConfig(client, v1)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	log.Printf("Fetching policies for system %q", v1.Name)
+	log.Printf("Fetching git roots and labels for system %q", v1.Name)
 
-	roots, err := getGitRoots(client, v1)
+	resp, err := client.JSON("v1/systems/" + v1.Id + "/bundles")
 	if err != nil {
 		return nil, nil, err
 	}
 
-	for i := range v1.Policies {
-		if !rootsPrefix(roots, v1.Policies[i].Id) {
-			resp, err := client.JSON("v1/policies/" + v1.Policies[i].Id)
-			if err != nil {
-				if dErr, ok := err.(DASError); ok && dErr.StatusCode == http.StatusNotFound {
-					log.Printf("System %q refers to non-existent policy: %v", system.Name, v1.Policies[i].Id)
-					continue
-				}
-				return nil, nil, err
-			}
-			var p v1Policy
-			if err := resp.Decode(&p); err != nil {
-				return nil, nil, err
-			}
+	bundles := []*v1Bundle{}
+	if err := resp.Decode(&bundles); err != nil {
+		return nil, nil, err
+	}
+
+	var roots []string
+
+	if len(bundles) > 0 {
+		for i := range bundles[0].SBOM.Origins {
+			roots = append(roots, bundles[0].SBOM.Origins[i].Roots...)
+		}
+	}
+
+	policies := state.SystemPolicies[v1.Id]
+	for i := range policies {
+		if !rootsPrefix(roots, policies[i].Package) {
 			if system.Files == nil {
 				system.Files = make(map[string]string)
 			}
-			for file, str := range p.Modules {
-				system.Files[strings.TrimPrefix(v1.Policies[i].Id, "systems/"+v1.Id)+"/"+file] = str
+			for file, str := range policies[i].Modules {
+				system.Files[strings.TrimPrefix(policies[i].Package, "systems/"+v1.Id)+"/"+file] = str
 			}
 		}
 	}
 
-	resp, err := client.JSON(fmt.Sprintf("v1/data/metadata/%v/labels", v1.Id))
+	resp, err = client.JSON(fmt.Sprintf("v1/data/metadata/%v/labels", v1.Id))
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to query labels for %q: %w", v1.Name, err)
 	}
@@ -301,69 +245,53 @@ func migrateV1System(client *DASClient, v1 *v1System) (*config.System, *config.S
 	return system, secret, nil
 }
 
-func migrateV1Stack(client *DASClient, v1 *v1Stack) (*config.Stack, *config.Library, *config.Secret, error) {
+func migrateV1Stack(client *DASClient, state *dasState, v1 *v1Stack) (*config.Stack, *config.Library, *config.Secret, error) {
 
 	var stack config.Stack
 	var library config.Library
 
 	stack.Name = v1.Name
 	library.Name = v1.Name
+	stack.Requirements = append(stack.Requirements, config.Requirement{Library: &v1.Name})
 
-	log.Printf("Fetching policies for stack %q", v1.Name)
 	// TODO(tsandall): add support for excluding git backed files
 	// may need to pick a bundle from a matching system to pull out roots
-	for i := range v1.Policies {
-		resp, err := client.JSON("v1/policies/" + v1.Policies[i].Id)
-		if err != nil {
-			if dErr, ok := err.(DASError); ok && dErr.StatusCode == http.StatusNotFound {
-				log.Printf("Stack %q refers to non-existent policy: %v", stack.Name, v1.Policies[i].Id)
-				continue
-			}
-			return nil, nil, nil, err
-		}
-		var p v1Policy
-		if err := resp.Decode(&p); err != nil {
-			return nil, nil, nil, err
-		}
+	policies := state.StackPolicies[v1.Id]
+
+	for i := range policies {
 		if library.Files == nil {
 			library.Files = make(map[string]string)
 		}
-		for file, str := range p.Modules {
-			library.Files[v1.Policies[i].Id+"/"+file] = str
+		for file, str := range policies[i].Modules {
+			library.Files[policies[i].Package+"/"+file] = str
 		}
 	}
 
-	resp, err := client.JSON(fmt.Sprintf("v1/policies/stacks/%v/selectors", v1.Id))
-	if err != nil {
-		return nil, nil, nil, fmt.Errorf("failed to get selector policy for %q: %w", v1.Name, err)
+	pkg := fmt.Sprintf("stacks/%v/selectors", v1.Id)
+
+	for _, p := range state.StackPolicies[v1.Id] {
+		if p.Package == pkg {
+			s, ok := p.Modules["selector.rego"]
+			if !ok {
+				return nil, nil, nil, fmt.Errorf("missing selector.rego file for %q", v1.Name)
+			}
+
+			module, err := ast.ParseModule("selector.rego", s)
+			if err != nil {
+				return nil, nil, nil, fmt.Errorf("failed to parse selector policy for %q: %w", v1.Name, err)
+			}
+
+			stack.Selector, err = migrateV1Selector(module)
+			err = stack.Selector.Set("system-type", []string{v1.Type})
+			if err != nil {
+				return nil, nil, nil, fmt.Errorf("failed to set system-type label for %q: %w", v1.Name, err)
+			}
+
+			return &stack, &library, nil, err
+		}
 	}
 
-	var p v1Policy
-	if err := resp.Decode(&p); err != nil {
-		return nil, nil, nil, fmt.Errorf("failed to decode selector policy for %q: %w", v1.Name, err)
-	}
-
-	s, ok := p.Modules["selector.rego"]
-	if !ok {
-		return nil, nil, nil, fmt.Errorf("missing selector.rego file for %q: %w", v1.Name, err)
-	}
-
-	module, err := ast.ParseModule("selector.rego", s)
-	if err != nil {
-		return nil, nil, nil, fmt.Errorf("failed to parse selector policy for %q: %w", v1.Name, err)
-	}
-
-	stack.Selector, err = migrateV1Selector(module)
-	if err != nil {
-		return nil, nil, nil, fmt.Errorf("failed to migrate selector policy for %q: %w", v1.Name, err)
-	}
-
-	err = stack.Selector.Set("system-type", []string{v1.Type})
-	if err != nil {
-		return nil, nil, nil, fmt.Errorf("failed to set system-type label for %q: %w", v1.Name, err)
-	}
-
-	return &stack, &library, nil, err
+	return nil, nil, nil, fmt.Errorf("misisng selector policy for %q", v1.Name)
 }
 
 func migrateV1Selector(module *ast.Module) (config.Selector, error) {
@@ -433,4 +361,356 @@ func migrateV1Selector(module *ast.Module) (config.Selector, error) {
 		err = selector.Set("do-not-match", []string{})
 	}
 	return selector, err
+}
+
+type dasState struct {
+	SystemsById     map[string]*v1System
+	SystemPolicies  map[string][]*v1Policy
+	StacksById      map[string]*v1Stack
+	StackPolicies   map[string][]*v1Policy
+	LibrariesById   map[string]*v1Library
+	LibraryPolicies map[string][]*v1Policy
+}
+
+func fetchDASState(c *DASClient) (*dasState, error) {
+	state := dasState{}
+
+	log.Println("Fetching v1/systems")
+	resp, err := c.JSON("v1/systems")
+	if err != nil {
+		return nil, err
+	}
+
+	var systems []*v1System
+	err = resp.Decode(&systems)
+	if err != nil {
+		return nil, err
+	}
+
+	log.Println("Fetching v1/libraries")
+	resp, err = c.JSON("v1/libraries")
+	if err != nil {
+		return nil, err
+	}
+
+	var libraries []*v1Library
+	err = resp.Decode(&libraries)
+	if err != nil {
+		return nil, err
+	}
+
+	log.Println("Fetching v1/stacks")
+	resp, err = c.JSON("v1/stacks")
+	if err != nil {
+		return nil, err
+	}
+
+	var stacks []*v1Stack
+	err = resp.Decode(&stacks)
+	if err != nil {
+		return nil, err
+	}
+
+	state.SystemsById = map[string]*v1System{}
+	for _, s := range systems {
+		state.SystemsById[s.Id] = s
+	}
+
+	state.StacksById = map[string]*v1Stack{}
+	for _, s := range stacks {
+		state.StacksById[s.Id] = s
+	}
+
+	state.LibrariesById = map[string]*v1Library{}
+	for _, l := range libraries {
+		state.LibrariesById[l.Id] = l
+	}
+
+	if err := fetchSystemPolicies(c, &state); err != nil {
+		return nil, err
+	}
+
+	if err := fetchStackPolicies(c, &state); err != nil {
+		return nil, err
+	}
+
+	if err := fetchLibraryPolicies(c, &state); err != nil {
+		return nil, err
+	}
+
+	return &state, nil
+}
+
+func migrateDependencies(c *DASClient, state *dasState, output *config.Root) error {
+
+	index := newLibraryPackageIndex()
+
+	for id, policies := range state.LibraryPolicies {
+		for _, p := range policies {
+			index.Add(p.Package, id)
+		}
+	}
+
+	for id, policies := range state.SystemPolicies {
+		rs, err := getRequirementsForPolicies(policies, index, "")
+		if err != nil {
+			return err
+		}
+
+		sc := output.Systems[state.SystemsById[id].Name]
+		sc.Requirements = append(sc.Requirements, rs...)
+	}
+
+	for id, policies := range state.StackPolicies {
+		rs, err := getRequirementsForPolicies(policies, index, "")
+		if err != nil {
+			return err
+		}
+		lc := output.Libraries[state.StacksById[id].Name]
+		lc.Requirements = append(lc.Requirements, rs...)
+	}
+
+	for id, policies := range state.LibraryPolicies {
+		rs, err := getRequirementsForPolicies(policies, index, id)
+		if err != nil {
+			return err
+		}
+		lc := output.Libraries[id]
+		lc.Requirements = append(lc.Requirements, rs...)
+	}
+
+	return nil
+}
+
+func fetchSystemPolicies(c *DASClient, state *dasState) error {
+	ch := make(chan *v1System)
+	var wg sync.WaitGroup
+	var mu sync.Mutex
+
+	state.SystemPolicies = map[string][]*v1Policy{}
+
+	for i := 0; i < 10; i++ {
+		wg.Add(1)
+		go func() {
+			for s := range ch {
+				log.Printf("Fetching %d policies for system %q", len(s.Policies), s.Name)
+				ps, err := fetchPolicies(c, s.Policies)
+				if err != nil {
+					panic(err)
+				}
+				mu.Lock()
+				state.SystemPolicies[s.Id] = ps
+				mu.Unlock()
+			}
+			wg.Done()
+		}()
+	}
+
+	for _, s := range state.SystemsById {
+		ch <- s
+	}
+
+	close(ch)
+	wg.Wait()
+	return nil
+}
+
+func fetchStackPolicies(c *DASClient, state *dasState) error {
+	ch := make(chan *v1Stack)
+	var wg sync.WaitGroup
+	var mu sync.Mutex
+
+	state.StackPolicies = map[string][]*v1Policy{}
+
+	for i := 0; i < 10; i++ {
+		wg.Add(1)
+		go func() {
+			for s := range ch {
+				log.Printf("Fetching %d policies for stack %q", len(s.Policies), s.Name)
+				ps, err := fetchPolicies(c, s.Policies)
+				if err != nil {
+					panic(err)
+				}
+				mu.Lock()
+				state.StackPolicies[s.Id] = ps
+				mu.Unlock()
+			}
+			wg.Done()
+		}()
+	}
+
+	for _, s := range state.StacksById {
+		ch <- s
+	}
+
+	close(ch)
+	wg.Wait()
+	return nil
+}
+
+func fetchLibraryPolicies(c *DASClient, state *dasState) error {
+	ch := make(chan *v1Library)
+	var wg sync.WaitGroup
+	var mu sync.Mutex
+
+	state.LibraryPolicies = map[string][]*v1Policy{}
+
+	for i := 0; i < 10; i++ {
+		wg.Add(1)
+		go func() {
+			for l := range ch {
+
+				// List libraries differs from systems/stacks. Result does not
+				// have policies on it. Need to fetch each library individually.
+				resp, err := c.JSON("v1/libraries/"+l.Id, DASParams{
+					Query: map[string]string{
+						"rule_counts": "false",
+						"modules":     "false",
+					},
+				})
+				if err != nil {
+					panic(err)
+				}
+
+				if err := resp.Decode(l); err != nil {
+					panic(err)
+				}
+
+				log.Printf("Fetching %d policies for library %q", len(l.Policies), l.Id)
+				ps, err := fetchPolicies(c, l.Policies)
+				if err != nil {
+					panic(err)
+				}
+
+				mu.Lock()
+				state.LibrariesById[l.Id] = l
+				state.LibraryPolicies[l.Id] = ps
+				mu.Unlock()
+			}
+			wg.Done()
+		}()
+	}
+
+	for _, l := range state.LibrariesById {
+		ch <- l
+	}
+
+	close(ch)
+	wg.Wait()
+	return nil
+}
+
+func fetchPolicies(c *DASClient, refs []v1PoliciesRef) ([]*v1Policy, error) {
+	var result []*v1Policy
+	for _, ref := range refs {
+		resp, err := c.JSON("v1/policies/" + ref.Id)
+		if err != nil {
+			if dErr, ok := err.(DASError); ok && dErr.StatusCode == http.StatusNotFound {
+				log.Printf("Non-existent policy reference: %v", ref.Id)
+				continue
+			}
+			return nil, err
+		}
+		var p v1Policy
+		if err := resp.Decode(&p); err != nil {
+			return nil, err
+		}
+		p.Package = ref.Id
+		result = append(result, &p)
+	}
+	return result, nil
+}
+
+func getRequirementsForPolicies(policies []*v1Policy, index *libraryPackageIndex, ignore string) ([]config.Requirement, error) {
+	librarySet := map[string]struct{}{}
+	for _, p := range policies {
+		for file, content := range p.Modules {
+			module, err := ast.ParseModule(p.Package+"/"+file, content)
+			if err != nil {
+				return nil, err
+			}
+			var innerErr error
+			ast.WalkRefs(module, func(r ast.Ref) bool {
+				if !r.HasPrefix(ast.DefaultRootRef) {
+					return false
+				}
+				ptr, err := r.ConstantPrefix().Ptr()
+				if err != nil {
+					innerErr = err
+					return false
+				}
+				libraries := index.Lookup(ptr)
+				for id := range libraries {
+					if id != ignore {
+						librarySet[id] = struct{}{}
+					}
+				}
+				return false
+			})
+			if innerErr != nil {
+				return nil, innerErr
+			}
+		}
+	}
+	var rs []config.Requirement
+	for id := range librarySet {
+		rs = append(rs, config.Requirement{Library: &id})
+	}
+	sort.Slice(rs, func(i, j int) bool {
+		return *rs[i].Library < *rs[j].Library
+	})
+	return rs, nil
+}
+
+type libraryPackageIndex struct {
+	nodes   map[string]*libraryPackageIndex
+	library string
+}
+
+func newLibraryPackageIndex() *libraryPackageIndex {
+	return &libraryPackageIndex{
+		nodes: map[string]*libraryPackageIndex{},
+	}
+}
+
+func (idx *libraryPackageIndex) Lookup(path string) map[string]struct{} {
+	result := map[string]struct{}{}
+	keys := strings.Split(path, "/")
+	curr := idx
+	for _, key := range keys {
+		node, ok := curr.nodes[key]
+		if !ok {
+			return result
+		}
+		if node.library != "" {
+			result[node.library] = struct{}{}
+		}
+		curr = node
+	}
+	visit := []*libraryPackageIndex{curr}
+	for len(visit) > 0 {
+		var next *libraryPackageIndex
+		next, visit = visit[0], visit[1:]
+		if next.library != "" {
+			result[next.library] = struct{}{}
+		}
+		for _, node := range next.nodes {
+			visit = append(visit, node)
+		}
+	}
+	return result
+}
+
+func (idx *libraryPackageIndex) Add(path string, lib string) {
+	keys := strings.Split(path, "/")
+	curr := idx
+	for _, key := range keys {
+		node, ok := curr.nodes[key]
+		if !ok {
+			node = newLibraryPackageIndex()
+			curr.nodes[key] = node
+		}
+		curr = node
+	}
+	curr.library = lib
 }

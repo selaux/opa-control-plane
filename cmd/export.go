@@ -361,12 +361,10 @@ func doExport(params exportParams) error {
 }
 
 type v1System struct {
-	Id       string `json:"id"`
-	Name     string `json:"name"`
-	Type     string `json:"type"`
-	Policies []struct {
-		Id string `json:"id"`
-	} `json:"policies"`
+	Id            string          `json:"id"`
+	Name          string          `json:"name"`
+	Type          string          `json:"type"`
+	Policies      []v1PoliciesRef `json:"policies"`
 	SourceControl *struct {
 		Origin v1GitRepoConfig `json:"origin"`
 	} `json:"source_control"`
@@ -379,7 +377,8 @@ type v1System struct {
 // }
 
 type v1Library struct {
-	Id            string `json:"id"`
+	Id            string          `json:"id"`
+	Policies      []v1PoliciesRef `json:"policies"`
 	SourceControl *struct {
 		UseWorkspaceSettings bool            `json:"use_workspace_settings"`
 		LibraryOrigin        v1GitRepoConfig `json:"library_origin"`
@@ -387,12 +386,10 @@ type v1Library struct {
 }
 
 type v1Stack struct {
-	Name     string `json:"name"`
-	Id       string `json:"id"`
-	Type     string `json:"type"`
-	Policies []struct {
-		Id string `json:"id"`
-	} `json:"policies"`
+	Name          string          `json:"name"`
+	Id            string          `json:"id"`
+	Type          string          `json:"type"`
+	Policies      []v1PoliciesRef `json:"policies"`
 	SourceControl *struct {
 		UseWorkspaceSettings bool            `json:"use_workspace_settings"`
 		Origin               v1GitRepoConfig `json:"origin"`
@@ -435,6 +432,11 @@ type v1Decision struct {
 	Result *interface{} `json:"result"`
 }
 
+type v1PoliciesRef struct {
+	Id string `json:"id"`
+}
+
 type v1Policy struct {
+	Package string            `json:"package"`
 	Modules map[string]string `json:"modules"`
 }
