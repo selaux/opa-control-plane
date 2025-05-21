@@ -4,11 +4,13 @@
 package gitsync
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
 	gohttp "net/http"
 	"os"
+	"sync"
 
 	"github.com/bradleyfalzon/ghinstallation"
 	"github.com/go-git/go-git/v5"
@@ -22,6 +24,7 @@ import (
 type Synchronizer struct {
 	path   string
 	config config.Git
+	gh     github
 }
 
 // New creates a new Synchronizer instance. It is expected the threadpooling is outside of this package.
@@ -132,13 +135,7 @@ func (s *Synchronizer) auth(ctx context.Context) (transport.AuthMethod, error) {
 		installationID, _ := value["installation_id"].(int64)
 		privateKey, _ := value["private_key"].(string)
 
-		// TODO: Reuse the token generating transport across git operations.
-		itr, err := ghinstallation.NewKeyFromFile(gohttp.DefaultTransport, integrationID, installationID, privateKey)
-		if err != nil {
-			return nil, err
-		}
-
-		token, err := itr.Token(ctx)
+		token, err := s.gh.Token(ctx, integrationID, installationID, privateKey)
 		if err != nil {
 			return nil, err
 		}
@@ -150,4 +147,50 @@ func (s *Synchronizer) auth(ctx context.Context) (transport.AuthMethod, error) {
 	default:
 		return nil, fmt.Errorf("unsupported authentication type: %s", value["type"])
 	}
+}
+
+type github struct {
+	integrationID  int64
+	installationID int64
+	privateKey     []byte
+	tr             *ghinstallation.Transport
+	mu             sync.Mutex
+}
+
+func (gh *github) Token(ctx context.Context, integrationID, installationID int64, privateKeyFile string) (string, error) {
+	privateKey, err := os.ReadFile(privateKeyFile)
+	if err != nil {
+		return "", err
+	}
+
+	tr, err := gh.transport(integrationID, installationID, privateKey)
+	if err != nil {
+		return "", err
+	}
+
+	token, err := tr.Token(ctx)
+	if err != nil {
+		return "", err
+	}
+
+	return token, nil
+}
+
+func (gh *github) transport(integrationID, installationID int64, privateKey []byte) (*ghinstallation.Transport, error) {
+	gh.mu.Lock()
+	defer gh.mu.Unlock()
+
+	if gh.tr == nil || gh.integrationID != integrationID || gh.installationID != installationID || !bytes.Equal(gh.privateKey, privateKey) {
+		tr, err := ghinstallation.New(gohttp.DefaultTransport, integrationID, installationID, privateKey)
+		if err != nil {
+			return nil, err
+		}
+
+		gh.integrationID = integrationID
+		gh.installationID = installationID
+		gh.privateKey = privateKey
+		gh.tr = tr
+	}
+
+	return gh.tr, nil
 }
