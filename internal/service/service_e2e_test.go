@@ -21,6 +21,7 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/johannesboyne/gofakes3"
 	"github.com/johannesboyne/gofakes3/backend/s3mem"
+	"github.com/open-policy-agent/opa/ast"
 	"github.com/open-policy-agent/opa/bundle"
 	"github.com/tsandall/lighthouse/internal/service"
 	"github.com/tsandall/lighthouse/internal/test/tempfs"
@@ -147,15 +148,24 @@ func TestService(t *testing.T) {
 					t.Fatalf("expected %v modules but got %v", len(test.ExpectedBundle.Rego), len(b.Modules))
 				}
 
-				got := map[string]string{}
+				got := map[string]*ast.Module{}
 				for _, mf := range b.Modules {
-					got[strings.TrimPrefix(mf.Path, "/")] = string(mf.Raw)
+					got[strings.TrimPrefix(mf.Path, "/")] = mf.Parsed
 				}
 
 				for k := range test.ExpectedBundle.Rego {
 					rego := formatTemplate(t, test.ExpectedBundle.Rego[k], test.ContentParameters)
-					if rego != got[k] {
-						t.Fatalf("exp:\n%v\n\ngot:\n%v", rego, got[k])
+					module, err := ast.ParseModule(k, rego)
+					if err != nil {
+						t.Fatalf("failed to parse rego module %q: %v", k, err)
+					}
+
+					if got[k] == nil {
+						t.Fatalf("expected module %q to be present in bundle but got nil", k)
+					}
+
+					if !module.Equal(got[k]) {
+						t.Fatalf("exp:\n%v\n\ngot:\n%v", module.String(), got[k].String())
 					}
 				}
 
