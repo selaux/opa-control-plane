@@ -3,11 +3,11 @@
 
 ## Getting Started
 
-Export configuration from DAS.
+Migrate configuration from DAS.
 
 ```
 $ export STYRA_TOKEN=...
-$ go run tools/export/export.go -u https://expo.styra.com/ > config.yaml
+$ go run main.go migrate -u https://expo.styra.com/ > config.yaml
 ```
 
 Launch the Lighthouse service.
