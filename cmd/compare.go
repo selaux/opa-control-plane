@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -14,6 +13,7 @@ import (
 	"strings"
 
 	"github.com/akedrou/textdiff"
+	"github.com/open-policy-agent/opa/ast"
 	"github.com/open-policy-agent/opa/bundle"
 	"github.com/spf13/cobra"
 	"github.com/tsandall/lighthouse/internal/config"
@@ -52,6 +52,13 @@ func (r *compareBundleReport) AddMissing(path string) {
 func (r *compareBundleReport) AddDiff(path, blob string) {
 	r.init()
 	r.Rego.Diffs[path] = blob
+}
+
+func (r *compareBundleReport) Empty() bool {
+	if r.Rego == nil {
+		return true
+	}
+	return len(r.Rego.Missing) == 0 && len(r.Rego.Extras) == 0 && len(r.Rego.Diffs) == 0
 }
 
 type compareRegoReport struct {
@@ -256,7 +263,17 @@ func compareBundle(a, b bundle.Bundle) (compareBundleReport, error) {
 
 	for k := range aFiles {
 		if _, ok := bFiles[k]; ok {
-			if !bytes.Equal(aFiles[k], bFiles[k]) {
+			am, err := ast.ParseModule(k, string(aFiles[k]))
+			if err != nil {
+				return r, err
+			}
+
+			bm, err := ast.ParseModule(k, string(bFiles[k]))
+			if err != nil {
+				return r, err
+			}
+
+			if !am.Equal(bm) {
 				r.AddDiff(k, textdiff.Unified("Expected", "Found", string(bFiles[k]), string(aFiles[k])))
 			}
 		}
