@@ -348,7 +348,7 @@ func migrateV1Stack(_ *DASClient, state *dasState, v1 *v1Stack) (*config.Stack, 
 
 	pkg := fmt.Sprintf("stacks/%v/selectors", v1.Id)
 
-	for _, p := range state.StackPolicies[v1.Id] {
+	for _, p := range policies {
 		if p.Package == pkg {
 			s, ok := p.Modules["selector.rego"]
 			if !ok {

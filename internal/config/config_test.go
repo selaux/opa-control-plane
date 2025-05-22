@@ -62,6 +62,13 @@ func TestFilesMarshallingRoundtrip(t *testing.T) {
 					"foo.rego": "cGFja2FnZSBmb28=",
 				}
 			}
+		},
+		stacks: {
+			bar: {
+				selector: {
+					labelX: [abcd]
+				}
+			}
 		}
 	}`))
 
@@ -85,6 +92,10 @@ func TestFilesMarshallingRoundtrip(t *testing.T) {
 
 	if !cfg.Systems["foo"].Equal(cfg2.Systems["foo"]) {
 		t.Fatal("expected systems to be equal")
+	}
+
+	if !cfg.Stacks["bar"].Equal(cfg2.Stacks["bar"]) {
+		t.Fatal("expected stacks to be equal")
 	}
 
 }
@@ -118,6 +129,11 @@ func TestSelectorMatch(t *testing.T) {
 		{
 			labels:   `{foo: bar, baz: qux}`,
 			selector: `{foo: [baz, bar], qux: [corge]}`,
+			exp:      false,
+		},
+		{
+			labels:   `{foo: bar, baz: qux}`,
+			selector: `{foo: [bar], "do-not-match": [], baz: [qux]}`,
 			exp:      false,
 		},
 		{

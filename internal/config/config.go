@@ -215,7 +215,6 @@ func (s *Selector) Matches(labels Labels) bool {
 		if !ok {
 			return false
 		}
-
 		found := len(expValues) == 0 // empty selector value matches any label value
 		for _, ev := range expValues {
 			if ev.Match(v) {
@@ -249,22 +248,12 @@ func (s *Selector) UnmarshalYAML(node *yaml.Node) error {
 	}
 	*s = Selector{s: make(map[string][]string), m: make(map[string][]glob.Glob)}
 	for key, encodedValue := range raw {
-		var l []glob.Glob
-		for _, v := range encodedValue {
-			g, err := glob.Compile(v)
-			if err != nil {
-				return fmt.Errorf("failed to decode value for key %q: %w", key, err)
-			}
-			l = append(l, g)
-		}
-
-		(*s).s[key] = encodedValue
-		(*s).m[key] = l
+		s.Set(key, encodedValue)
 	}
 	return nil
 }
 
-func (s *Selector) MarshalYAML() (interface{}, error) {
+func (s Selector) MarshalYAML() (interface{}, error) {
 	encodedMap := make(map[string][]string)
 	for key, value := range s.s {
 		encodedMap[key] = value
@@ -287,12 +276,16 @@ func (s *Selector) Set(key string, value []string) error {
 		s.m = make(map[string][]glob.Glob)
 	}
 
-	for _, v := range value {
-		g, err := glob.Compile(v)
-		if err != nil {
-			return fmt.Errorf("failed to decode value for key %q: %w", key, err)
+	if len(value) > 0 {
+		for _, v := range value {
+			g, err := glob.Compile(v)
+			if err != nil {
+				return fmt.Errorf("failed to decode value for key %q: %w", key, err)
+			}
+			s.m[key] = append(s.m[key], g)
 		}
-		s.m[key] = append(s.m[key], g)
+	} else {
+		s.m[key] = []glob.Glob{}
 	}
 
 	s.s[key] = value
