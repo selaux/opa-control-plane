@@ -119,8 +119,6 @@ func New(ctx context.Context, config config.ObjectStorage) (ObjectStorage, error
 				return nil, err
 			}
 
-			// TODO: Not clear how to handle dynamic credentials with GCP.
-
 			apiKey, _ := value["api_key"].(string)
 			credentials, _ := value["credentials"].(string)
 
@@ -172,8 +170,6 @@ func New(ctx context.Context, config config.ObjectStorage) (ObjectStorage, error
 				return nil, err
 			}
 
-			// TODO: Not clear how to handle dynamic credentials with Azure.
-
 			accountName, _ := value["account_name"].(string)
 			accountKey, _ := value["account_key"].(string)
 
@@ -203,6 +199,9 @@ func s3auth(_ context.Context, config *config.AmazonS3) (func(*awsconfig.LoadOpt
 		return nil, nil
 	}
 
+	// SecretCredentialProvider can handle dynamic credentials but that capability is not strictly
+	// needed here: any configuration change, including credential change, will trigger the service
+	// to recreate the object storage client.
 	return awsconfig.WithCredentialsProvider(iaws.NewSecretCredentialsProvider(config.Credentials)), nil
 }
 
