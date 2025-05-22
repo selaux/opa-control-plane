@@ -77,8 +77,7 @@ func (b *Builder) Build(ctx context.Context) error {
 	for len(toProcess) > 0 {
 		var next *Source
 		next, toProcess = toProcess[0], toProcess[1:]
-		// TODO(tsandall): add roots for datasources
-		newRoots, err := getRootsForDirs(next.Dirs)
+		newRoots, err := getRegoAndJSONRootsForDirs(next.Dirs)
 		if err != nil {
 			return fmt.Errorf("%v: %w", next.Name, err)
 		}
@@ -202,7 +201,7 @@ func (b *Builder) Build(ctx context.Context) error {
 	return bundle.Write(b.output, result)
 }
 
-func walkRegoFilesRecursive(root string, fn func(path string, fi os.FileInfo) error) error {
+func walkFilesRecursive(root string, suffix string, fn func(path string, fi os.FileInfo) error) error {
 	return filepath.Walk(root, func(path string, fi os.FileInfo, err error) error {
 		if err != nil {
 			return err
@@ -210,19 +209,22 @@ func walkRegoFilesRecursive(root string, fn func(path string, fi os.FileInfo) er
 		if fi.IsDir() {
 			return nil
 		}
-		if filepath.Ext(path) != ".rego" {
+		if filepath.Ext(path) != suffix {
 			return nil
 		}
 		return fn(path, fi)
 	})
 }
 
-func getRootsForDirs(dirs []Dir) ([]ast.Ref, error) {
+// getRegoAndJSONRootsForDirs returns the set of roots for the given directories. The
+// returned roots are the package paths for rego files and the directories
+// holding the JSON files.
+func getRegoAndJSONRootsForDirs(dirs []Dir) ([]ast.Ref, error) {
 	set := ast.NewSet()
 
 	for _, dir := range dirs {
 
-		err := walkRegoFilesRecursive(dir.Path, func(path string, _ os.FileInfo) error {
+		err := walkFilesRecursive(dir.Path, ".rego", func(path string, _ os.FileInfo) error {
 
 			bs, err := os.ReadFile(path)
 			if err != nil {
@@ -235,6 +237,31 @@ func getRootsForDirs(dirs []Dir) ([]ast.Ref, error) {
 			}
 
 			set.Add(ast.NewTerm(module.Package.Path))
+			return nil
+		})
+
+		if err != nil {
+			return nil, err
+		}
+
+		err = walkFilesRecursive(dir.Path, ".json", func(path string, _ os.FileInfo) error {
+
+			path, err := filepath.Rel(dir.Path, path)
+			if err != nil {
+				return err
+			}
+
+			path = filepath.ToSlash(filepath.Dir(path))
+
+			var keys []*ast.Term
+			for path != "" && path != "." {
+				dir := filepath.Base(path)
+				path = filepath.Dir(path)
+				keys = append([]*ast.Term{ast.StringTerm(dir)}, keys...)
+			}
+
+			keys = append([]*ast.Term{ast.DefaultRootDocument}, keys...)
+			set.Add(ast.RefTerm(keys...))
 			return nil
 		})
 

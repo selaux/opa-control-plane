@@ -195,6 +195,26 @@ func TestBuilder(t *testing.T) {
 			expError: fmt.Errorf("requirement \"lib2\" contains conflicting package x\n- package x.y from \"system\""),
 		},
 		{
+			note: "package conflict: rego and json",
+			sources: []sourceMock{
+				{
+					name: "system",
+					files: map[string]string{
+						"x.rego": `package x.y
+						p := data.x.y.z.w`,
+					},
+					requirements: []string{"lib1"},
+				},
+				{
+					name: "lib1",
+					files: map[string]string{
+						"x/y/z/data.json": `{"w": true}`,
+					},
+				},
+			},
+			expError: fmt.Errorf("requirement \"lib1\" contains conflicting package x.y.z\n- package x.y from \"system\""),
+		},
+		{
 			note: "missing library",
 			sources: []sourceMock{
 				{
