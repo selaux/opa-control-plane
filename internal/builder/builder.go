@@ -2,16 +2,18 @@ package builder
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
 
 	"github.com/open-policy-agent/opa/ast"
 	"github.com/open-policy-agent/opa/bundle"
+	"github.com/open-policy-agent/opa/compile"
 	"github.com/tsandall/lighthouse/internal/config"
+	"github.com/yalue/merged_fs"
 )
 
 type Source struct {
@@ -109,101 +111,21 @@ func (b *Builder) Build(ctx context.Context) error {
 		}
 	}
 
-	// NOTE(tsandall): we want control over the filenames in the emitted bundle
-	// so that we don't include information about the filesystem where the build
-	// ran... the upstream compile package doesn't provide this control at the
-	// moment. Once upstream supports that control, we could replace this in
-	// favour of the compile package which would give us support for
-	// optimization levels, other targets, etc.
-	var result bundle.Bundle
-	result.Data = map[string]interface{}{}
-
+	var fses []fs.FS
 	for _, srcDir := range toBuild {
-		err := filepath.Walk(srcDir.Path, func(path string, fi os.FileInfo, err error) error {
-			if err != nil {
-				return err
-			}
-
-			if fi.IsDir() {
-				return nil
-			}
-
-			bs, err := os.ReadFile(path)
-			if err != nil {
-				return err
-			}
-
-			if fi.Name() == ".manifest" {
-				if err := json.Unmarshal(bs, &result.Manifest); err != nil {
-					return err
-				}
-			} else if filepath.Ext(path) == ".rego" {
-				result.Modules = append(result.Modules, bundle.ModuleFile{
-					Path: strings.TrimPrefix(path, srcDir.Path),
-					Raw:  bs,
-				})
-
-			} else if filepath.Ext(path) == ".json" {
-				// Merge JSON files in, assuming their paths do not conflict. If conflict, the last one wins.
-				var value interface{}
-				err := json.Unmarshal(bs, &value)
-				if err != nil {
-					return err
-				}
-
-				path = strings.TrimPrefix(path, srcDir.Path)
-				dirpath := strings.TrimLeft(filepath.ToSlash(filepath.Dir(path)), "/.")
-
-				var key []string
-				if dirpath != "" {
-					key = strings.Split(dirpath, "/")
-				}
-
-				if len(key) == 0 {
-					valueAsMap, ok := value.(map[string]interface{})
-					if !ok {
-						return fmt.Errorf("expected root data document to be object (got %T)", value)
-					}
-					result.Data = valueAsMap
-					return nil
-				}
-
-				m := result.Data
-
-				for i := 0; i < len(key); i++ {
-					last := i == len(key)-1
-
-					if last {
-						m[key[i]] = value
-						break
-					}
-
-					var n map[string]interface{}
-					x, ok := m[key[i]]
-					if !ok {
-						n = make(map[string]interface{})
-						m[key[i]] = n
-					} else {
-						n, ok = x.(map[string]interface{})
-						if !ok {
-							n = make(map[string]interface{})
-							m[key[i]] = n
-						}
-					}
-
-					m = n
-				}
-			}
-
-			return nil
-		})
-		if err != nil {
-			return err
-		}
+		fses = append(fses, os.DirFS(srcDir.Path))
 	}
 
+	c := compile.New().
+		WithFS(merged_fs.MergeMultiple(fses...)).
+		WithPaths(".")
+	if err := c.Build(ctx); err != nil {
+		return err
+	}
+
+	result := c.Bundle()
 	result.Manifest.SetRegoVersion(ast.RegoV0)
-	return bundle.Write(b.output, result)
+	return bundle.Write(b.output, *result)
 }
 
 func walkFilesRecursive(root string, suffix string, fn func(path string, fi os.FileInfo) error) error {

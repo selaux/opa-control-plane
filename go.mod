@@ -151,6 +151,7 @@ require (
 	github.com/open-policy-agent/opa v1.3.0
 	github.com/santhosh-tekuri/jsonschema/v6 v6.0.2
 	github.com/swaggest/jsonschema-go v0.3.78
+	github.com/yalue/merged_fs v1.3.0
 	golang.org/x/sync v0.13.0
 	google.golang.org/api v0.229.0
 	gopkg.in/yaml.v3 v3.0.1
