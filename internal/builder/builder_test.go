@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/open-policy-agent/opa/ast"
 	"github.com/open-policy-agent/opa/bundle"
 
 	"github.com/tsandall/lighthouse/internal/builder"
@@ -308,7 +309,23 @@ func TestBuilder(t *testing.T) {
 				}
 
 				for path, src := range tc.exp {
-					if fileMap[path] != src {
+					if fileMap[path] == "" {
+						t.Fatalf("missing file %v", path)
+					}
+
+					var equal bool
+
+					switch {
+					case strings.HasSuffix(path, ".json"):
+						equal = src == fileMap[path]
+					case strings.HasSuffix(path, ".rego"):
+						got := ast.MustParseModule(fileMap[path])
+						exp := ast.MustParseModule(src)
+
+						equal = got.Equal(exp)
+					}
+
+					if !equal {
 						for k, v := range fileMap {
 							t.Logf("Got %v:\n%v", k, v)
 						}
