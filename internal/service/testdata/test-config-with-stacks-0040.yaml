@@ -50,6 +50,7 @@ cases:
     lib_rego: &lib_rego "package stacks.foo\np := 8"
     main_rego: &main_rego |
                 package main
+                import future.keywords
 
                 main := x if {
                   x := stack_result
