@@ -25,13 +25,13 @@ func TestLibraryPackageIndex(t *testing.T) {
 		path string
 		exp  map[string]struct{}
 	}{
-		{"libraries", map[string]struct{}{"foo": struct{}{}, "qux": struct{}{}}},
-		{"libraries/foo", map[string]struct{}{"foo": struct{}{}}},
-		{"libraries/foo/bar", map[string]struct{}{"foo": struct{}{}}},
-		{"libraries/foo/bar/baz", map[string]struct{}{"foo": struct{}{}}},
-		{"libraries/qux", map[string]struct{}{"qux": struct{}{}}},
-		{"libraries/qux/corge", map[string]struct{}{"qux": struct{}{}}},
-		{"libraries/qux/corge/grault", map[string]struct{}{"qux": struct{}{}}},
+		{"libraries", map[string]struct{}{"foo": {}, "qux": {}}},
+		{"libraries/foo", map[string]struct{}{"foo": {}}},
+		{"libraries/foo/bar", map[string]struct{}{"foo": {}}},
+		{"libraries/foo/bar/baz", map[string]struct{}{"foo": {}}},
+		{"libraries/qux", map[string]struct{}{"qux": {}}},
+		{"libraries/qux/corge", map[string]struct{}{"qux": {}}},
+		{"libraries/qux/corge/grault", map[string]struct{}{"qux": {}}},
 		{"doesnotexist", map[string]struct{}{}},
 		{"does/not/exist", map[string]struct{}{}},
 		{"libraries/doesnotexist", map[string]struct{}{}},

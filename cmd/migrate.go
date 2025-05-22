@@ -324,7 +324,7 @@ func mapV1SystemToSystemAndSecretConfig(_ *DASClient, v1 *v1System) (*config.Sys
 	return &system, secret, nil
 }
 
-func migrateV1Stack(client *DASClient, state *dasState, v1 *v1Stack) (*config.Stack, *config.Library, *config.Secret, error) {
+func migrateV1Stack(_ *DASClient, state *dasState, v1 *v1Stack) (*config.Stack, *config.Library, *config.Secret, error) {
 
 	var stack config.Stack
 	var library config.Library
@@ -361,6 +361,9 @@ func migrateV1Stack(client *DASClient, state *dasState, v1 *v1Stack) (*config.St
 			}
 
 			stack.Selector, err = migrateV1Selector(module)
+			if err != nil {
+				return nil, nil, nil, fmt.Errorf("failed to migrate selector for %q: %w", v1.Name, err)
+			}
 			err = stack.Selector.Set("system-type", []string{v1.Type})
 			if err != nil {
 				return nil, nil, nil, fmt.Errorf("failed to set system-type label for %q: %w", v1.Name, err)
@@ -442,7 +445,7 @@ func migrateV1Selector(module *ast.Module) (config.Selector, error) {
 	return selector, err
 }
 
-func migrateDependencies(c *DASClient, state *dasState, output *config.Root) error {
+func migrateDependencies(_ *DASClient, state *dasState, output *config.Root) error {
 
 	index := newLibraryPackageIndex()
 
