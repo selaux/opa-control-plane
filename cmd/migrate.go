@@ -41,15 +41,15 @@ var builtinLibraries = []*config.Library{
 	},
 	{
 		Name:    "template.envoy:2.1-entrypoint-authz",
-		Builtin: strptr("envoy-v2.1/system/authz"),
+		Builtin: strptr("envoy-v2.1/authz"),
 	},
 	{
 		Name:    "template.envoy:2.1-entrypoint-log",
-		Builtin: strptr("envoy-v2.1/system/log"),
+		Builtin: strptr("envoy-v2.1/log"),
 	},
 	{
 		Name:    "template.envoy:2.1-conflicts",
-		Builtin: strptr("envoy-v2.1/global"),
+		Builtin: strptr("envoy-v2.1/conflicts"),
 	},
 	{
 		Name:    "match-v1",

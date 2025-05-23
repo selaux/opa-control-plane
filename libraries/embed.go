@@ -2,5 +2,5 @@ package libraries
 
 import "embed"
 
-//go:embed all:*
+//go:embed *
 var FS embed.FS
