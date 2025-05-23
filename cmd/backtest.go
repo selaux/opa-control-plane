@@ -8,6 +8,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/akedrou/textdiff"
@@ -182,11 +183,54 @@ func backtestSystem(ctx context.Context, n int, styra *DASClient, byName map[str
 		}
 
 		if err := compareResults(&d, rs); err != nil {
-			return err
+			path, innerErr := saveFailure(&a, d)
+			if innerErr != nil {
+				return innerErr
+			}
+			return DecisionDiscrepancyErr{Cause: err, Path: path}
 		}
 	}
 
 	return nil
+}
+
+func saveFailure(b *bundle.Bundle, d v1Decision) (string, error) {
+
+	path, err := os.MkdirTemp("", "lighthouse-backtest")
+	if err != nil {
+		return "", err
+	}
+
+	bundleFile, err := os.Create(filepath.Join(path, "bundle.tar.gz"))
+	if err != nil {
+		return "", err
+	}
+
+	defer bundleFile.Close()
+
+	if err := bundle.NewWriter(bundleFile).DisableFormat(true).Write(*b); err != nil {
+		return "", err
+	}
+
+	decisionFile, err := os.Create(filepath.Join(path, "decision.json"))
+	if err != nil {
+		return "", err
+	}
+
+	defer decisionFile.Close()
+
+	enc := json.NewEncoder(decisionFile)
+	enc.SetIndent("", "  ")
+	return path, enc.Encode(d)
+}
+
+type DecisionDiscrepancyErr struct {
+	Cause error
+	Path  string
+}
+
+func (err DecisionDiscrepancyErr) Error() string {
+	return fmt.Sprintf("%v (see: %v)", err.Cause, err.Path)
 }
 
 func compareResults(d *v1Decision, rs rego.ResultSet) error {
