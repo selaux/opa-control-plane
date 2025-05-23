@@ -356,6 +356,9 @@ func migrateV1Stack(_ *DASClient, state *dasState, v1 *v1Stack) (*config.Stack, 
 	library.Name = v1.Name
 	stack.Requirements = append(stack.Requirements, config.Requirement{Library: &v1.Name})
 
+	// NOTE(tsandall): automatically add requirement on match library as all stacks have selectors
+	library.Requirements = append(library.Requirements, config.Requirement{Library: strptr("match-v1")})
+
 	// TODO(tsandall): add support for excluding git backed files
 	// may need to pick a bundle from a matching system to pull out roots
 	policies := state.StackPolicies[v1.Id]
