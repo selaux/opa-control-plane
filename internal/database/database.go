@@ -88,6 +88,7 @@ func (d *Database) InitDB(ctx context.Context, persistenceDir string) error {
 		);`,
 		`CREATE TABLE IF NOT EXISTS libraries (
 			id TEXT PRIMARY KEY,
+			builtin TEXT,
 			repo TEXT NOT NULL,
 			ref TEXT,
 			gitcommit TEXT,
@@ -422,6 +423,7 @@ func (d *Database) ListLibrariesWithGitCredentials() ([]*config.Library, error) 
 
 	rows, err := txn.Query(`SELECT
 	libraries.id AS library_id,
+	libraries.builtin,
 	libraries.repo,
 	libraries.ref,
 	libraries.gitcommit,
@@ -448,17 +450,19 @@ WHERE (libraries_secrets.ref_type = 'git_credentials' AND secrets.value IS NOT N
 
 	for rows.Next() {
 		var libraryId, repo string
+		var builtin *string
 		var secretId, secretRefType, secretValue *string
 		var ref, gitCommit, path *string
 		var requirementId *string
-		if err := rows.Scan(&libraryId, &repo, &ref, &gitCommit, &path, &secretId, &secretRefType, &secretValue, &requirementId); err != nil {
+		if err := rows.Scan(&libraryId, &builtin, &repo, &ref, &gitCommit, &path, &secretId, &secretRefType, &secretValue, &requirementId); err != nil {
 			return nil, err
 		}
 
 		library, exists := libraryMap[libraryId]
 		if !exists {
 			library = &config.Library{
-				Name: libraryId,
+				Name:    libraryId,
+				Builtin: builtin,
 				Git: config.Git{
 					Repo: repo,
 				},
@@ -718,7 +722,7 @@ func (d *Database) loadLibraries(root *config.Root) error {
 
 	for _, name := range names {
 		library := root.Libraries[name]
-		if _, err := d.db.Exec(`INSERT OR REPLACE INTO libraries (id, repo, ref, gitcommit, path) VALUES (?, ?, ?, ?, ?)`, library.Name, library.Git.Repo, library.Git.Reference, library.Git.Commit, library.Git.Path); err != nil {
+		if _, err := d.db.Exec(`INSERT OR REPLACE INTO libraries (id, builtin, repo, ref, gitcommit, path) VALUES (?, ?, ?, ?, ?, ?)`, library.Name, library.Builtin, library.Git.Repo, library.Git.Reference, library.Git.Commit, library.Git.Path); err != nil {
 			return err
 		}
 

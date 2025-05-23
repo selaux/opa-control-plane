@@ -24,6 +24,7 @@ import (
 	"github.com/open-policy-agent/opa/ast"
 	"github.com/open-policy-agent/opa/bundle"
 	"github.com/tsandall/lighthouse/internal/service"
+	"github.com/tsandall/lighthouse/internal/test/libraries"
 	"github.com/tsandall/lighthouse/internal/test/tempfs"
 	"golang.org/x/sync/errgroup"
 	"gopkg.in/yaml.v3"
@@ -90,7 +91,7 @@ func TestService(t *testing.T) {
 
 				var g errgroup.Group
 				g.Go(func() error {
-					return service.New().WithConfigFile(configPath).WithPersistenceDir(persistenceDir).Run(ctx)
+					return service.New().WithConfigFile(configPath).WithPersistenceDir(persistenceDir).WithBuiltinFS(libraries.FS).Run(ctx)
 				})
 
 				var obj *gofakes3.Object

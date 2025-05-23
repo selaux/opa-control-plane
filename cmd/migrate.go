@@ -20,17 +20,40 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-var envoyLibPath = "libraries/experimental/envoy-v1"
-var refsHeadsMain = "refs/heads/main"
-
 var builtinLibraries = []*config.Library{
 	{
 		Name: "template.envoy:2.1",
-		Git: config.Git{
-			Repo:      "/Users/torin/go/src/github.com/styrainc/lighthouse",
-			Reference: &refsHeadsMain,
-			Path:      &envoyLibPath,
+		Requirements: []config.Requirement{
+			{Library: strptr("template.envoy:2.1-entrypoint-application")},
+			{Library: strptr("template.envoy:2.1-entrypoint-main")},
+			{Library: strptr("template.envoy:2.1-entrypoint-authz")},
+			{Library: strptr("template.envoy:2.1-entrypoint-log")},
+			{Library: strptr("template.envoy:2.1-conflicts")},
 		},
+	},
+	{
+		Name:    "template.envoy:2.1-entrypoint-application",
+		Builtin: strptr("envoy-v2.1/application"),
+	},
+	{
+		Name:    "template.envoy:2.1-entrypoint-main",
+		Builtin: strptr("envoy-v2.1/main"),
+	},
+	{
+		Name:    "template.envoy:2.1-entrypoint-authz",
+		Builtin: strptr("envoy-v2.1/system/authz"),
+	},
+	{
+		Name:    "template.envoy:2.1-entrypoint-log",
+		Builtin: strptr("envoy-v2.1/system/log"),
+	},
+	{
+		Name:    "template.envoy:2.1-conflicts",
+		Builtin: strptr("envoy-v2.1/global"),
+	},
+	{
+		Name:    "match-v1",
+		Builtin: strptr("match-v1"),
 	},
 }
 
@@ -967,3 +990,5 @@ func rootsPrefix(roots []string, path string) bool {
 	}
 	return false
 }
+
+func strptr(s string) *string { return &s }

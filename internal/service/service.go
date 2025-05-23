@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"crypto/md5"
+	"embed"
 	"encoding/hex"
 	"log"
 	"path"
@@ -10,6 +11,7 @@ import (
 
 	_ "github.com/mattn/go-sqlite3"
 	"github.com/tsandall/lighthouse/internal/builder"
+	"github.com/tsandall/lighthouse/internal/builtinsync"
 	"github.com/tsandall/lighthouse/internal/database"
 	"github.com/tsandall/lighthouse/internal/gitsync"
 	"github.com/tsandall/lighthouse/internal/httpsync"
@@ -26,6 +28,7 @@ type Service struct {
 	pool           *pool.Pool
 	workers        map[string]*SystemWorker
 	database       database.Database
+	builtinFS      embed.FS
 }
 
 func New() *Service {
@@ -45,11 +48,17 @@ func (s *Service) WithConfigFile(configFile string) *Service {
 	return s
 }
 
+func (s *Service) WithBuiltinFS(fs embed.FS) *Service {
+	s.builtinFS = fs
+	return s
+}
+
 func (s *Service) Database() *database.Database {
 	return &s.database
 }
 
 func (s *Service) Run(ctx context.Context) error {
+
 	if err := s.database.InitDB(ctx, s.persistenceDir); err != nil {
 		return err
 	}
@@ -174,6 +183,12 @@ func (s *Service) launchWorkers(ctx context.Context) {
 					srcDir = path.Join(srcDir, *l.Git.Path)
 				}
 				src.Dirs = append(src.Dirs, builder.Dir{Path: srcDir})
+			} else if l.Builtin != nil {
+				src.Dirs = append(src.Dirs, builder.Dir{
+					Path: path.Join(s.persistenceDir, "builtins", md5sum(system.Name+"@"+l.Name)),
+					Wipe: true,
+				})
+				syncs = append(syncs, builtinsync.New(s.builtinFS, src.Dirs[len(src.Dirs)-1].Path, *l.Builtin))
 			}
 
 			for _, datasource := range l.Datasources {

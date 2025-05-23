@@ -1,0 +1,32 @@
+cases:
+- note: config with builtins
+  config: |
+        {
+          systems: {
+            TestSystem: {
+              object_storage: {
+                aws: {
+                  url: {{ .s3_url }},
+                  bucket: test,
+                  key: bundle.tar.gz,
+                  region: mock-region,
+                }
+              },
+              requirements: [
+                {library: TestLibrary},
+              ]
+            }
+          },
+          libraries: {
+            TestLibrary: {
+              builtin: root/subdir
+            }
+          }
+        }
+  content_parameters:
+    test_rego: &test_rego "package test"
+  expected_filesystem:
+  - "/builtins/dd60a95cf9945e13a93d823fed9753ed/test/test.rego"
+  expected_bundle:
+    rego:
+      test/test.rego: *test_rego

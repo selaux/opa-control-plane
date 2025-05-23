@@ -8,6 +8,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/tsandall/lighthouse/internal/server"
 	"github.com/tsandall/lighthouse/internal/service"
+	"github.com/tsandall/lighthouse/libraries"
 )
 
 const defaultLocalAddr = "localhost:8282"
@@ -35,7 +36,7 @@ func init() {
 			if err := os.MkdirAll(params.persistenceDir, 0755); err != nil {
 				log.Fatalf("failed to create persistence directory: %v", err)
 			}
-			svc := service.New().WithConfigFile(params.configFile).WithPersistenceDir(params.persistenceDir)
+			svc := service.New().WithConfigFile(params.configFile).WithPersistenceDir(params.persistenceDir).WithBuiltinFS(libraries.FS)
 
 			go func() {
 				if err := server.New().WithDatabase(svc.Database()).Init().ListenAndServe(params.addr); err != nil {

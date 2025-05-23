@@ -168,6 +168,7 @@ func equalRequirements(a, b []Requirement) bool {
 // Library defines the configuration for a Lighthouse Library.
 type Library struct {
 	Name         string        `yaml:"-"`
+	Builtin      *string       `yaml:"builtin,omitempty"`
 	Git          Git           `yaml:"git,omitempty"`
 	Datasources  []Datasource  `yaml:"datasources,omitempty"`
 	Files        Files         `yaml:"files,omitempty"`
@@ -183,7 +184,7 @@ func (s *Library) Equal(other *Library) bool {
 		return false
 	}
 
-	return s.Name == other.Name && s.Git.Equal(&other.Git) && equalDatasources(s.Datasources, other.Datasources) && s.Files.Equal(other.Files) && equalRequirements(s.Requirements, other.Requirements)
+	return s.Name == other.Name && stringEqual(s.Builtin, other.Builtin) && s.Git.Equal(&other.Git) && equalDatasources(s.Datasources, other.Datasources) && s.Files.Equal(other.Files) && equalRequirements(s.Requirements, other.Requirements)
 }
 
 // Stack defines the configuration for a Lighthouse Stack.
