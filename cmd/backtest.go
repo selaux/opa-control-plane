@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/akedrou/textdiff"
 	"github.com/open-policy-agent/opa/ast"
@@ -53,9 +54,14 @@ func init() {
 }
 
 type backtestReport struct {
-	ExtraSystems     []string          `json:"extra_systems,omitempty"`
-	MissingDecisions []string          `json:"missing_decisions,omitempty"`
-	Systems          map[string]string `json:"systems,omitempty"`
+	ExtraSystems     []string                        `json:"extra_systems,omitempty"`
+	MissingDecisions []string                        `json:"missing_decisions,omitempty"`
+	Systems          map[string]systemBacktestReport `json:"systems,omitempty"`
+}
+
+type systemBacktestReport struct {
+	Status  string `json:"status,omitempty"`
+	Message string `json:"message,omitempty"`
 }
 
 func doBacktest(params backtestParams) error {
@@ -98,14 +104,17 @@ func doBacktest(params backtestParams) error {
 	}
 
 	report := backtestReport{
-		Systems: map[string]string{},
+		Systems: map[string]systemBacktestReport{},
 	}
 
 	ctx := context.Background()
 
 	for _, system := range cfg.Systems {
 		if err := backtestSystem(ctx, params.numDecisions, &styra, v1SystemsByName, system, &report); err != nil {
-			report.Systems[system.Name] = err.Error()
+			report.Systems[system.Name] = systemBacktestReport{
+				Status:  "failed",
+				Message: err.Error(),
+			}
 		}
 	}
 
@@ -163,6 +172,8 @@ func backtestSystem(ctx context.Context, n int, styra *DASClient, byName map[str
 		return err
 	}
 
+	t0 := time.Now()
+
 	for _, d := range decisions.Items {
 
 		var args []func(*rego.Rego)
@@ -189,6 +200,12 @@ func backtestSystem(ctx context.Context, n int, styra *DASClient, byName map[str
 			}
 			return DecisionDiscrepancyErr{Cause: err, Path: path}
 		}
+	}
+
+	// TODO(tsandall): improve report to include latency comparison
+	report.Systems[system.Name] = systemBacktestReport{
+		Status:  "passed",
+		Message: fmt.Sprintf("evaluated %v decisions in %v and found no difference(s)", len(decisions.Items), time.Since(t0)),
 	}
 
 	return nil
