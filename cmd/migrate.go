@@ -5,10 +5,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io/fs"
 	"log"
 	"net/http"
 	neturl "net/url"
 	"os"
+	"reflect"
 	"sort"
 	"strings"
 	"sync"
@@ -17,10 +19,11 @@ import (
 	"github.com/open-policy-agent/opa/ast"
 	"github.com/spf13/cobra"
 	"github.com/tsandall/lighthouse/internal/config"
+	"github.com/tsandall/lighthouse/libraries"
 	"gopkg.in/yaml.v3"
 )
 
-var builtinLibraries = []*config.Library{
+var systemTypeLibraries = []*config.Library{
 	{
 		Name: "template.envoy:2.1",
 		Requirements: []config.Requirement{
@@ -31,6 +34,18 @@ var builtinLibraries = []*config.Library{
 			{Library: strptr("template.envoy:2.1-conflicts")},
 		},
 	},
+}
+
+func getSystemTypeLib(t string) *config.Library {
+	for _, l := range systemTypeLibraries {
+		if l.Name == t {
+			return l
+		}
+	}
+	return nil
+}
+
+var baseLibraries = []*config.Library{
 	{
 		Name:    "template.envoy:2.1-entrypoint-application",
 		Builtin: strptr("envoy-v2.1/application"),
@@ -56,6 +71,78 @@ var builtinLibraries = []*config.Library{
 		Builtin: strptr("match-v1"),
 	},
 }
+
+var baseLibFiles = func() map[string]map[string]string {
+	result := make(map[string]map[string]string)
+	for _, bi := range baseLibraries {
+		result[bi.Name] = make(map[string]string)
+		fs.WalkDir(libraries.FS, *bi.Builtin, func(file string, fi fs.DirEntry, err error) error {
+			if err != nil {
+				return err
+			}
+			if fi.IsDir() {
+				return nil
+			}
+			bs, err := libraries.FS.ReadFile(file)
+			if err != nil {
+				return err
+			}
+			path := strings.TrimPrefix(file, *bi.Builtin)
+			result[bi.Name][path] = string(bs)
+			return nil
+		})
+	}
+	return result
+}()
+
+func getBaseLib(r config.Requirement) *config.Library {
+	for _, l := range baseLibraries {
+		if l.Name == *r.Library {
+			return l
+		}
+	}
+	return nil
+}
+
+var baseLibPackageIndex = func() map[string]*libraryPackageIndex {
+	result := map[string]*libraryPackageIndex{}
+	for _, lib := range systemTypeLibraries {
+		for _, r := range lib.Requirements {
+			bi := getBaseLib(r)
+			err := fs.WalkDir(libraries.FS, *bi.Builtin, func(file string, fi fs.DirEntry, err error) error {
+				if err != nil {
+					return err
+				}
+				if fi.IsDir() {
+					return nil
+				}
+				bs, err := libraries.FS.ReadFile(file)
+				if err != nil {
+					return err
+				}
+				module, err := ast.ParseModule(file, string(bs))
+				if err != nil {
+					return err
+				}
+				ptr, err := module.Package.Path.Ptr()
+				if err != nil {
+					return err
+				}
+				index, ok := result[lib.Name]
+				if !ok {
+					index = newLibraryPackageIndex()
+					result[lib.Name] = index
+				}
+				index.Add(ptr, bi.Name)
+				return nil
+			})
+			if err != nil {
+				panic(err)
+			}
+		}
+	}
+	return result
+}()
 
 type migrateParams struct {
 	token string
@@ -127,7 +214,11 @@ func doMigrate(params migrateParams) error {
 		}
 	}
 
-	for _, bi := range builtinLibraries {
+	for _, bi := range systemTypeLibraries {
+		output.Libraries[bi.Name] = bi
+	}
+
+	for _, bi := range baseLibraries {
 		output.Libraries[bi.Name] = bi
 	}
 
@@ -202,6 +293,8 @@ func doMigrate(params migrateParams) error {
 		}
 	}
 
+	// TODO(tsandall): prune libraries that are not in use
+
 	return nil
 }
 
@@ -266,22 +359,77 @@ func migrateV1System(client *DASClient, state *dasState, v1 *v1System) (*config.
 		return nil, nil, err
 	}
 
-	var roots []string
-
+	var gitRoots []string
 	if len(bundles) > 0 {
 		for i := range bundles[0].SBOM.Origins {
-			roots = append(roots, bundles[0].SBOM.Origins[i].Roots...)
+			gitRoots = append(gitRoots, bundles[0].SBOM.Origins[i].Roots...)
 		}
 	}
 
 	policies := state.SystemPolicies[v1.Id]
-	for i := range policies {
-		if !rootsPrefix(roots, policies[i].Package) {
-			if system.Files == nil {
-				system.Files = make(map[string]string)
+	typeLib := getSystemTypeLib(v1.Type)
+	excludeLibs := make(map[string]struct{})
+
+	for _, p := range policies {
+		pkg := strings.TrimPrefix(p.Package, "systems/"+v1.Id+"/")
+
+		if rootsPrefix(gitRoots, p.Package) {
+			if typeLib != nil {
+				// If type lib provided file is Git backed then add it to the
+				// exclude list automatically. We assume the user has taken
+				// ownership of it.
+				baseLibs := baseLibPackageIndex[typeLib.Name].Lookup(pkg)
+				for name := range baseLibs {
+					excludeLibs[name] = struct{}{}
+				}
 			}
-			for file, str := range policies[i].Modules {
-				system.Files[strings.TrimPrefix(policies[i].Package, "systems/"+v1.Id)+"/"+file] = str
+		} else {
+			systemFiles := make(map[string]string)
+			for path, str := range p.Modules {
+				systemFiles[pkg+"/"+path] = str
+			}
+
+			if typeLib != nil {
+				// If the type lib provided file is non-Git backed then check if the
+				// file content is the same. If not, add it to the exclude list because
+				// the user has changed it.
+				baseLibs := baseLibPackageIndex[typeLib.Name].Lookup(pkg)
+				files := make(map[string]string)
+				for name := range baseLibs {
+					for path, str := range baseLibFiles[name] {
+						files[path] = str
+					}
+				}
+
+				// If the system files for this package are the same as the type lib then skip
+				// skip them (a requirement will be added below). If they differ then add the base lib
+				// to the exclude list and fallthrough to below to add the files.
+				if reflect.DeepEqual(systemFiles, files) {
+					continue
+				}
+
+				for name := range baseLibs {
+					excludeLibs[name] = struct{}{}
+				}
+			}
+
+			for path, str := range systemFiles {
+				if system.Files == nil {
+					system.Files = make(map[string]string)
+				}
+				system.Files[path] = str
+			}
+		}
+	}
+
+	if typeLib != nil {
+		if len(excludeLibs) == 0 {
+			system.Requirements = append(system.Requirements, typeLib.Requirement())
+		} else {
+			for _, r := range typeLib.Requirements {
+				if _, ok := excludeLibs[*r.Library]; !ok {
+					system.Requirements = append(system.Requirements, r)
+				}
 			}
 		}
 	}
@@ -300,15 +448,6 @@ func migrateV1System(client *DASClient, state *dasState, v1 *v1System) (*config.
 		}
 		system.Labels = x.Labels
 		system.Labels["system-type"] = v1.Type // TODO(tsandall): remove template. prefix?
-	}
-
-	for _, bi := range builtinLibraries {
-		if bi.Name == v1.Type {
-			// TODO(tsandall): pull N instead of just one (conflicts, mask, authz, etc.)
-			system.Requirements = append(system.Requirements, config.Requirement{
-				Library: &bi.Name,
-			})
-		}
 	}
 
 	return system, secret, nil

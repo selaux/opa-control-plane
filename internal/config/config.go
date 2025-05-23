@@ -187,6 +187,10 @@ func (s *Library) Equal(other *Library) bool {
 	return s.Name == other.Name && stringEqual(s.Builtin, other.Builtin) && s.Git.Equal(&other.Git) && equalDatasources(s.Datasources, other.Datasources) && s.Files.Equal(other.Files) && equalRequirements(s.Requirements, other.Requirements)
 }
 
+func (s *Library) Requirement() Requirement {
+	return Requirement{Library: &s.Name}
+}
+
 // Stack defines the configuration for a Lighthouse Stack.
 type Stack struct {
 	Name         string        `yaml:"-"`

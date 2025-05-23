@@ -45,3 +45,30 @@ func TestLibraryPackageIndex(t *testing.T) {
 		})
 	}
 }
+
+func TestBaseLibIndex(t *testing.T) {
+
+	cases := []struct {
+		path string
+		lib  string
+	}{
+		{path: "global", lib: "template.envoy:2.1-conflicts"},
+		{path: "global/systemtypes", lib: "template.envoy:2.1-conflicts"},
+		{path: "global/systemtypes/envoy:2.1", lib: "template.envoy:2.1-conflicts"},
+		{path: "global/systemtypes/envoy:2.1/conflicts", lib: "template.envoy:2.1-conflicts"},
+		{path: "global/systemtypes/envoy:2.1/conflicts/entry", lib: "template.envoy:2.1-conflicts"},
+		{path: "application", lib: "template.envoy:2.1-entrypoint-application"},
+		{path: "system/log", lib: "template.envoy:2.1-entrypoint-log"},
+		{path: "system/authz", lib: "template.envoy:2.1-entrypoint-authz"},
+		{path: "main", lib: "template.envoy:2.1-entrypoint-main"},
+	}
+
+	for _, tc := range cases {
+		got := baseLibPackageIndex["template.envoy:2.1"].Lookup(tc.path)
+		exp := map[string]struct{}{}
+		exp[tc.lib] = struct{}{}
+		if !reflect.DeepEqual(exp, got) {
+			t.Fatalf("expected %v but got %v", tc.lib, got)
+		}
+	}
+}
