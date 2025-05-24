@@ -145,8 +145,9 @@ var baseLibPackageIndex = func() map[string]*libraryPackageIndex {
 }()
 
 type migrateParams struct {
-	token string
-	url   string
+	token    string
+	url      string
+	systemId string
 }
 
 func init() {
@@ -166,6 +167,7 @@ func init() {
 	}
 
 	cmd.Flags().StringVarP(&params.url, "url", "u", "", "Styra tenant URL (e.g., https://expo.styra.com)")
+	cmd.Flags().StringVarP(&params.systemId, "system-id", "", "", "Scope migraton to a specific system (id)")
 
 	RootCommand.AddCommand(
 		cmd,
@@ -197,7 +199,7 @@ func doMigrate(params migrateParams) error {
 	output.Metadata.ExportedFrom = params.url
 	output.Metadata.ExportedAt = time.Now().UTC().Format(time.RFC3339)
 
-	state, err := fetchDASState(&c)
+	state, err := fetchDASState(&c, dasFetchOptions{SystemId: params.systemId})
 	if err != nil {
 		return err
 	}
@@ -701,23 +703,43 @@ type dasState struct {
 	LibraryPolicies map[string][]*v1Policy
 }
 
-func fetchDASState(c *DASClient) (*dasState, error) {
+type dasFetchOptions struct {
+	SystemId string
+}
+
+func fetchDASState(c *DASClient, opts dasFetchOptions) (*dasState, error) {
 	state := dasState{}
 
-	log.Println("Fetching v1/systems")
-	resp, err := c.JSON("v1/systems")
-	if err != nil {
-		return nil, err
-	}
-
 	var systems []*v1System
-	err = resp.Decode(&systems)
-	if err != nil {
-		return nil, err
+
+	if opts.SystemId == "" {
+		log.Println("Fetching v1/systems")
+		resp, err := c.JSON("v1/systems")
+		if err != nil {
+			return nil, err
+		}
+
+		err = resp.Decode(&systems)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		log.Println("Fetching v1/systems/" + opts.SystemId)
+		resp, err := c.JSON("v1/systems/" + opts.SystemId)
+		if err != nil {
+			return nil, err
+		}
+
+		var x v1System
+		if err := resp.Decode(&x); err != nil {
+			return nil, err
+		}
+
+		systems = append(systems, &x)
 	}
 
 	log.Println("Fetching v1/libraries")
-	resp, err = c.JSON("v1/libraries")
+	resp, err := c.JSON("v1/libraries")
 	if err != nil {
 		return nil, err
 	}
