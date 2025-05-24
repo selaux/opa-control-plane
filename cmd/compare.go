@@ -37,7 +37,9 @@ type compareBundleReport struct {
 }
 
 func (r *compareBundleReport) init() {
-	r.Rego = &compareRegoReport{Diffs: map[string]string{}}
+	if r.Rego == nil {
+		r.Rego = &compareRegoReport{Diffs: map[string]string{}}
+	}
 }
 
 func (r *compareBundleReport) AddExtra(path string) {
