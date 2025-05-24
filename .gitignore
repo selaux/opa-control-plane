@@ -2,5 +2,6 @@
 *~
 .vscode
 config.yaml
+config.d
 data
 lighthouse_*
