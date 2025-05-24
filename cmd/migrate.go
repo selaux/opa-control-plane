@@ -148,6 +148,7 @@ type migrateParams struct {
 	token    string
 	url      string
 	systemId string
+	prune    bool
 }
 
 func init() {
@@ -168,6 +169,7 @@ func init() {
 
 	cmd.Flags().StringVarP(&params.url, "url", "u", "", "Styra tenant URL (e.g., https://expo.styra.com)")
 	cmd.Flags().StringVarP(&params.systemId, "system-id", "", "", "Scope migraton to a specific system (id)")
+	cmd.Flags().BoolVarP(&params.prune, "prune", "", false, "Prune unused resources")
 
 	RootCommand.AddCommand(
 		cmd,
@@ -254,6 +256,19 @@ func doMigrate(params migrateParams) error {
 		return err
 	}
 
+	if params.prune {
+		stacks, libraries, secrets := pruneConfig(&output)
+		for _, stack := range stacks {
+			log.Printf("Removed unused stack %q", stack.Name)
+		}
+		for _, lib := range libraries {
+			log.Printf("Removed unused library %q", lib.Name)
+		}
+		for _, s := range secrets {
+			log.Printf("Removed unused secret %q", s.Name)
+		}
+	}
+
 	log.Printf("Finished downloading resources from DAS. Printing migration configuration.")
 
 	bs, err := yaml.Marshal(output)
@@ -288,14 +303,6 @@ func doMigrate(params migrateParams) error {
 			log.Printf("System %q has extra stacks %v", system.Name, extra)
 		}
 	}
-
-	for _, stack := range output.Stacks {
-		if _, ok := stack.Selector.Get("do-not-match"); ok {
-			log.Printf("Stack %q did not match any systems. Consider removing it.", stack.Name)
-		}
-	}
-
-	// TODO(tsandall): prune libraries that are not in use
 
 	return nil
 }
@@ -692,6 +699,112 @@ func getRequirementsForPolicies(policies []*v1Policy, index *libraryPackageIndex
 		return *rs[i].Library < *rs[j].Library
 	})
 	return rs, nil
+}
+
+func pruneConfig(root *config.Root) ([]*config.Stack, []*config.Library, []*config.Secret) {
+
+	var removedStacks []*config.Stack
+	var removedLibraries []*config.Library
+	var removedSecrets []*config.Secret
+
+	for _, stack := range root.Stacks {
+		var found bool
+		for _, system := range root.Systems {
+			if stack.Selector.Matches(system.Labels) {
+				found = true
+			}
+		}
+		if !found {
+			delete(root.Stacks, stack.Name)
+			removedStacks = append(removedStacks, stack)
+		}
+	}
+
+	g := make(graph)
+
+	for _, system := range root.Systems {
+		for _, r := range system.Requirements {
+			if r.Library != nil {
+				g[*r.Library] = append(g[*r.Library], node{name: system.Name})
+			}
+		}
+	}
+
+	for _, stack := range root.Stacks {
+		for _, r := range stack.Requirements {
+			if r.Library != nil {
+				g[*r.Library] = append(g[*r.Library], node{name: stack.Name})
+			}
+		}
+	}
+
+	for _, lib := range root.Libraries {
+		for _, r := range lib.Requirements {
+			if r.Library != nil {
+				g[*r.Library] = append(g[*r.Library], node{name: lib.Name, lib: true})
+			}
+		}
+	}
+
+	for _, lib := range root.Libraries {
+		var found bool
+		g.DFS(lib.Name, func(n node) {
+			if !n.lib {
+				found = true
+			}
+		})
+		if !found {
+			delete(root.Libraries, lib.Name)
+			removedLibraries = append(removedLibraries, lib)
+		}
+	}
+
+	credentials := make(map[string]struct{})
+	for _, system := range root.Systems {
+		if system.Git.Credentials != nil {
+			credentials[system.Git.Credentials.Name] = struct{}{}
+		}
+	}
+	for _, lib := range root.Libraries {
+		if lib.Git.Credentials != nil {
+			credentials[lib.Git.Credentials.Name] = struct{}{}
+		}
+	}
+
+	for _, s := range root.Secrets {
+		if _, ok := credentials[s.Name]; !ok {
+			delete(root.Secrets, s.Name)
+			removedSecrets = append(removedSecrets, s)
+		}
+	}
+
+	return removedStacks, removedLibraries, removedSecrets
+}
+
+type node struct {
+	name string
+	lib  bool
+}
+
+type graph map[string][]node
+
+func (g graph) DFS(n string, iter func(node)) {
+	g.dfs(n, iter, make(map[string]struct{}))
+}
+
+func (g graph) dfs(n string, iter func(node), visited map[string]struct{}) {
+	if _, ok := visited[n]; ok {
+		return
+	}
+	edges, ok := g[n]
+	if !ok {
+		return
+	}
+	visited[n] = struct{}{}
+	for _, node := range edges {
+		iter(node)
+		g.dfs(node.name, iter, visited)
+	}
 }
 
 type dasState struct {

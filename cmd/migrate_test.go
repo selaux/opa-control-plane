@@ -1,9 +1,13 @@
 package cmd
 
 import (
+	"bytes"
 	"fmt"
 	"reflect"
+	"sort"
 	"testing"
+
+	"github.com/tsandall/lighthouse/internal/config"
 )
 
 func TestLibraryPackageIndex(t *testing.T) {
@@ -70,5 +74,151 @@ func TestBaseLibIndex(t *testing.T) {
 		if !reflect.DeepEqual(exp, got) {
 			t.Fatalf("expected %v but got %v", tc.lib, got)
 		}
+	}
+}
+
+func TestPruneConfig(t *testing.T) {
+
+	root, err := config.Parse(bytes.NewBufferString(`{
+		systems: {
+			sys1: {
+				requirements: [{library: lib1}],
+				git: {credentials: sec1},
+				labels: {foo: bar}
+			}
+		},
+		stacks: {
+			stack1: {
+				selector: {foo: [bar]},
+				requirements: [{library: lib2}]
+			},
+			stack2: {
+				selector: {
+					DONOTMATCH: []
+				},
+				requirements: [{library: lib3}, {library: libUNUSED3}]
+			}
+		},
+		libraries: {
+			lib1: {
+				requirements: [{library: lib3}],
+				git: {credentials: sec2}
+			},
+			lib2: {
+				requirements: [{library: lib4}],
+				git: {credentials: sec3}
+			},
+			lib3: {
+				git: {credentials: sec4}
+			},
+			lib4: {
+				git: {credentials: sec5}
+			},
+			libUNUSED1: {
+				git: {credentials: sec6},
+				requirements: [{library: libUNUSED2}]
+			},
+			libUNUSED2: {
+				git: {credentials: sec7},
+			},
+			libUNUSED3: {
+			}
+		},
+		secrets: {
+			sec1: {},
+			sec2: {},
+			sec3: {},
+			sec4: {},
+			sec5: {},
+			sec6: {},
+			sec7: {}
+		}
+	}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	stacks, libs, secrets := pruneConfig(root)
+	expStacks := []string{"stack2"}
+	expLibs := []string{"libUNUSED1", "libUNUSED2", "libUNUSED3"}
+	expSecrets := []string{"sec6", "sec7"}
+
+	var gotStacks []string
+	for _, s := range stacks {
+		gotStacks = append(gotStacks, s.Name)
+	}
+
+	sort.Strings(gotStacks)
+
+	var gotLibs []string
+	for _, l := range libs {
+		gotLibs = append(gotLibs, l.Name)
+	}
+
+	sort.Strings(gotLibs)
+
+	var gotSecrets []string
+	for _, s := range secrets {
+		gotSecrets = append(gotSecrets, s.Name)
+	}
+
+	sort.Strings(gotSecrets)
+
+	if !reflect.DeepEqual(expStacks, gotStacks) {
+		t.Fatalf("expected stacks %v but got %v", expStacks, gotStacks)
+	}
+
+	if !reflect.DeepEqual(expLibs, gotLibs) {
+		t.Fatalf("expected libs %v but got %v", expLibs, gotLibs)
+	}
+
+	if !reflect.DeepEqual(expSecrets, gotSecrets) {
+		t.Fatalf("expected secrets %v but got %v", expSecrets, gotSecrets)
+	}
+
+	expRoot, err := config.Parse(bytes.NewBufferString(`{
+		systems: {
+			sys1: {
+				requirements: [{library: lib1}],
+				git: {credentials: sec1},
+				labels: {foo: bar}
+			}
+		},
+		stacks: {
+			stack1: {
+				selector: {foo: [bar]},
+				requirements: [{library: lib2}]
+			},
+		},
+		libraries: {
+			lib1: {
+				requirements: [{library: lib3}],
+				git: {credentials: sec2}
+			},
+			lib2: {
+				requirements: [{library: lib4}],
+				git: {credentials: sec3}
+			},
+			lib3: {
+				git: {credentials: sec4}
+			},
+			lib4: {
+				git: {credentials: sec5}
+			},
+		},
+		secrets: {
+			sec1: {},
+			sec2: {},
+			sec3: {},
+			sec4: {},
+			sec5: {},
+		}
+	}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if !reflect.DeepEqual(expRoot, root) {
+		t.Fatal("expected root differed from pruned root")
 	}
 }
