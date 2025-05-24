@@ -3,8 +3,8 @@ package service
 import (
 	"context"
 	"crypto/md5"
-	"embed"
 	"encoding/hex"
+	"io/fs"
 	"log"
 	"path"
 	"time"
@@ -28,7 +28,7 @@ type Service struct {
 	pool           *pool.Pool
 	workers        map[string]*SystemWorker
 	database       database.Database
-	builtinFS      embed.FS
+	builtinFS      fs.FS
 }
 
 func New() *Service {
@@ -48,7 +48,7 @@ func (s *Service) WithConfigFile(configFile string) *Service {
 	return s
 }
 
-func (s *Service) WithBuiltinFS(fs embed.FS) *Service {
+func (s *Service) WithBuiltinFS(fs fs.FS) *Service {
 	s.builtinFS = fs
 	return s
 }

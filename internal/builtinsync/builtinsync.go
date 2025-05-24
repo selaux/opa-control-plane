@@ -2,7 +2,6 @@ package builtinsync
 
 import (
 	"context"
-	"embed"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -10,12 +9,12 @@ import (
 )
 
 type BuiltinSynchronizer struct {
-	fs   embed.FS
+	fs   fs.FS
 	path string // path where builtin library should be saved
 	key  string
 }
 
-func New(fs embed.FS, path string, key string) *BuiltinSynchronizer {
+func New(fs fs.FS, path string, key string) *BuiltinSynchronizer {
 	return &BuiltinSynchronizer{fs: fs, path: path, key: key}
 }
 
@@ -30,7 +29,7 @@ func (s *BuiltinSynchronizer) Execute(ctx context.Context) error {
 			return os.MkdirAll(filepath.Join(s.path, dstFilename), 0755)
 		}
 
-		bs, err := s.fs.ReadFile(filename)
+		bs, err := fs.ReadFile(s.fs, filename)
 		if err != nil {
 			return err
 		}
