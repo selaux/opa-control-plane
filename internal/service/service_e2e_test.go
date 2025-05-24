@@ -26,6 +26,7 @@ import (
 	"github.com/tsandall/lighthouse/internal/service"
 	"github.com/tsandall/lighthouse/internal/test/libraries"
 	"github.com/tsandall/lighthouse/internal/test/tempfs"
+	"github.com/tsandall/lighthouse/internal/util"
 	"golang.org/x/sync/errgroup"
 	"gopkg.in/yaml.v3"
 )
@@ -91,7 +92,7 @@ func TestService(t *testing.T) {
 
 				var g errgroup.Group
 				g.Go(func() error {
-					return service.New().WithConfigFile(configPath).WithPersistenceDir(persistenceDir).WithBuiltinFS(libraries.FS).Run(ctx)
+					return service.New().WithConfigFile(configPath).WithPersistenceDir(persistenceDir).WithBuiltinFS(util.NewEscapeFS(libraries.FS)).Run(ctx)
 				})
 
 				var obj *gofakes3.Object

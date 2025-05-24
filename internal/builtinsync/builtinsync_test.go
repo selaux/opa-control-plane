@@ -11,11 +11,12 @@ import (
 	"github.com/tsandall/lighthouse/internal/builtinsync"
 	"github.com/tsandall/lighthouse/internal/test/libraries"
 	"github.com/tsandall/lighthouse/internal/test/tempfs"
+	"github.com/tsandall/lighthouse/internal/util"
 )
 
 func TestBuiltinSync(t *testing.T) {
 	tempfs.WithTempFS(t, map[string]string{}, func(t *testing.T, dir string) {
-		s := builtinsync.New(libraries.FS, dir, "root/subdir")
+		s := builtinsync.New(util.NewEscapeFS(libraries.FS), dir, "root/subdir")
 		err := s.Execute(context.Background())
 		if err != nil {
 			t.Fatal(err)
