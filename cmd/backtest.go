@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -22,7 +23,7 @@ import (
 )
 
 type backtestParams struct {
-	configFile   string
+	configFile   []string
 	styraURL     string
 	styraToken   string
 	numDecisions int
@@ -43,7 +44,7 @@ func init() {
 		},
 	}
 
-	cmd.Flags().StringVarP(&params.configFile, "config", "c", "config.yaml", "Path to the configuration file")
+	cmd.Flags().StringSliceVarP(&params.configFile, "config", "c", []string{"config.yaml"}, "Path to the configuration file")
 	cmd.Flags().StringVarP(&params.styraURL, "url", "u", "", "Styra tenant URL (e.g., https://expo.styra.com)")
 	cmd.Flags().IntVarP(&params.numDecisions, "decisions", "n", 100, "Number of decisions to backtest")
 
@@ -66,8 +67,12 @@ type systemBacktestReport struct {
 
 func doBacktest(params backtestParams) error {
 
-	log.Printf("Loading configuration from %v...", params.configFile)
-	cfg, err := config.ParseFile(params.configFile)
+	bs, err := getMergedConfig(params.configFile)
+	if err != nil {
+		return err
+	}
+
+	cfg, err := config.Parse(bytes.NewBuffer(bs))
 	if err != nil {
 		return err
 	}
@@ -118,7 +123,7 @@ func doBacktest(params backtestParams) error {
 		}
 	}
 
-	bs, err := json.MarshalIndent(report, "", "  ")
+	bs, err = json.MarshalIndent(report, "", "  ")
 	if err != nil {
 		return err
 	}

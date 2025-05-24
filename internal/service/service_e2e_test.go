@@ -85,14 +85,15 @@ func TestService(t *testing.T) {
 					"http_url": httpTS.URL,
 				})
 
-				writeFile(t, configPath, formatTemplate(t, test.Config, test.ContentParameters))
+				config := formatTemplate(t, test.Config, test.ContentParameters)
+				writeFile(t, configPath, config)
 				writeGitRepo(t, remoteGitDir, test.GitFiles, test.ContentParameters)
 
 				// Run the service with the config file and persistence dir and poll for a bundle in S3.
 
 				var g errgroup.Group
 				g.Go(func() error {
-					return service.New().WithConfigFile(configPath).WithPersistenceDir(persistenceDir).WithBuiltinFS(util.NewEscapeFS(libraries.FS)).Run(ctx)
+					return service.New().WithConfig([]byte(config)).WithPersistenceDir(persistenceDir).WithBuiltinFS(util.NewEscapeFS(libraries.FS)).Run(ctx)
 				})
 
 				var obj *gofakes3.Object

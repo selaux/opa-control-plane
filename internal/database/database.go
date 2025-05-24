@@ -1,6 +1,7 @@
 package database
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"encoding/json"
@@ -230,9 +231,9 @@ func (d *Database) SystemsDataDelete(ctx context.Context, systemId, path string)
 }
 
 // LoadConfig loads the configuration from the configuration file into the database.
-func (d *Database) LoadConfig(_ context.Context, configFile string) error {
+func (d *Database) LoadConfig(_ context.Context, bs []byte) error {
 
-	root, err := config.ParseFile(configFile)
+	root, err := config.Parse(bytes.NewBuffer(bs))
 	if err != nil {
 		return err
 	}

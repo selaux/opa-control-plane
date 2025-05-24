@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -68,7 +69,7 @@ type compareRegoReport struct {
 }
 
 type compareParams struct {
-	configFile string
+	configFile []string
 	styraURL   string
 	styraToken string
 }
@@ -89,7 +90,7 @@ func init() {
 		},
 	}
 
-	cmd.Flags().StringVarP(&params.configFile, "config", "c", "config.yaml", "Path to the configuration file")
+	cmd.Flags().StringSliceVarP(&params.configFile, "config", "c", []string{"config.yaml"}, "Path to the configuration file")
 	cmd.Flags().StringVarP(&params.styraURL, "url", "u", "", "Styra tenant URL (e.g., https://expo.styra.com)")
 
 	RootCommand.AddCommand(
@@ -100,7 +101,13 @@ func init() {
 func doCompare(params compareParams) error {
 
 	log.Printf("Loading configuration from %v...", params.configFile)
-	cfg, err := config.ParseFile(params.configFile)
+
+	bs, err := getMergedConfig(params.configFile)
+	if err != nil {
+		return err
+	}
+
+	cfg, err := config.Parse(bytes.NewBuffer(bs))
 	if err != nil {
 		return err
 	}
@@ -172,7 +179,7 @@ func doCompare(params compareParams) error {
 		result.Systems[system.Name] = *report
 	}
 
-	bs, err := json.MarshalIndent(result, "", "  ")
+	bs, err = json.MarshalIndent(result, "", "  ")
 	if err != nil {
 		return err
 	}

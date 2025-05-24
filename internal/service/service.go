@@ -23,7 +23,7 @@ import (
 const reconfigurationInterval = 15 * time.Second
 
 type Service struct {
-	configFile     string
+	config         []byte
 	persistenceDir string
 	pool           *pool.Pool
 	workers        map[string]*SystemWorker
@@ -43,8 +43,8 @@ func (s *Service) WithPersistenceDir(d string) *Service {
 	return s
 }
 
-func (s *Service) WithConfigFile(configFile string) *Service {
-	s.configFile = configFile
+func (s *Service) WithConfig(bs []byte) *Service {
+	s.config = bs
 	return s
 }
 
@@ -64,7 +64,7 @@ func (s *Service) Run(ctx context.Context) error {
 	}
 	defer s.database.CloseDB()
 
-	if err := s.database.LoadConfig(ctx, s.configFile); err != nil {
+	if err := s.database.LoadConfig(ctx, s.config); err != nil {
 		return err
 	}
 
