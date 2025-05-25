@@ -235,6 +235,41 @@ func TestBuilder(t *testing.T) {
 			},
 			expError: fmt.Errorf("missing library \"libX\""),
 		},
+		{
+			note: "shared dependency",
+			sources: []sourceMock{
+				{
+					files: map[string]string{
+						"x.rego": `package x
+						p := data.y.q+data.z.r`,
+					},
+					requirements: []string{"lib1", "lib2"},
+				},
+				{
+					name: "lib1",
+					files: map[string]string{
+						"lib1.rego": `package y
+						p := data.z.r`,
+					},
+					requirements: []string{"lib2"},
+				},
+				{
+					name: "lib2",
+					files: map[string]string{
+						"lib2.rego": `package z
+						r := 7`,
+					},
+				},
+			},
+			exp: map[string]string{
+				"/x.rego": `package x
+				p := data.y.q+data.z.r`,
+				"/lib1.rego": `package y
+				p := data.z.r`,
+				"/lib2.rego": `package z
+				r := 7`,
+			},
+		},
 	}
 
 	for _, tc := range cases {

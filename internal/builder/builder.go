@@ -72,6 +72,7 @@ func (b *Builder) Build(ctx context.Context) error {
 		sourceMap[src.Name] = src
 	}
 
+	processed := map[string]struct{}{}
 	rootMap := map[string]*Source{}
 
 	for len(toProcess) > 0 {
@@ -100,7 +101,10 @@ func (b *Builder) Build(ctx context.Context) error {
 				if !ok {
 					return fmt.Errorf("missing library %q", *r.Library)
 				}
-				toProcess = append(toProcess, src)
+				if _, ok := processed[src.Name]; !ok {
+					toProcess = append(toProcess, src)
+					processed[src.Name] = struct{}{}
+				}
 			}
 		}
 	}
