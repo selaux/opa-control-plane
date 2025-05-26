@@ -1,6 +1,6 @@
 package application
 
-# app rules entry point. Could not include it in conflict.rego , reason being, cannot identify from
+# app rules entry point. Could not include it in conflict.rego , reason being, cannot identify from 
 # input what if the request is of app type, hence kept the entry point separate
 
 main["allowed"] = allow
@@ -14,6 +14,7 @@ main["outcome"] = {
 	"code": code,
 	"http_status": code,
 	"policy_type": "app",
+	"system_type": data.self.metadata.system_type,
 }
 
 code = 200 {
