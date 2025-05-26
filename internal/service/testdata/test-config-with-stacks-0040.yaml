@@ -34,6 +34,11 @@ cases:
               files: {
                 "main.rego": {{ base64encode .main_rego }}
               }
+            },
+            TestLibUnused: {
+              files: {
+                "unused.rego": {{ base64encode .unused_rego }}
+              }
             }
           },
           stacks: {
@@ -42,6 +47,12 @@ cases:
                 env: [production]
               },
               requirements: [{library: TestLib}]
+            },
+            TestStackDoesNotMatch: {
+              selector: {
+                DONOTMATCH: []
+              },
+              requirements: [{library: TestLibUnused}]
             }
           }
         }
@@ -60,11 +71,13 @@ cases:
                 }
 
                 stack_result := max([x | x := data.stacks[_].p])
+    unused_rego: "package unused"
   expected_filesystem:
   - "/files/58e247fc3935d8ea3fc0841eb200cfc7/main.rego" # lib conflicts
   - "/files/651b945976b07287063e8967060724a4/app.rego" # lib
+  - "/files/c2b534eb974c87922eefa4e59bc893e1/unused.rego" # lib (unused): eventually we can avoid synching unused libs
   - "/files/eddeac02e8901c7e34c59b0e2b6efe30/stacks/foo/foo.rego" # stacks
-  expected_bundle: 
+  expected_bundle:
     rego:
       app.rego:            *app_rego
       main.rego:           *main_rego

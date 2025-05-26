@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -264,6 +265,27 @@ func (s Selector) MarshalYAML() (interface{}, error) {
 		encodedMap[key] = value
 	}
 	return encodedMap, nil
+}
+
+func (s Selector) MarshalJSON() ([]byte, error) {
+	x, err := s.MarshalYAML()
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(x)
+}
+
+func (s *Selector) UnmarshalJSON(bs []byte) error {
+	raw := make(map[string][]string)
+	err := json.Unmarshal(bs, &raw)
+	if err != nil {
+		return err
+	}
+	*s = Selector{s: make(map[string][]string), m: make(map[string][]glob.Glob)}
+	for key, encodedValue := range raw {
+		s.Set(key, encodedValue)
+	}
+	return nil
 }
 
 func (s *Selector) Get(key string) ([]string, bool) {
