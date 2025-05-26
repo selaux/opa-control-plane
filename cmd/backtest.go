@@ -61,8 +61,9 @@ type backtestReport struct {
 }
 
 type systemBacktestReport struct {
-	Status  string `json:"status,omitempty"`
-	Message string `json:"message,omitempty"`
+	Status  string         `json:"status,omitempty"`
+	Message string         `json:"message,omitempty"`
+	Details []DecisionDiff `json:"details,omitempty"`
 }
 
 func doBacktest(params backtestParams) error {
@@ -117,7 +118,7 @@ func doBacktest(params backtestParams) error {
 	for _, system := range cfg.Systems {
 		if err := backtestSystem(ctx, params.numDecisions, &styra, v1SystemsByName, system, &report); err != nil {
 			report.Systems[system.Name] = systemBacktestReport{
-				Status:  "failed",
+				Status:  "error",
 				Message: err.Error(),
 			}
 		}
@@ -179,6 +180,8 @@ func backtestSystem(ctx context.Context, n int, styra *DASClient, byName map[str
 
 	t0 := time.Now()
 
+	var diffs []DecisionDiff
+
 	for _, d := range decisions.Items {
 
 		var args []func(*rego.Rego)
@@ -203,14 +206,28 @@ func backtestSystem(ctx context.Context, n int, styra *DASClient, byName map[str
 			if innerErr != nil {
 				return innerErr
 			}
-			return DecisionDiscrepancyErr{Cause: err, Path: path}
+			diffs = append(diffs, DecisionDiff{Reason: err.Error(), Path: path})
 		}
 	}
 
-	// TODO(tsandall): improve report to include latency comparison
-	report.Systems[system.Name] = systemBacktestReport{
-		Status:  "passed",
-		Message: fmt.Sprintf("evaluated %v decisions in %v and found no difference(s)", len(decisions.Items), time.Since(t0)),
+	if len(diffs) == 0 {
+		// TODO(tsandall): improve report to include latency comparison
+		report.Systems[system.Name] = systemBacktestReport{
+			Status:  "passed",
+			Message: fmt.Sprintf("evaluated %v decisions in %v and found no difference(s)", len(decisions.Items), time.Since(t0)),
+		}
+	} else {
+		var reportLimit string
+		nDiffs := len(diffs)
+		if len(diffs) > 10 {
+			diffs = diffs[:10]
+			reportLimit = " (report limit: 10)"
+		}
+		report.Systems[system.Name] = systemBacktestReport{
+			Status:  "failed",
+			Message: fmt.Sprintf("evaluated %v decisions in %v and found %v difference(s)%v", len(decisions.Items), time.Since(t0), nDiffs, reportLimit),
+			Details: diffs,
+		}
 	}
 
 	return nil
@@ -246,13 +263,9 @@ func saveFailure(b *bundle.Bundle, d v1Decision) (string, error) {
 	return path, enc.Encode(d)
 }
 
-type DecisionDiscrepancyErr struct {
-	Cause error
-	Path  string
-}
-
-func (err DecisionDiscrepancyErr) Error() string {
-	return fmt.Sprintf("%v (see: %v)", err.Cause, err.Path)
+type DecisionDiff struct {
+	Reason string `json:"reason"`
+	Path   string `json:"path"`
 }
 
 func compareResults(d *v1Decision, rs rego.ResultSet) error {
