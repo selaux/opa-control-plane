@@ -207,7 +207,7 @@ func doMigrate(params migrateParams) error {
 	}
 
 	for _, library := range state.LibrariesById {
-		lc, secret, err := mapV1LibraryToLibraryAndSecretConfig(library)
+		lc, secret, err := migrateV1Library(&c, state, library)
 		if err != nil {
 			return err
 		}
@@ -305,6 +305,34 @@ func doMigrate(params migrateParams) error {
 	}
 
 	return nil
+}
+
+func migrateV1Library(client *DASClient, state *dasState, v1 *v1Library) (*config.Library, *config.Secret, error) {
+
+	library, secret, err := mapV1LibraryToLibraryAndSecretConfig(v1)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	// NOTE(tsandall): we don't support a mix of git-backed and non-git backed
+	// files in libraries like we do for systems right now; if git config exists
+	// then stop
+	if library.Git.Repo != "" {
+		return library, secret, nil
+	}
+
+	policies := state.LibraryPolicies[v1.Id]
+
+	for _, p := range policies {
+		if library.Files == nil {
+			library.Files = make(map[string]string)
+		}
+		for file, str := range p.Modules {
+			library.Files[p.Package+"/"+file] = str
+		}
+	}
+
+	return library, secret, nil
 }
 
 func mapV1LibraryToLibraryAndSecretConfig(v1 *v1Library) (*config.Library, *config.Secret, error) {
