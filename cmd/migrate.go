@@ -423,7 +423,7 @@ func migrateV1System(client *DASClient, state *dasState, v1 *v1System) (*config.
 		} else {
 			systemFiles := make(map[string]string)
 			for path, str := range p.Modules {
-				systemFiles[pkg+"/"+path] = str
+				systemFiles[strings.TrimPrefix(pkg, "/")+"/"+path] = str
 			}
 
 			if typeLib != nil {
@@ -434,7 +434,7 @@ func migrateV1System(client *DASClient, state *dasState, v1 *v1System) (*config.
 				files := make(map[string]string)
 				for name := range baseLibs {
 					for path, str := range baseLibFiles[name] {
-						files[path] = str
+						files[strings.TrimPrefix(path, "/")] = str
 					}
 				}
 
