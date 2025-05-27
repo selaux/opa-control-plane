@@ -47,6 +47,23 @@ func (r *Root) UnmarshalYAML(node *yaml.Node) error {
 		return fmt.Errorf("failed to decode Root: %w", err)
 	}
 
+	*r = Root(raw) // Assign the unmarshaled data back to the original struct
+	return r.unmarshal(r)
+}
+
+func (r *Root) UnmarshalJSON(bs []byte) error {
+	type rawRoot Root // avoid recursive calls to UnmarshalYAML by type aliasing
+	var raw rawRoot
+
+	if err := json.Unmarshal(bs, &raw); err != nil {
+		return fmt.Errorf("failed to decode Root: %w", err)
+	}
+
+	*r = Root(raw) // Assign the unmarshaled data back to the original struct
+	return r.unmarshal(r)
+}
+
+func (r *Root) unmarshal(raw *Root) error {
 	for name, secret := range raw.Secrets {
 		secret.Name = name
 	}
@@ -78,7 +95,6 @@ func (r *Root) UnmarshalYAML(node *yaml.Node) error {
 		stack.Name = name
 	}
 
-	*r = Root(raw) // Assign the unmarshaled data back to the original struct
 	return nil
 }
 
@@ -140,11 +156,33 @@ func (f Files) MarshalYAML() (interface{}, error) {
 	return encodedMap, nil
 }
 
+func (f Files) MarshalJSON() ([]byte, error) {
+	v, err := f.MarshalYAML()
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(v)
+}
+
 func (f *Files) UnmarshalYAML(node *yaml.Node) error {
-	raw := map[string]string{}
-	if err := node.Decode(&raw); err != nil {
+	var m map[string]string
+	if err := node.Decode(&m); err != nil {
 		return err
 	}
+
+	return f.unmarshal(m)
+}
+
+func (f *Files) UnmarshalJSON(bs []byte) error {
+	var m map[string]string
+	if err := json.Unmarshal(bs, &m); err != nil {
+		return err
+	}
+
+	return f.unmarshal(m)
+}
+
+func (f *Files) unmarshal(raw map[string]string) error {
 	*f = Files{}
 	for key, encodedValue := range raw {
 		decodedBytes, err := base64.StdEncoding.DecodeString(encodedValue)
@@ -262,18 +300,6 @@ func (s Selector) Equal(other Selector) bool {
 	return true
 }
 
-func (s *Selector) UnmarshalYAML(node *yaml.Node) error {
-	raw := make(map[string][]string)
-	if err := node.Decode(&raw); err != nil {
-		return err
-	}
-	*s = Selector{s: make(map[string][]string), m: make(map[string][]glob.Glob)}
-	for key, encodedValue := range raw {
-		s.Set(key, encodedValue)
-	}
-	return nil
-}
-
 func (s Selector) MarshalYAML() (interface{}, error) {
 	encodedMap := make(map[string][]string)
 	for key, value := range s.s {
@@ -290,12 +316,26 @@ func (s Selector) MarshalJSON() ([]byte, error) {
 	return json.Marshal(x)
 }
 
+func (s *Selector) UnmarshalYAML(node *yaml.Node) error {
+	raw := make(map[string][]string)
+	if err := node.Decode(&raw); err != nil {
+		return err
+	}
+
+	return s.unmarshal(raw)
+}
+
 func (s *Selector) UnmarshalJSON(bs []byte) error {
 	raw := make(map[string][]string)
 	err := json.Unmarshal(bs, &raw)
 	if err != nil {
 		return err
 	}
+
+	return s.unmarshal(raw)
+}
+
+func (s *Selector) unmarshal(raw map[string][]string) error {
 	*s = Selector{s: make(map[string][]string), m: make(map[string][]glob.Glob)}
 	for key, encodedValue := range raw {
 		s.Set(key, encodedValue)
@@ -365,7 +405,7 @@ type Git struct {
 	Reference   *string    `json:"reference,omitempty" yaml:"reference,omitempty"`
 	Commit      *string    `json:"commit,omitempty" yaml:"commit,omitempty"`
 	Path        *string    `json:"path,omitempty" yaml:"path,omitempty"`
-	Credentials *SecretRef `json:"credentials,omitempty" yaml:"credentials,omitempty"`
+	Credentials *SecretRef `json:"credentials,omitempty" yaml:"credentials,omitempty"` // Schema validation overrides this to string type.
 }
 
 func (g *Git) Equal(other *Git) bool {
@@ -399,11 +439,28 @@ func (s *SecretRef) MarshalYAML() (interface{}, error) {
 	return s.Name, nil
 }
 
+func (s *SecretRef) MarshalJSON() ([]byte, error) {
+	v, err := s.MarshalYAML()
+	if err != nil {
+		return nil, err
+	}
+
+	return json.Marshal(v)
+}
+
 func (s *SecretRef) UnmarshalYAML(n *yaml.Node) error {
 	if n.Kind == yaml.ScalarNode {
 		return n.Decode(&s.Name)
 	}
 	return fmt.Errorf("expected scalar node, got %v", n.Kind)
+}
+
+func (s *SecretRef) UnmarshalJSON(bs []byte) error {
+	if err := json.Unmarshal(bs, &s.Name); err != nil {
+		return fmt.Errorf("failed to unmarshal SecretRef: %w", err)
+	}
+
+	return nil
 }
 
 func (s *SecretRef) Equal(other *SecretRef) bool {
@@ -440,11 +497,24 @@ func (s *Secret) MarshalYAML() (interface{}, error) {
 	return s.Value, nil
 }
 
+func (s *Secret) MarshalJSON() ([]byte, error) {
+	v, err := s.MarshalYAML()
+	if err != nil {
+		return nil, err
+	}
+
+	return json.Marshal(v)
+}
+
 func (s *Secret) UnmarshalYAML(n *yaml.Node) error {
 	if n.Kind == yaml.MappingNode {
 		return n.Decode(&s.Value)
 	}
 	return fmt.Errorf("expected mapping node, got %v", n.Kind)
+}
+
+func (s *Secret) UnmarshalJSON(bs []byte) error {
+	return json.Unmarshal(bs, &s.Value)
 }
 
 func (s *Secret) Equal(other *Secret) bool {
@@ -494,9 +564,9 @@ func Parse(r io.Reader) (root *Root, err error) {
 	}
 
 	// TODO: Enable once Secrets have been prepped for validation.
-	//	if err := root.Validate(); err != nil {
-	//		return nil, err
-	//	}
+	if err := root.Validate(); err != nil {
+		return nil, err
+	}
 
 	return root, nil
 }
