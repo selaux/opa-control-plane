@@ -30,7 +30,7 @@ type Root struct {
 	Systems   map[string]*System  `json:"systems,omitempty" yaml:"systems,omitempty"`
 	Stacks    map[string]*Stack   `json:"stacks,omitempty" yaml:"stacks,omitempty"`
 	Libraries map[string]*Library `json:"libraries,omitempty" yaml:"libraries,omitempty"`
-	Secrets   map[string]*Secret  `json:"secrets,omitempty" yaml:"secrets,omitempty"`
+	Secrets   map[string]*Secret  `json:"secrets,omitempty" yaml:"secrets,omitempty"` // Schema validation overrides Secret to object type.
 	Database  Database            `json:"database" yaml:"database"`
 }
 
@@ -247,7 +247,7 @@ func (s *Library) Requirement() Requirement {
 // Stack defines the configuration for a Lighthouse Stack.
 type Stack struct {
 	Name         string        `json:"-" yaml:"-"`
-	Selector     Selector      `json:"selector" yaml:"selector"`
+	Selector     Selector      `json:"selector" yaml:"selector"` // Schema validation overrides Selector to object of string array values.
 	Requirements []Requirement `json:"requirements,omitempty" yaml:"requirements,omitempty"`
 }
 

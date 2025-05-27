@@ -12,7 +12,10 @@ var rootSchema *jsonschema.Schema
 
 func init() {
 	reflector := schemareflector.Reflector{}
+
+	// Instructions for types with custom marshalling. These types should be kept in sync with the marshalling code.
 	reflector.AddTypeMapping(SecretRef{}, "")
+	reflector.AddTypeMapping(Secret{}, map[string]interface{}{})
 	reflector.AddTypeMapping(Selector{}, map[string][]string{})
 	s, err := reflector.Reflect(Root{})
 	if err != nil {
