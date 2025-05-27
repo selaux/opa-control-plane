@@ -20,18 +20,18 @@ import (
 // information is not stored in the database and is only used by the migration
 // tooling.
 type Metadata struct {
-	ExportedFrom string `yaml:"exported_from"`
-	ExportedAt   string `yaml:"exported_at"`
+	ExportedFrom string `json:"exported_from" yaml:"exported_from"`
+	ExportedAt   string `json:"exported_at" yaml:"exported_at"`
 }
 
 // Root is the top-level configuration structure used by Lighthouse.
 type Root struct {
-	Metadata  Metadata            `yaml:"metadata,omitempty"`
-	Systems   map[string]*System  `yaml:"systems,omitempty"`
-	Stacks    map[string]*Stack   `yaml:"stacks,omitempty"`
-	Libraries map[string]*Library `yaml:"libraries,omitempty"`
-	Secrets   map[string]*Secret  `yaml:"secrets,omitempty"`
-	Database  Database            `yaml:"database,omitempty"`
+	Metadata  Metadata            `json:"metadata" yaml:"metadata"`
+	Systems   map[string]*System  `json:"systems,omitempty" yaml:"systems,omitempty"`
+	Stacks    map[string]*Stack   `json:"stacks,omitempty" yaml:"stacks,omitempty"`
+	Libraries map[string]*Library `json:"libraries,omitempty" yaml:"libraries,omitempty"`
+	Secrets   map[string]*Secret  `json:"secrets,omitempty" yaml:"secrets,omitempty"`
+	Database  Database            `json:"database" yaml:"database"`
 }
 
 // UnmarshalYAML implements the yaml.Marshaler interface for the Root struct. This
@@ -82,21 +82,35 @@ func (r *Root) UnmarshalYAML(node *yaml.Node) error {
 	return nil
 }
 
+func (r *Root) Validate() error {
+	data, err := json.Marshal(r)
+	if err != nil {
+		return err
+	}
+
+	var config interface{}
+	if err := json.Unmarshal(data, &config); err != nil {
+		return err
+	}
+
+	return rootSchema.Validate(config)
+}
+
 // System defines the configuration for a Lighthouse System.
 type System struct {
-	Name          string        `yaml:"-"`
-	Labels        Labels        `yaml:"labels,omitempty"`
-	Git           Git           `yaml:"git,omitempty"`
-	ObjectStorage ObjectStorage `yaml:"object_storage,omitempty"`
-	Datasources   []Datasource  `yaml:"datasources,omitempty"`
-	Files         Files         `yaml:"files,omitempty"`
-	Requirements  []Requirement `yaml:"requirements,omitempty"`
+	Name          string        `json:"-" yaml:"-"`
+	Labels        Labels        `json:"labels,omitempty" yaml:"labels,omitempty"`
+	Git           Git           `json:"git,omitempty" yaml:"git,omitempty"`
+	ObjectStorage ObjectStorage `json:"object_storage,omitempty" yaml:"object_storage,omitempty"`
+	Datasources   []Datasource  `json:"datasources,omitempty" yaml:"datasources,omitempty"`
+	Files         Files         `json:"files,omitempty" yaml:"files,omitempty"`
+	Requirements  []Requirement `json:"requirements,omitempty" yaml:"requirements,omitempty"`
 }
 
 type Labels map[string]string
 
 type Requirement struct {
-	Library *string `yaml:"library,omitempty"`
+	Library *string `json:"library,omitempty" yaml:"library,omitempty"`
 }
 
 func (a Requirement) Equal(b Requirement) bool {
@@ -168,12 +182,12 @@ func equalRequirements(a, b []Requirement) bool {
 
 // Library defines the configuration for a Lighthouse Library.
 type Library struct {
-	Name         string        `yaml:"-"`
-	Builtin      *string       `yaml:"builtin,omitempty"`
-	Git          Git           `yaml:"git,omitempty"`
-	Datasources  []Datasource  `yaml:"datasources,omitempty"`
-	Files        Files         `yaml:"files,omitempty"`
-	Requirements []Requirement `yaml:"requirements,omitempty"`
+	Name         string        `json:"-" yaml:"-"`
+	Builtin      *string       `json:"builtin,omitempty" yaml:"builtin,omitempty"`
+	Git          Git           `json:"git,omitempty" yaml:"git,omitempty"`
+	Datasources  []Datasource  `json:"datasources,omitempty" yaml:"datasources,omitempty"`
+	Files        Files         `json:"files,omitempty" yaml:"files,omitempty"`
+	Requirements []Requirement `json:"requirements,omitempty" yaml:"requirements,omitempty"`
 }
 
 func (s *Library) Equal(other *Library) bool {
@@ -194,9 +208,9 @@ func (s *Library) Requirement() Requirement {
 
 // Stack defines the configuration for a Lighthouse Stack.
 type Stack struct {
-	Name         string        `yaml:"-"`
-	Selector     Selector      `yaml:"selector"`
-	Requirements []Requirement `yaml:"requirements,omitempty"`
+	Name         string        `json:"-" yaml:"-"`
+	Selector     Selector      `json:"selector" yaml:"selector"`
+	Requirements []Requirement `json:"requirements,omitempty" yaml:"requirements,omitempty"`
 }
 
 func (a *Stack) Equal(other *Stack) bool {
@@ -210,6 +224,7 @@ func (a *Stack) Equal(other *Stack) bool {
 }
 
 type Selector struct {
+	// TODO: Schema
 	s map[string][]string
 	m map[string][]glob.Glob // Pre-compiled glob patterns for faster matching
 }
@@ -346,11 +361,11 @@ func equalStringSets(a, b []string) bool {
 // Git defines the Git synchronization configuration used by Lighthouse
 // resources like Systems, Stacks, and Libraries.
 type Git struct {
-	Repo        string     `yaml:"repo"`
-	Reference   *string    `yaml:"reference,omitempty"`
-	Commit      *string    `yaml:"commit,omitempty"`
-	Path        *string    `yaml:"path,omitempty"`
-	Credentials *SecretRef `yaml:"credentials,omitempty"`
+	Repo        string     `json:"repo" yaml:"repo"`
+	Reference   *string    `json:"reference,omitempty" yaml:"reference,omitempty"`
+	Commit      *string    `json:"commit,omitempty" yaml:"commit,omitempty"`
+	Path        *string    `json:"path,omitempty" yaml:"path,omitempty"`
+	Credentials *SecretRef `json:"credentials,omitempty" yaml:"credentials,omitempty"`
 }
 
 func (g *Git) Equal(other *Git) bool {
@@ -366,7 +381,7 @@ func (g *Git) Equal(other *Git) bool {
 }
 
 type SecretRef struct {
-	Name  string `yaml:"name,omitempty"`
+	Name  string `json:"name,omitempty" yaml:"name,omitempty"`
 	value *Secret
 }
 
@@ -410,8 +425,8 @@ func (s *SecretRef) Equal(other *SecretRef) bool {
 // Secret defines the configuration for secrets/tokens used by Lighthouse
 // for Git synchronization, datasources, etc.
 type Secret struct {
-	Name  string                 `yaml:"-"`
-	Value map[string]interface{} `yaml:"value,omitempty"`
+	Name  string                 `json:"-" yaml:"-"`
+	Value map[string]interface{} `json:"value,omitempty" yaml:"value,omitempty"`
 }
 
 func (s *Secret) Ref() *SecretRef {
@@ -477,13 +492,18 @@ func Parse(r io.Reader) (root *Root, err error) {
 	if err := yaml.Unmarshal(bs, &root); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal config: %w", err)
 	}
+
+	if err := root.Validate(); err != nil {
+		return nil, err
+	}
+
 	return root, nil
 }
 
 type ObjectStorage struct {
-	AmazonS3         *AmazonS3         `yaml:"aws,omitempty"`
-	GCPCloudStorage  *GCPCloudStorage  `yaml:"gcp,omitempty"`
-	AzureBlobStorage *AzureBlobStorage `yaml:"azure,omitempty"`
+	AmazonS3         *AmazonS3         `json:"aws,omitempty" yaml:"aws,omitempty"`
+	GCPCloudStorage  *GCPCloudStorage  `json:"gcp,omitempty" yaml:"gcp,omitempty"`
+	AzureBlobStorage *AzureBlobStorage `json:"azure,omitempty" yaml:"azure,omitempty"`
 }
 
 func (o *ObjectStorage) Equal(other *ObjectStorage) bool {
@@ -500,27 +520,27 @@ func (o *ObjectStorage) Equal(other *ObjectStorage) bool {
 
 // AmazonS3 defines the configuration for an Amazon S3-compatible object storage.
 type AmazonS3 struct {
-	Bucket      string     `yaml:"bucket"`
-	Key         string     `yaml:"key"`
-	Region      string     `yaml:"region,omitempty"`
-	Credentials *SecretRef `yaml:"credentials,omitempty"`
-	URL         string     `yaml:"url,omitempty"` // for test purposes
+	Bucket      string     `json:"bucket" yaml:"bucket"`
+	Key         string     `json:"key" yaml:"key"`
+	Region      string     `json:"region,omitempty" yaml:"region,omitempty"`
+	Credentials *SecretRef `json:"credentials,omitempty" yaml:"credentials,omitempty"`
+	URL         string     `json:"url,omitempty" yaml:"url,omitempty"` // for test purposes
 }
 
 // GCPCloudStorage defines the configuration for a Google Cloud Storage bucket.
 type GCPCloudStorage struct {
-	Project     string     `yaml:"project"`
-	Bucket      string     `yaml:"bucket"`
-	Object      string     `yaml:"object"`
-	Credentials *SecretRef `yaml:"credentials,omitempty"`
+	Project     string     `json:"project" yaml:"project"`
+	Bucket      string     `json:"bucket" yaml:"bucket"`
+	Object      string     `json:"object" yaml:"object"`
+	Credentials *SecretRef `json:"credentials,omitempty" yaml:"credentials,omitempty"`
 }
 
 // AzureBlobStorage defines the configuration for an Azure Blob Storage container.
 type AzureBlobStorage struct {
-	AccountURL  string     `yaml:"account_url"`
-	Container   string     `yaml:"container"`
-	Path        string     `yaml:"path"`
-	Credentials *SecretRef `yaml:"credentials,omitempty"`
+	AccountURL  string     `json:"account_url" yaml:"account_url"`
+	Container   string     `json:"container" yaml:"container"`
+	Path        string     `json:"path" yaml:"path"`
+	Credentials *SecretRef `json:"credentials,omitempty" yaml:"credentials,omitempty"`
 }
 
 func (a *AmazonS3) Equal(other *AmazonS3) bool {
@@ -560,11 +580,11 @@ func (a *AzureBlobStorage) Equal(other *AzureBlobStorage) bool {
 }
 
 type Datasource struct {
-	Name        string                 `yaml:"name"`
-	Path        string                 `yaml:"path"`
-	Type        string                 `yaml:"type"`
-	Config      map[string]interface{} `yaml:"config,omitempty"`
-	Credentials *SecretRef             `yaml:"credentials,omitempty"`
+	Name        string                 `json:"name" yaml:"name"`
+	Path        string                 `json:"path" yaml:"path"`
+	Type        string                 `json:"type" yaml:"type"`
+	Config      map[string]interface{} `json:"config,omitempty" yaml:"config,omitempty"`
+	Credentials *SecretRef             `json:"credentials,omitempty" yaml:"credentials,omitempty"`
 }
 
 func (d *Datasource) Equal(other *Datasource) bool {
@@ -594,8 +614,8 @@ func (d *Datasource) Equal(other *Datasource) bool {
 }
 
 type Database struct {
-	SQL    *SQLDatabase `yaml:"sql,omitempty"`
-	AWSRDS *AmazonRDS   `yaml:"aws_rds,omitempty"`
+	SQL    *SQLDatabase `json:"sql,omitempty" yaml:"sql,omitempty"`
+	AWSRDS *AmazonRDS   `json:"aws_rds,omitempty" yaml:"aws_rds,omitempty"`
 }
 
 type SQLDatabase struct {
@@ -604,12 +624,12 @@ type SQLDatabase struct {
 }
 
 type AmazonRDS struct {
-	Region       string     `yaml:"region"`
-	Endpoint     string     `yaml:"endpoint"` // hostname:port
-	Driver       string     `yaml:"driver"`   // mysql or postgres
-	DatabaseUser string     `yaml:"database_user"`
-	DatabaseName string     `yaml:"database_name"`
-	Credentials  *SecretRef `yaml:"credentials,omitempty"`
+	Region       string     `json:"region" yaml:"region"`
+	Endpoint     string     `json:"endpoint" yaml:"endpoint"` // hostname:port
+	Driver       string     `json:"driver" yaml:"driver"`     // mysql or postgres
+	DatabaseUser string     `json:"database_user" yaml:"database_user"`
+	DatabaseName string     `json:"database_name" yaml:"database_name"`
+	Credentials  *SecretRef `json:"credentials,omitempty" yaml:"credentials,omitempty"`
 }
 
 func EqualLibraries(a, b []*Library) bool {

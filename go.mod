@@ -85,6 +85,7 @@ require (
 	github.com/sirupsen/logrus v1.9.3 // indirect
 	github.com/skeema/knownhosts v1.3.1 // indirect
 	github.com/spf13/pflag v1.0.6 // indirect
+	github.com/swaggest/refl v1.4.0 // indirect
 	github.com/tchap/go-patricia/v2 v2.3.2 // indirect
 	github.com/xanzy/ssh-agent v0.3.3 // indirect
 	github.com/xeipuuv/gojsonpointer v0.0.0-20190905194746-02993c407bfb // indirect
@@ -136,6 +137,8 @@ require (
 	github.com/johannesboyne/gofakes3 v0.0.0-20250402064820-d479899d8cbe
 	github.com/mattn/go-sqlite3 v1.14.28
 	github.com/open-policy-agent/opa v1.3.0
+	github.com/santhosh-tekuri/jsonschema/v6 v6.0.2
+	github.com/swaggest/jsonschema-go v0.3.78
 	golang.org/x/sync v0.13.0
 	google.golang.org/api v0.229.0
 	gopkg.in/yaml.v3 v3.0.1
