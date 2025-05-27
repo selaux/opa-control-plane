@@ -563,7 +563,6 @@ func Parse(r io.Reader) (root *Root, err error) {
 		return nil, fmt.Errorf("failed to unmarshal config: %w", err)
 	}
 
-	// TODO: Enable once Secrets have been prepped for validation.
 	if err := root.Validate(); err != nil {
 		return nil, err
 	}
