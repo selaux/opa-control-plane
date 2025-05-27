@@ -34,6 +34,14 @@ var systemTypeLibraries = []*config.Library{
 			{Library: strptr("template.envoy:2.1-conflicts")},
 		},
 	},
+	{
+		Name: "kubernetes:v2",
+		Requirements: []config.Requirement{
+			{Library: strptr("kubernetes:v2-entrypoint-validating")},
+			{Library: strptr("kubernetes:v2-conflicts")},
+			{Library: strptr("kubernetes:v2-library")},
+		},
+	},
 }
 
 func getSystemTypeLib(t string) *config.Library {
@@ -65,6 +73,18 @@ var baseLibraries = []*config.Library{
 	{
 		Name:    "template.envoy:2.1-conflicts",
 		Builtin: strptr("envoy-v2.1/conflicts"),
+	},
+	{
+		Name:    "kubernetes:v2-entrypoint-validating",
+		Builtin: strptr("kubernetes-v2/validating"),
+	},
+	{
+		Name:    "kubernetes:v2-conflicts",
+		Builtin: strptr("kubernetes-v2/conflicts"),
+	},
+	{
+		Name:    "kubernetes:v2-library",
+		Builtin: strptr("kubernetes-v2/library"),
 	},
 	{
 		Name:    "match-v1",
