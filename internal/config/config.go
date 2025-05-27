@@ -262,7 +262,6 @@ func (a *Stack) Equal(other *Stack) bool {
 }
 
 type Selector struct {
-	// TODO: Schema
 	s map[string][]string
 	m map[string][]glob.Glob // Pre-compiled glob patterns for faster matching
 }
