@@ -6,12 +6,12 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"fmt"
 	"log"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"testing"
+	"text/template"
 	"time"
 
 	"github.com/johannesboyne/gofakes3"
@@ -26,8 +26,7 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
-func TestEnvoy21(t *testing.T) {
-
+func TestMigration(t *testing.T) {
 	var styraURL = os.Getenv("STYRA_URL")
 	if styraURL == "" {
 		log.Fatal("STYRA_URL environment variable is not set")
@@ -38,115 +37,179 @@ func TestEnvoy21(t *testing.T) {
 		log.Fatal("STYRA_TOKEN environment variable is not set")
 	}
 
-	var styraEnvoySystemId = os.Getenv("STYRA_ENVOY_SYSTEM_ID")
-	if styraEnvoySystemId == "" {
-		log.Fatal("STYRA_ENVOY_SYSTEM_ID environment variable is not set")
-	}
-
-	mock, s3TS := testS3Service(t, "test")
-
-	var secretsConfig = `{
-		secrets: {
-			libraries/envoy/git: {
-				type: http_basic_auth,
-				password: $GITHUB_PASSWORD,
-				username: $GITHUB_USERNAME,
-			},
-		},
-	}`
-
-	var storageConfig = fmt.Sprintf(`{
-		systems: {
-			Envoy App: {
-				object_storage: {
-					aws: {
-						url: %q,
-						bucket: test,
-						region: mock-region,
-						key: bundle.tar.gz,
+	cases := []struct {
+		name            string
+		systemName      string
+		systemIdEnvName string
+		extraConfigs    map[string]string
+	}{
+		{
+			name:            "envoy21",
+			systemName:      "Envoy App",
+			systemIdEnvName: "STYRA_ENVOY_SYSTEM_ID",
+			extraConfigs: map[string]string{
+				"config.d/1-secrets.yaml": `{
+					secrets: {
+						libraries/envoy/git: {
+							type: http_basic_auth,
+							password: $GITHUB_PASSWORD,
+							username: $GITHUB_USERNAME,
+						},
 					},
-				},
+				}`,
+				"config.d/2-storage.yaml": `{
+					systems: {
+						Envoy App: {
+							object_storage: {
+								aws: {
+									url: {{ .URL }},
+									bucket: test,
+									region: mock-region,
+									key: bundle.tar.gz,
+								},
+							},
+						},
+					},
+				}`,
 			},
 		},
-	}`, s3TS.URL)
-
-	files := map[string]string{
-		"config.d/1-secrets.yaml": string(secretsConfig),
-		"config.d/2-storage.yaml": string(storageConfig),
+		{
+			name:            "kubernetes2-validating",
+			systemName:      "Banteng cluster",
+			systemIdEnvName: "STYRA_KUBERNETES_SYSTEM_ID",
+			extraConfigs: map[string]string{
+				"config.d/1-secrets.yaml": `{
+					secrets: {
+						libraries/test/git: {
+							type: http_basic_auth,
+							password: $GITHUB_PASSWORD,
+							username: $GITHUB_USERNAME,
+						},
+					},
+				}`,
+				"config.d/2-storage.yaml": `{
+					systems: {
+						Banteng cluster: {
+							object_storage: {
+								aws: {
+									url: {{ .URL }},
+									bucket: test,
+									region: mock-region,
+									key: bundle.tar.gz,
+								},
+							},
+						},
+					},
+				}`,
+			},
+		},
 	}
 
-	tempfs.WithTempFS(t, files, func(t *testing.T, dir string) {
+	type templateParams struct {
+		URL string
+	}
 
-		f, err := os.Create(filepath.Join(dir, "config.d", "0-config.yaml"))
-		if err != nil {
-			t.Fatal(err)
-		}
-
-		err = migrate.Run(migrate.Options{
-			URL:      styraURL,
-			Token:    styraToken,
-			SystemId: styraEnvoySystemId,
-			Prune:    true,
-			Output:   f,
-		})
-		if err != nil {
-			t.Fatal(err)
-		}
-
-		merged, err := config.Merge([]string{filepath.Join(dir, "config.d")})
-		if err != nil {
-			t.Fatal(err)
-		}
-
-		svc := service.New().
-			WithBuiltinFS(util.NewEscapeFS(libraries.FS)).
-			WithConfig(merged).
-			WithPersistenceDir(filepath.Join(dir, "data"))
-
-		var g errgroup.Group
-		ctx, cancel := context.WithCancel(context.Background())
-		defer cancel()
-
-		g.Go(func() error {
-			return svc.Run(ctx)
-		})
-
-		for {
-			time.Sleep(time.Millisecond * 100)
-			var obj *gofakes3.Object
-			var err error
-			for obj == nil && (err == nil || gofakes3.HasErrorCode(err, gofakes3.ErrNoSuchKey)) {
-				obj, err = mock.GetObject("test", "bundle.tar.gz", nil)
-				time.Sleep(time.Millisecond)
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			systemId := os.Getenv(tc.systemIdEnvName)
+			if systemId == "" {
+				log.Fatalf("%v environment variable is not set", tc.systemIdEnvName)
 			}
-			if err != nil {
-				t.Fatal(err)
+
+			mock, s3TS := testS3Service(t, "test")
+
+			files := make(map[string]string)
+			var params templateParams
+			params.URL = s3TS.URL
+
+			for name, content := range tc.extraConfigs {
+				tmpl, err := template.New(name).Parse(content)
+				if err != nil {
+					t.Fatal(err)
+				}
+
+				buf := bytes.NewBuffer(nil)
+				if err := tmpl.Execute(buf, params); err != nil {
+					t.Fatal(err)
+				}
+
+				files[name] = buf.String()
 			}
-			break
-		}
 
-		buf := bytes.NewBuffer(nil)
+			tempfs.WithTempFS(t, files, func(t *testing.T, dir string) {
 
-		if err := backtest.Run(backtest.Options{
-			ConfigFile:   []string{filepath.Join(dir, "config.d")},
-			URL:          styraURL,
-			Token:        styraToken,
-			NumDecisions: 100,
-			Output:       buf,
-		}); err != nil {
-			t.Fatal(err)
-		}
+				f, err := os.Create(filepath.Join(dir, "config.d", "0-config.yaml"))
+				if err != nil {
+					t.Fatal(err)
+				}
 
-		var r backtest.Report
-		if err := json.Unmarshal(buf.Bytes(), &r); err != nil {
-			t.Fatal(err)
-		}
+				err = migrate.Run(migrate.Options{
+					URL:      styraURL,
+					Token:    styraToken,
+					SystemId: systemId,
+					Prune:    true,
+					Output:   f,
+				})
+				if err != nil {
+					t.Fatal(err)
+				}
 
-		if r.Systems["Envoy App"].Status != "passed" {
-			t.Fatalf("expected Envoy App system to be successful, got: %s", r.Systems["Envoy App"].Status)
-		}
-	})
+				merged, err := config.Merge([]string{filepath.Join(dir, "config.d")})
+				if err != nil {
+					t.Fatal(err)
+				}
 
+				svc := service.New().
+					WithBuiltinFS(util.NewEscapeFS(libraries.FS)).
+					WithConfig(merged).
+					WithPersistenceDir(filepath.Join(dir, "data"))
+
+				var g errgroup.Group
+				ctx, cancel := context.WithCancel(context.Background())
+				defer cancel()
+
+				g.Go(func() error {
+					return svc.Run(ctx)
+				})
+
+				for {
+					time.Sleep(time.Millisecond * 100)
+					var obj *gofakes3.Object
+					var err error
+					for obj == nil && (err == nil || gofakes3.HasErrorCode(err, gofakes3.ErrNoSuchKey)) {
+						obj, err = mock.GetObject("test", "bundle.tar.gz", nil)
+						time.Sleep(time.Millisecond)
+					}
+					if err != nil {
+						t.Fatal(err)
+					}
+					break
+				}
+
+				buf := bytes.NewBuffer(nil)
+
+				if err := backtest.Run(backtest.Options{
+					ConfigFile:   []string{filepath.Join(dir, "config.d")},
+					URL:          styraURL,
+					Token:        styraToken,
+					NumDecisions: 100,
+					Output:       buf,
+				}); err != nil {
+					t.Fatal(err)
+				}
+
+				var r backtest.Report
+				if err := json.Unmarshal(buf.Bytes(), &r); err != nil {
+					t.Fatal(err)
+				}
+
+				if r.Systems[tc.systemName].Status != "passed" {
+					t.Fatalf("expected %q system to be successful, got: %s", tc.systemName, r.Systems[tc.systemName].Status)
+				}
+
+			})
+		})
+	}
 }
 
 func testS3Service(t *testing.T, bucket string) (*s3mem.Backend, *httptest.Server) {
