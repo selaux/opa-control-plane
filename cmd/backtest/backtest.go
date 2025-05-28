@@ -1,4 +1,4 @@
-package cmd
+package backtest
 
 import (
 	"bytes"
@@ -18,6 +18,8 @@ import (
 	"github.com/open-policy-agent/opa/bundle"
 	"github.com/open-policy-agent/opa/rego"
 	"github.com/spf13/cobra"
+	"github.com/tsandall/lighthouse/cmd"
+	"github.com/tsandall/lighthouse/cmd/internal/das"
 	"github.com/tsandall/lighthouse/internal/config"
 	"github.com/tsandall/lighthouse/internal/s3"
 )
@@ -34,7 +36,7 @@ func init() {
 
 	params.styraToken = os.Getenv("STYRA_TOKEN")
 
-	cmd := &cobra.Command{
+	backtest := &cobra.Command{
 		Use:   "backtest",
 		Short: "Run decision backtest on Lighthouse bundles against bundles from Styra",
 		Run: func(cmd *cobra.Command, args []string) {
@@ -44,12 +46,12 @@ func init() {
 		},
 	}
 
-	cmd.Flags().StringSliceVarP(&params.configFile, "config", "c", []string{"config.yaml"}, "Path to the configuration file")
-	cmd.Flags().StringVarP(&params.styraURL, "url", "u", "", "Styra tenant URL (e.g., https://expo.styra.com)")
-	cmd.Flags().IntVarP(&params.numDecisions, "decisions", "n", 100, "Number of decisions to backtest")
+	backtest.Flags().StringSliceVarP(&params.configFile, "config", "c", []string{"config.yaml"}, "Path to the configuration file")
+	backtest.Flags().StringVarP(&params.styraURL, "url", "u", "", "Styra tenant URL (e.g., https://expo.styra.com)")
+	backtest.Flags().IntVarP(&params.numDecisions, "decisions", "n", 100, "Number of decisions to backtest")
 
-	RootCommand.AddCommand(
-		cmd,
+	cmd.RootCommand.AddCommand(
+		backtest,
 	)
 
 }
@@ -68,7 +70,7 @@ type systemBacktestReport struct {
 
 func doBacktest(params backtestParams) error {
 
-	bs, err := getMergedConfig(params.configFile)
+	bs, err := config.Merge(params.configFile)
 	if err != nil {
 		return err
 	}
@@ -88,10 +90,10 @@ func doBacktest(params backtestParams) error {
 		return fmt.Errorf("please provide Styra URL with -u/--url")
 	}
 
-	styra := DASClient{
-		url:    url,
-		token:  params.styraToken,
-		client: http.DefaultClient}
+	styra := das.Client{
+		URL:    url,
+		Token:  params.styraToken,
+		Client: http.DefaultClient}
 
 	log.Println("Fetching systems...")
 	resp, err := styra.JSON("v1/systems")
@@ -99,12 +101,12 @@ func doBacktest(params backtestParams) error {
 		return err
 	}
 
-	var v1systems []*v1System
+	var v1systems []*das.V1System
 	if err := resp.Decode(&v1systems); err != nil {
 		return err
 	}
 
-	v1SystemsByName := map[string]*v1System{}
+	v1SystemsByName := map[string]*das.V1System{}
 	for _, system := range v1systems {
 		v1SystemsByName[system.Name] = system
 	}
@@ -134,7 +136,7 @@ func doBacktest(params backtestParams) error {
 	return nil
 }
 
-func backtestSystem(ctx context.Context, n int, styra *DASClient, byName map[string]*v1System, system *config.System, report *backtestReport) error {
+func backtestSystem(ctx context.Context, n int, styra *das.Client, byName map[string]*das.V1System, system *config.System, report *backtestReport) error {
 
 	v1, ok := byName[system.Name]
 	if !ok {
@@ -142,7 +144,7 @@ func backtestSystem(ctx context.Context, n int, styra *DASClient, byName map[str
 		return nil
 	}
 
-	resp, err := styra.JSON("v1/decisions", DASParams{
+	resp, err := styra.JSON("v1/decisions", das.Params{
 		Query: map[string]string{
 			"limit":  fmt.Sprintf("%d", n),
 			"system": v1.Id,
@@ -152,7 +154,7 @@ func backtestSystem(ctx context.Context, n int, styra *DASClient, byName map[str
 		return err
 	}
 
-	var decisions v1Decisions
+	var decisions das.V1Decisions
 
 	if err := resp.Decode(&decisions); err != nil {
 		return err
@@ -233,7 +235,7 @@ func backtestSystem(ctx context.Context, n int, styra *DASClient, byName map[str
 	return nil
 }
 
-func saveFailure(b *bundle.Bundle, d v1Decision) (string, error) {
+func saveFailure(b *bundle.Bundle, d das.V1Decision) (string, error) {
 
 	path, err := os.MkdirTemp("", "lighthouse-backtest")
 	if err != nil {
@@ -268,7 +270,7 @@ type DecisionDiff struct {
 	Path   string `json:"path"`
 }
 
-func compareResults(d *v1Decision, rs rego.ResultSet) error {
+func compareResults(d *das.V1Decision, rs rego.ResultSet) error {
 
 	if d.Result == nil {
 		if len(rs) > 0 {

@@ -1,14 +1,11 @@
-package cmd
+package migrate
 
 import (
-	"bytes"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io/fs"
 	"log"
 	"net/http"
-	neturl "net/url"
 	"os"
 	"reflect"
 	"sort"
@@ -18,6 +15,8 @@ import (
 
 	"github.com/open-policy-agent/opa/ast"
 	"github.com/spf13/cobra"
+	"github.com/tsandall/lighthouse/cmd"
+	"github.com/tsandall/lighthouse/cmd/internal/das"
 	"github.com/tsandall/lighthouse/internal/config"
 	"github.com/tsandall/lighthouse/libraries"
 	"gopkg.in/yaml.v3"
@@ -157,7 +156,7 @@ func init() {
 
 	params.token = os.Getenv("STYRA_TOKEN")
 
-	cmd := &cobra.Command{
+	migrate := &cobra.Command{
 		Use:   "migrate",
 		Short: "Migrate configuration and policies from Styra",
 		Run: func(cmd *cobra.Command, args []string) {
@@ -167,12 +166,12 @@ func init() {
 		},
 	}
 
-	cmd.Flags().StringVarP(&params.url, "url", "u", "", "Styra tenant URL (e.g., https://expo.styra.com)")
-	cmd.Flags().StringVarP(&params.systemId, "system-id", "", "", "Scope migraton to a specific system (id)")
-	cmd.Flags().BoolVarP(&params.prune, "prune", "", false, "Prune unused resources")
+	migrate.Flags().StringVarP(&params.url, "url", "u", "", "Styra tenant URL (e.g., https://expo.styra.com)")
+	migrate.Flags().StringVarP(&params.systemId, "system-id", "", "", "Scope migraton to a specific system (id)")
+	migrate.Flags().BoolVarP(&params.prune, "prune", "", false, "Prune unused resources")
 
-	RootCommand.AddCommand(
-		cmd,
+	cmd.RootCommand.AddCommand(
+		migrate,
 	)
 }
 
@@ -185,10 +184,10 @@ func doMigrate(params migrateParams) error {
 		return errors.New("please set STYRA_TOKEN environment variable to token with WorkspaceViewer permission")
 	}
 
-	c := DASClient{
-		url:    params.url,
-		token:  params.token,
-		client: http.DefaultClient,
+	c := das.Client{
+		URL:    params.url,
+		Token:  params.token,
+		Client: http.DefaultClient,
 	}
 
 	output := config.Root{
@@ -278,7 +277,7 @@ func doMigrate(params migrateParams) error {
 
 	fmt.Println(string(bs))
 
-	v1SystemsByName := map[string]*v1System{}
+	v1SystemsByName := map[string]*das.V1System{}
 	for _, system := range state.SystemsById {
 		v1SystemsByName[system.Name] = system
 	}
@@ -307,7 +306,7 @@ func doMigrate(params migrateParams) error {
 	return nil
 }
 
-func migrateV1Library(client *DASClient, state *dasState, v1 *v1Library) (*config.Library, *config.Secret, error) {
+func migrateV1Library(client *das.Client, state *dasState, v1 *das.V1Library) (*config.Library, *config.Secret, error) {
 
 	library, secret, err := mapV1LibraryToLibraryAndSecretConfig(v1)
 	if err != nil {
@@ -335,7 +334,7 @@ func migrateV1Library(client *DASClient, state *dasState, v1 *v1Library) (*confi
 	return library, secret, nil
 }
 
-func mapV1LibraryToLibraryAndSecretConfig(v1 *v1Library) (*config.Library, *config.Secret, error) {
+func mapV1LibraryToLibraryAndSecretConfig(v1 *das.V1Library) (*config.Library, *config.Secret, error) {
 
 	if v1.SourceControl.UseWorkspaceSettings {
 		// TODO(tsandall): need to find library that has this
@@ -377,7 +376,7 @@ func mapV1LibraryToLibraryAndSecretConfig(v1 *v1Library) (*config.Library, *conf
 	return &library, secret, nil
 }
 
-func migrateV1System(client *DASClient, state *dasState, v1 *v1System) (*config.System, *config.Secret, error) {
+func migrateV1System(client *das.Client, state *dasState, v1 *das.V1System) (*config.System, *config.Secret, error) {
 
 	system, secret, err := mapV1SystemToSystemAndSecretConfig(client, v1)
 	if err != nil {
@@ -391,7 +390,7 @@ func migrateV1System(client *DASClient, state *dasState, v1 *v1System) (*config.
 		return nil, nil, err
 	}
 
-	bundles := []*v1Bundle{}
+	bundles := []*das.V1Bundle{}
 	if err := resp.Decode(&bundles); err != nil {
 		return nil, nil, err
 	}
@@ -490,7 +489,7 @@ func migrateV1System(client *DASClient, state *dasState, v1 *v1System) (*config.
 	return system, secret, nil
 }
 
-func mapV1SystemToSystemAndSecretConfig(_ *DASClient, v1 *v1System) (*config.System, *config.Secret, error) {
+func mapV1SystemToSystemAndSecretConfig(_ *das.Client, v1 *das.V1System) (*config.System, *config.Secret, error) {
 	var system config.System
 	var secret *config.Secret
 
@@ -523,7 +522,7 @@ func mapV1SystemToSystemAndSecretConfig(_ *DASClient, v1 *v1System) (*config.Sys
 	return &system, secret, nil
 }
 
-func migrateV1Stack(_ *DASClient, state *dasState, v1 *v1Stack) (*config.Stack, *config.Library, *config.Secret, error) {
+func migrateV1Stack(_ *das.Client, state *dasState, v1 *das.V1Stack) (*config.Stack, *config.Library, *config.Secret, error) {
 
 	var stack config.Stack
 	var library config.Library
@@ -647,7 +646,7 @@ func migrateV1Selector(module *ast.Module) (config.Selector, error) {
 	return selector, err
 }
 
-func migrateDependencies(_ *DASClient, state *dasState, output *config.Root) error {
+func migrateDependencies(_ *das.Client, state *dasState, output *config.Root) error {
 
 	index := newLibraryPackageIndex()
 
@@ -688,7 +687,7 @@ func migrateDependencies(_ *DASClient, state *dasState, output *config.Root) err
 	return nil
 }
 
-func getRequirementsForPolicies(policies []*v1Policy, index *libraryPackageIndex, ignore string) ([]config.Requirement, error) {
+func getRequirementsForPolicies(policies []*das.V1Policy, index *libraryPackageIndex, ignore string) ([]config.Requirement, error) {
 	librarySet := map[string]struct{}{}
 	for _, p := range policies {
 		for file, content := range p.Modules {
@@ -836,22 +835,22 @@ func (g graph) dfs(n string, iter func(node), visited map[string]struct{}) {
 }
 
 type dasState struct {
-	SystemsById     map[string]*v1System
-	SystemPolicies  map[string][]*v1Policy
-	StacksById      map[string]*v1Stack
-	StackPolicies   map[string][]*v1Policy
-	LibrariesById   map[string]*v1Library
-	LibraryPolicies map[string][]*v1Policy
+	SystemsById     map[string]*das.V1System
+	SystemPolicies  map[string][]*das.V1Policy
+	StacksById      map[string]*das.V1Stack
+	StackPolicies   map[string][]*das.V1Policy
+	LibrariesById   map[string]*das.V1Library
+	LibraryPolicies map[string][]*das.V1Policy
 }
 
 type dasFetchOptions struct {
 	SystemId string
 }
 
-func fetchDASState(c *DASClient, opts dasFetchOptions) (*dasState, error) {
+func fetchDASState(c *das.Client, opts dasFetchOptions) (*dasState, error) {
 	state := dasState{}
 
-	var systems []*v1System
+	var systems []*das.V1System
 
 	if opts.SystemId == "" {
 		log.Println("Fetching v1/systems")
@@ -871,7 +870,7 @@ func fetchDASState(c *DASClient, opts dasFetchOptions) (*dasState, error) {
 			return nil, err
 		}
 
-		var x v1System
+		var x das.V1System
 		if err := resp.Decode(&x); err != nil {
 			return nil, err
 		}
@@ -885,7 +884,7 @@ func fetchDASState(c *DASClient, opts dasFetchOptions) (*dasState, error) {
 		return nil, err
 	}
 
-	var libraries []*v1Library
+	var libraries []*das.V1Library
 	err = resp.Decode(&libraries)
 	if err != nil {
 		return nil, err
@@ -897,23 +896,23 @@ func fetchDASState(c *DASClient, opts dasFetchOptions) (*dasState, error) {
 		return nil, err
 	}
 
-	var stacks []*v1Stack
+	var stacks []*das.V1Stack
 	err = resp.Decode(&stacks)
 	if err != nil {
 		return nil, err
 	}
 
-	state.SystemsById = map[string]*v1System{}
+	state.SystemsById = map[string]*das.V1System{}
 	for _, s := range systems {
 		state.SystemsById[s.Id] = s
 	}
 
-	state.StacksById = map[string]*v1Stack{}
+	state.StacksById = map[string]*das.V1Stack{}
 	for _, s := range stacks {
 		state.StacksById[s.Id] = s
 	}
 
-	state.LibrariesById = map[string]*v1Library{}
+	state.LibrariesById = map[string]*das.V1Library{}
 	for _, l := range libraries {
 		state.LibrariesById[l.Id] = l
 	}
@@ -933,12 +932,12 @@ func fetchDASState(c *DASClient, opts dasFetchOptions) (*dasState, error) {
 	return &state, nil
 }
 
-func fetchSystemPolicies(c *DASClient, state *dasState) error {
-	ch := make(chan *v1System)
+func fetchSystemPolicies(c *das.Client, state *dasState) error {
+	ch := make(chan *das.V1System)
 	var wg sync.WaitGroup
 	var mu sync.Mutex
 
-	state.SystemPolicies = map[string][]*v1Policy{}
+	state.SystemPolicies = map[string][]*das.V1Policy{}
 
 	for i := 0; i < 10; i++ {
 		wg.Add(1)
@@ -966,12 +965,12 @@ func fetchSystemPolicies(c *DASClient, state *dasState) error {
 	return nil
 }
 
-func fetchStackPolicies(c *DASClient, state *dasState) error {
-	ch := make(chan *v1Stack)
+func fetchStackPolicies(c *das.Client, state *dasState) error {
+	ch := make(chan *das.V1Stack)
 	var wg sync.WaitGroup
 	var mu sync.Mutex
 
-	state.StackPolicies = map[string][]*v1Policy{}
+	state.StackPolicies = map[string][]*das.V1Policy{}
 
 	for i := 0; i < 10; i++ {
 		wg.Add(1)
@@ -999,12 +998,12 @@ func fetchStackPolicies(c *DASClient, state *dasState) error {
 	return nil
 }
 
-func fetchLibraryPolicies(c *DASClient, state *dasState) error {
-	ch := make(chan *v1Library)
+func fetchLibraryPolicies(c *das.Client, state *dasState) error {
+	ch := make(chan *das.V1Library)
 	var wg sync.WaitGroup
 	var mu sync.Mutex
 
-	state.LibraryPolicies = map[string][]*v1Policy{}
+	state.LibraryPolicies = map[string][]*das.V1Policy{}
 
 	for i := 0; i < 10; i++ {
 		wg.Add(1)
@@ -1013,7 +1012,7 @@ func fetchLibraryPolicies(c *DASClient, state *dasState) error {
 
 				// List libraries differs from systems/stacks. Result does not
 				// have policies on it. Need to fetch each library individually.
-				resp, err := c.JSON("v1/libraries/"+l.Id, DASParams{
+				resp, err := c.JSON("v1/libraries/"+l.Id, das.Params{
 					Query: map[string]string{
 						"rule_counts": "false",
 						"modules":     "false",
@@ -1051,18 +1050,18 @@ func fetchLibraryPolicies(c *DASClient, state *dasState) error {
 	return nil
 }
 
-func fetchPolicies(c *DASClient, refs []v1PoliciesRef) ([]*v1Policy, error) {
-	var result []*v1Policy
+func fetchPolicies(c *das.Client, refs []das.V1PoliciesRef) ([]*das.V1Policy, error) {
+	var result []*das.V1Policy
 	for _, ref := range refs {
 		resp, err := c.JSON("v1/policies/" + ref.Id)
 		if err != nil {
-			if dErr, ok := err.(DASError); ok && dErr.StatusCode == http.StatusNotFound {
+			if dErr, ok := err.(das.Error); ok && dErr.StatusCode == http.StatusNotFound {
 				log.Printf("Non-existent policy reference: %v", ref.Id)
 				continue
 			}
 			return nil, err
 		}
-		var p v1Policy
+		var p das.V1Policy
 		if err := resp.Decode(&p); err != nil {
 			return nil, err
 		}
@@ -1123,165 +1122,6 @@ func (idx *libraryPackageIndex) Add(path string, lib string) {
 		curr = node
 	}
 	curr.library = lib
-}
-
-type v1System struct {
-	Id            string          `json:"id"`
-	Name          string          `json:"name"`
-	Type          string          `json:"type"`
-	Policies      []v1PoliciesRef `json:"policies"`
-	SourceControl *struct {
-		Origin v1GitRepoConfig `json:"origin"`
-	} `json:"source_control"`
-	MatchingStacks []string `json:"matching_stacks"`
-}
-
-type v1Library struct {
-	Id            string          `json:"id"`
-	Policies      []v1PoliciesRef `json:"policies"`
-	SourceControl *struct {
-		UseWorkspaceSettings bool            `json:"use_workspace_settings"`
-		LibraryOrigin        v1GitRepoConfig `json:"library_origin"`
-	} `json:"source_control"`
-}
-
-type v1Stack struct {
-	Name          string          `json:"name"`
-	Id            string          `json:"id"`
-	Type          string          `json:"type"`
-	Policies      []v1PoliciesRef `json:"policies"`
-	SourceControl *struct {
-		UseWorkspaceSettings bool            `json:"use_workspace_settings"`
-		Origin               v1GitRepoConfig `json:"origin"`
-		StackOrigin          v1GitRepoConfig `json:"stack_origin"`
-	} `json:"source_control"`
-}
-
-type v1GitRepoConfig struct {
-	Commit         string `json:"commit"`
-	Path           string `json:"path"`
-	Reference      string `json:"reference"`
-	Credentials    string `json:"credentials"`
-	SSHCredentials struct {
-		Passphrase string `json:"passphrase"`
-		PrivateKey string `json:"private_key"`
-	} `json:"ssh_credentials"`
-	URL string `json:"url"`
-}
-
-type v1Bundle struct {
-	DownloadURL string `json:"download_url"`
-	SBOM        struct {
-		Origins []struct {
-			Roots []string `json:"roots"`
-		} `json:"origins"`
-	} `json:"sbom"`
-}
-
-type v1Decisions struct {
-	Items []v1Decision `json:"items"`
-}
-
-type v1Decision struct {
-	DecisionId string `json:"decision_id"`
-	Bundles    map[string]struct {
-		Revision string `json:"revision"`
-	} `json:"bundles"`
-	Path   string       `json:"path"`
-	Input  *interface{} `json:"input"`
-	Result *interface{} `json:"result"`
-}
-
-type v1PoliciesRef struct {
-	Id string `json:"id"`
-}
-
-type v1Policy struct {
-	Package string            `json:"package"`
-	Modules map[string]string `json:"modules"`
-}
-
-type DASClient struct {
-	url    string
-	token  string
-	client *http.Client
-}
-
-type DASResponse struct {
-	Result    json.RawMessage `json:"result"`
-	RequestId string          `json:"request_id"`
-}
-
-func (r *DASResponse) Decode(x interface{}) error {
-	buf := bytes.NewBuffer(r.Result)
-	decoder := json.NewDecoder(buf)
-	return decoder.Decode(x)
-}
-
-type DASParams struct {
-	Query map[string]string
-}
-
-func (c *DASClient) Get(path string, params ...DASParams) (*http.Response, error) {
-	url := fmt.Sprintf("%v/%v", c.url, "/"+strings.TrimPrefix(path, "/"))
-
-	var p DASParams
-	if len(params) > 0 {
-		p = params[0]
-	}
-
-	if len(p.Query) > 0 {
-
-		qps := []string{}
-		for key, value := range p.Query {
-			qps = append(qps, fmt.Sprintf("%v=%v", neturl.QueryEscape(key), neturl.QueryEscape(value)))
-		}
-
-		url += "?" + strings.Join(qps, "&")
-	}
-
-	req, err := http.NewRequest("GET", url, nil)
-	if err != nil {
-		return nil, err
-	}
-
-	req.Header.Add("authorization", fmt.Sprintf("Bearer %v", c.token))
-
-	resp, err := c.client.Do(req)
-	if err != nil {
-		return nil, err
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, DASError{URL: url, Method: "GET", StatusCode: resp.StatusCode}
-	}
-
-	return resp, nil
-
-}
-
-type DASError struct {
-	URL        string
-	Method     string
-	StatusCode int
-}
-
-func (e DASError) Error() string {
-	return fmt.Sprintf("DAS returned unexpected status code (%v) for %v %v", e.StatusCode, e.Method, e.URL)
-}
-
-func (c *DASClient) JSON(path string, params ...DASParams) (*DASResponse, error) {
-
-	resp, err := c.Get(path, params...)
-	if err != nil {
-		return nil, err
-	}
-
-	defer resp.Body.Close()
-
-	decoder := json.NewDecoder(resp.Body)
-	var r DASResponse
-	return &r, decoder.Decode(&r)
 }
 
 func rootsPrefix(roots []string, path string) bool {

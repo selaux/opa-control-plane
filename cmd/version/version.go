@@ -8,6 +8,7 @@ import (
 	"runtime/debug"
 
 	"github.com/spf13/cobra"
+	"github.com/tsandall/lighthouse/cmd"
 )
 
 var (
@@ -15,7 +16,7 @@ var (
 )
 
 func init() {
-	cmd := &cobra.Command{
+	version := &cobra.Command{
 		Use:   "version",
 		Short: "Print the version of Lighthouse",
 		Long:  "Show version and build information for Lighthouse.",
@@ -24,8 +25,8 @@ func init() {
 		},
 	}
 
-	RootCommand.AddCommand(
-		cmd,
+	cmd.RootCommand.AddCommand(
+		version,
 	)
 }
 

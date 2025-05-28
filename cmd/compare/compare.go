@@ -17,6 +17,8 @@ import (
 	"github.com/open-policy-agent/opa/ast"
 	"github.com/open-policy-agent/opa/bundle"
 	"github.com/spf13/cobra"
+	"github.com/tsandall/lighthouse/cmd"
+	"github.com/tsandall/lighthouse/cmd/internal/das"
 	"github.com/tsandall/lighthouse/internal/config"
 	"github.com/tsandall/lighthouse/internal/s3"
 )
@@ -82,7 +84,7 @@ func init() {
 
 	params.styraToken = os.Getenv("STYRA_TOKEN")
 
-	cmd := &cobra.Command{
+	compare := &cobra.Command{
 		Use:   "compare",
 		Short: "Compare Lighthouse configuration and bundles to version from Styra",
 		Run: func(cmd *cobra.Command, args []string) {
@@ -92,11 +94,11 @@ func init() {
 		},
 	}
 
-	cmd.Flags().StringSliceVarP(&params.configFile, "config", "c", []string{"config.yaml"}, "Path to the configuration file")
-	cmd.Flags().StringVarP(&params.styraURL, "url", "u", "", "Styra tenant URL (e.g., https://expo.styra.com)")
+	compare.Flags().StringSliceVarP(&params.configFile, "config", "c", []string{"config.yaml"}, "Path to the configuration file")
+	compare.Flags().StringVarP(&params.styraURL, "url", "u", "", "Styra tenant URL (e.g., https://expo.styra.com)")
 
-	RootCommand.AddCommand(
-		cmd,
+	cmd.RootCommand.AddCommand(
+		compare,
 	)
 }
 
@@ -104,7 +106,7 @@ func doCompare(params compareParams) error {
 
 	log.Printf("Loading configuration from %v...", params.configFile)
 
-	bs, err := getMergedConfig(params.configFile)
+	bs, err := config.Merge(params.configFile)
 	if err != nil {
 		return err
 	}
@@ -133,22 +135,22 @@ func doCompare(params compareParams) error {
 		return sortedSystems[i].Name < sortedSystems[j].Name
 	})
 
-	styra := DASClient{
-		url:    url,
-		token:  params.styraToken,
-		client: http.DefaultClient}
+	styra := das.Client{
+		URL:    url,
+		Token:  params.styraToken,
+		Client: http.DefaultClient}
 	log.Println("Fetching systems...")
 	resp, err := styra.JSON("v1/systems")
 	if err != nil {
 		return err
 	}
 
-	var v1systems []*v1System
+	var v1systems []*das.V1System
 	if err := resp.Decode(&v1systems); err != nil {
 		return err
 	}
 
-	v1SystemsByName := map[string]*v1System{}
+	v1SystemsByName := map[string]*das.V1System{}
 	for _, system := range v1systems {
 		v1SystemsByName[system.Name] = system
 	}
@@ -191,7 +193,7 @@ func doCompare(params compareParams) error {
 	return nil
 }
 
-func compareSystem(ctx context.Context, client *DASClient, v1 *v1System, system *config.System) (*compareSystemReport, error) {
+func compareSystem(ctx context.Context, client *das.Client, v1 *das.V1System, system *config.System) (*compareSystemReport, error) {
 
 	log.Printf("Checking system %q...", system.Name)
 
@@ -218,12 +220,12 @@ func compareSystem(ctx context.Context, client *DASClient, v1 *v1System, system 
 		return nil, err
 	}
 
-	var v1bundles []*v1Bundle
+	var v1bundles []*das.V1Bundle
 	if err := resp.Decode(&v1bundles); err != nil {
 		return nil, err
 	}
 
-	downloadResp, err := client.Get(strings.TrimPrefix(v1bundles[0].DownloadURL, client.url))
+	downloadResp, err := client.Get(strings.TrimPrefix(v1bundles[0].DownloadURL, client.URL))
 	if err != nil {
 		return nil, err
 	}
