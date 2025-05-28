@@ -103,7 +103,7 @@ func Run(params Options) error {
 		Token:  params.Token,
 		Client: http.DefaultClient}
 
-	log.Println("Fetching systems...")
+	log.Println("Fetching systems")
 	resp, err := styra.JSON("v1/systems")
 	if err != nil {
 		return err
@@ -270,7 +270,24 @@ func saveFailure(b *bundle.Bundle, d das.V1Decision) (string, error) {
 
 	enc := json.NewEncoder(decisionFile)
 	enc.SetIndent("", "  ")
-	return path, enc.Encode(d)
+	if err := enc.Encode(d); err != nil {
+		return "", err
+	}
+
+	inputFile, err := os.Create(filepath.Join(path, "input.json"))
+	if err != nil {
+		return "", err
+	}
+
+	defer inputFile.Close()
+
+	enc = json.NewEncoder(inputFile)
+	enc.SetIndent("", "  ")
+	if enc.Encode(d.Input) != nil {
+		return "", err
+	}
+
+	return path, nil
 }
 
 func compareResults(d *das.V1Decision, rs rego.ResultSet) error {
