@@ -11,6 +11,7 @@ import (
 	"reflect"
 
 	"github.com/gobwas/glob"
+	"github.com/swaggest/jsonschema-go"
 	"gopkg.in/yaml.v3"
 )
 
@@ -266,6 +267,19 @@ type Selector struct {
 	m map[string][]glob.Glob // Pre-compiled glob patterns for faster matching
 }
 
+func (s *Selector) PrepareJSONSchema(schema *jsonschema.Schema) error {
+	str := jsonschema.String.ToSchemaOrBool()
+
+	arr := jsonschema.Array.ToSchemaOrBool()
+	arr.TypeObject.ItemsEns().SchemaOrBool = &str
+
+	schema.Type = nil
+	schema.AddType(jsonschema.Object)
+	schema.AdditionalProperties = &arr
+
+	return nil
+}
+
 // Matches checks if the given labels match the selector.
 func (s *Selector) Matches(labels Labels) bool {
 	for expLabel, expValues := range s.m {
@@ -424,6 +438,12 @@ type SecretRef struct {
 	value *Secret
 }
 
+func (s *SecretRef) PrepareJSONSchema(schema *jsonschema.Schema) error {
+	schema.Type = nil
+	schema.AddType(jsonschema.String)
+	return nil
+}
+
 func (s *SecretRef) Resolve() (*Secret, error) {
 	if s.value == nil {
 		return nil, fmt.Errorf("secret %q not found", s.Name)
@@ -487,6 +507,12 @@ type Secret struct {
 
 func (s *Secret) Ref() *SecretRef {
 	return &SecretRef{Name: s.Name, value: s}
+}
+
+func (s *Secret) PrepareJSONSchema(schema *jsonschema.Schema) error {
+	schema.Type = nil
+	schema.AddType(jsonschema.Object)
+	return nil
 }
 
 func (s *Secret) MarshalYAML() (interface{}, error) {
