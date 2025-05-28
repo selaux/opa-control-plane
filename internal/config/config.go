@@ -434,7 +434,7 @@ func (g *Git) Equal(other *Git) bool {
 }
 
 type SecretRef struct {
-	Name  string `json:"name,omitempty" yaml:"name,omitempty"`
+	Name  string `json:"-" yaml:"-"`
 	value *Secret
 }
 
@@ -502,7 +502,7 @@ func (s *SecretRef) Equal(other *SecretRef) bool {
 // for Git synchronization, datasources, etc.
 type Secret struct {
 	Name  string                 `json:"-" yaml:"-"`
-	Value map[string]interface{} `json:"value,omitempty" yaml:"value,omitempty"`
+	Value map[string]interface{} `json:"-" yaml:"-"`
 }
 
 func (s *Secret) Ref() *SecretRef {
