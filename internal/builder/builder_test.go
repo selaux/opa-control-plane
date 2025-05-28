@@ -325,6 +325,10 @@ func TestBuilder(t *testing.T) {
 					log.Fatal(err)
 				}
 
+				if *bundle.Manifest.RegoVersion != 0 {
+					t.Fatal("expected rego version to be 0, got", *bundle.Manifest.RegoVersion)
+				}
+
 				fileMap := map[string]string{}
 
 				for _, mf := range bundle.Modules {

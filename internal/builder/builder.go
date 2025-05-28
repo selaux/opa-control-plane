@@ -202,6 +202,7 @@ func (b *Builder) Build(ctx context.Context) error {
 		}
 	}
 
+	result.Manifest.SetRegoVersion(ast.RegoV0)
 	return bundle.Write(b.output, result)
 }
 
