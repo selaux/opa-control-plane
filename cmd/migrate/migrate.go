@@ -3,6 +3,7 @@ package migrate
 import (
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"log"
 	"net/http"
@@ -143,50 +144,52 @@ var baseLibPackageIndex = func() map[string]*libraryPackageIndex {
 	return result
 }()
 
-type migrateParams struct {
-	token    string
-	url      string
-	systemId string
-	prune    bool
+type Options struct {
+	Token    string
+	URL      string
+	SystemId string
+	Prune    bool
+	Output   io.Writer
 }
 
 func init() {
 
-	var params migrateParams
+	var params Options
 
-	params.token = os.Getenv("STYRA_TOKEN")
+	params.Token = os.Getenv("STYRA_TOKEN")
 
 	migrate := &cobra.Command{
 		Use:   "migrate",
 		Short: "Migrate configuration and policies from Styra",
 		Run: func(cmd *cobra.Command, args []string) {
-			if err := doMigrate(params); err != nil {
+			params.Output = os.Stdout
+			if err := Run(params); err != nil {
 				log.Fatal(err)
 			}
 		},
 	}
 
-	migrate.Flags().StringVarP(&params.url, "url", "u", "", "Styra tenant URL (e.g., https://expo.styra.com)")
-	migrate.Flags().StringVarP(&params.systemId, "system-id", "", "", "Scope migraton to a specific system (id)")
-	migrate.Flags().BoolVarP(&params.prune, "prune", "", false, "Prune unused resources")
+	migrate.Flags().StringVarP(&params.URL, "url", "u", "", "Styra tenant URL (e.g., https://expo.styra.com)")
+	migrate.Flags().StringVarP(&params.SystemId, "system-id", "", "", "Scope migraton to a specific system (id)")
+	migrate.Flags().BoolVarP(&params.Prune, "prune", "", false, "Prune unused resources")
 
 	cmd.RootCommand.AddCommand(
 		migrate,
 	)
 }
 
-func doMigrate(params migrateParams) error {
-	if params.url == "" {
+func Run(params Options) error {
+	if params.URL == "" {
 		return errors.New("please set Styra DAS URL with -u flag (e.g., https://example.styra.com)")
 	}
 
-	if params.token == "" {
+	if params.Token == "" {
 		return errors.New("please set STYRA_TOKEN environment variable to token with WorkspaceViewer permission")
 	}
 
 	c := das.Client{
-		URL:    params.url,
-		Token:  params.token,
+		URL:    params.URL,
+		Token:  params.Token,
 		Client: http.DefaultClient,
 	}
 
@@ -197,10 +200,10 @@ func doMigrate(params migrateParams) error {
 		Stacks:    map[string]*config.Stack{},
 	}
 
-	output.Metadata.ExportedFrom = params.url
+	output.Metadata.ExportedFrom = params.URL
 	output.Metadata.ExportedAt = time.Now().UTC().Format(time.RFC3339)
 
-	state, err := fetchDASState(&c, dasFetchOptions{SystemId: params.systemId})
+	state, err := fetchDASState(&c, dasFetchOptions{SystemId: params.SystemId})
 	if err != nil {
 		return err
 	}
@@ -255,7 +258,7 @@ func doMigrate(params migrateParams) error {
 		return err
 	}
 
-	if params.prune {
+	if params.Prune {
 		stacks, libraries, secrets := pruneConfig(&output)
 		for _, stack := range stacks {
 			log.Printf("Removed unused stack %q", stack.Name)
@@ -275,7 +278,7 @@ func doMigrate(params migrateParams) error {
 		return err
 	}
 
-	fmt.Println(string(bs))
+	fmt.Fprintln(params.Output, string(bs))
 
 	v1SystemsByName := map[string]*das.V1System{}
 	for _, system := range state.SystemsById {
@@ -306,7 +309,7 @@ func doMigrate(params migrateParams) error {
 	return nil
 }
 
-func migrateV1Library(client *das.Client, state *dasState, v1 *das.V1Library) (*config.Library, *config.Secret, error) {
+func migrateV1Library(_ *das.Client, state *dasState, v1 *das.V1Library) (*config.Library, *config.Secret, error) {
 
 	library, secret, err := mapV1LibraryToLibraryAndSecretConfig(v1)
 	if err != nil {

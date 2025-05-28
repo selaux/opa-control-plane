@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"os"
@@ -24,31 +25,33 @@ import (
 	"github.com/tsandall/lighthouse/internal/s3"
 )
 
-type backtestParams struct {
-	configFile   []string
-	styraURL     string
-	styraToken   string
-	numDecisions int
+type Options struct {
+	ConfigFile   []string
+	URL          string
+	Token        string
+	NumDecisions int
+	Output       io.Writer
 }
 
 func init() {
-	var params backtestParams
+	var params Options
 
-	params.styraToken = os.Getenv("STYRA_TOKEN")
+	params.Token = os.Getenv("STYRA_TOKEN")
 
 	backtest := &cobra.Command{
 		Use:   "backtest",
 		Short: "Run decision backtest on Lighthouse bundles against bundles from Styra",
 		Run: func(cmd *cobra.Command, args []string) {
-			if err := doBacktest(params); err != nil {
+			params.Output = os.Stdout
+			if err := Run(params); err != nil {
 				log.Fatal(err)
 			}
 		},
 	}
 
-	backtest.Flags().StringSliceVarP(&params.configFile, "config", "c", []string{"config.yaml"}, "Path to the configuration file")
-	backtest.Flags().StringVarP(&params.styraURL, "url", "u", "", "Styra tenant URL (e.g., https://expo.styra.com)")
-	backtest.Flags().IntVarP(&params.numDecisions, "decisions", "n", 100, "Number of decisions to backtest")
+	backtest.Flags().StringSliceVarP(&params.ConfigFile, "config", "c", []string{"config.yaml"}, "Path to the configuration file")
+	backtest.Flags().StringVarP(&params.URL, "url", "u", "", "Styra tenant URL (e.g., https://expo.styra.com)")
+	backtest.Flags().IntVarP(&params.NumDecisions, "decisions", "n", 100, "Number of decisions to backtest")
 
 	cmd.RootCommand.AddCommand(
 		backtest,
@@ -56,21 +59,26 @@ func init() {
 
 }
 
-type backtestReport struct {
-	ExtraSystems     []string                        `json:"extra_systems,omitempty"`
-	MissingDecisions []string                        `json:"missing_decisions,omitempty"`
-	Systems          map[string]systemBacktestReport `json:"systems,omitempty"`
+type Report struct {
+	ExtraSystems     []string                `json:"extra_systems,omitempty"`
+	MissingDecisions []string                `json:"missing_decisions,omitempty"`
+	Systems          map[string]SystemReport `json:"systems,omitempty"`
 }
 
-type systemBacktestReport struct {
+type SystemReport struct {
 	Status  string         `json:"status,omitempty"`
 	Message string         `json:"message,omitempty"`
 	Details []DecisionDiff `json:"details,omitempty"`
 }
 
-func doBacktest(params backtestParams) error {
+type DecisionDiff struct {
+	Reason string `json:"reason"`
+	Path   string `json:"path"`
+}
 
-	bs, err := config.Merge(params.configFile)
+func Run(params Options) error {
+
+	bs, err := config.Merge(params.ConfigFile)
 	if err != nil {
 		return err
 	}
@@ -82,8 +90,8 @@ func doBacktest(params backtestParams) error {
 
 	url := cfg.Metadata.ExportedFrom
 
-	if params.styraURL != "" {
-		url = params.styraURL
+	if params.URL != "" {
+		url = params.URL
 	}
 
 	if url == "" {
@@ -92,7 +100,7 @@ func doBacktest(params backtestParams) error {
 
 	styra := das.Client{
 		URL:    url,
-		Token:  params.styraToken,
+		Token:  params.Token,
 		Client: http.DefaultClient}
 
 	log.Println("Fetching systems...")
@@ -111,15 +119,15 @@ func doBacktest(params backtestParams) error {
 		v1SystemsByName[system.Name] = system
 	}
 
-	report := backtestReport{
-		Systems: map[string]systemBacktestReport{},
+	report := Report{
+		Systems: map[string]SystemReport{},
 	}
 
 	ctx := context.Background()
 
 	for _, system := range cfg.Systems {
-		if err := backtestSystem(ctx, params.numDecisions, &styra, v1SystemsByName, system, &report); err != nil {
-			report.Systems[system.Name] = systemBacktestReport{
+		if err := backtestSystem(ctx, params.NumDecisions, &styra, v1SystemsByName, system, &report); err != nil {
+			report.Systems[system.Name] = SystemReport{
 				Status:  "error",
 				Message: err.Error(),
 			}
@@ -131,12 +139,12 @@ func doBacktest(params backtestParams) error {
 		return err
 	}
 
-	fmt.Fprintln(os.Stdout, string(bs))
+	fmt.Fprintln(params.Output, string(bs))
 
 	return nil
 }
 
-func backtestSystem(ctx context.Context, n int, styra *das.Client, byName map[string]*das.V1System, system *config.System, report *backtestReport) error {
+func backtestSystem(ctx context.Context, n int, styra *das.Client, byName map[string]*das.V1System, system *config.System, report *Report) error {
 
 	v1, ok := byName[system.Name]
 	if !ok {
@@ -214,7 +222,7 @@ func backtestSystem(ctx context.Context, n int, styra *das.Client, byName map[st
 
 	if len(diffs) == 0 {
 		// TODO(tsandall): improve report to include latency comparison
-		report.Systems[system.Name] = systemBacktestReport{
+		report.Systems[system.Name] = SystemReport{
 			Status:  "passed",
 			Message: fmt.Sprintf("evaluated %v decisions in %v and found no difference(s)", len(decisions.Items), time.Since(t0)),
 		}
@@ -225,7 +233,7 @@ func backtestSystem(ctx context.Context, n int, styra *das.Client, byName map[st
 			diffs = diffs[:10]
 			reportLimit = " (report limit: 10)"
 		}
-		report.Systems[system.Name] = systemBacktestReport{
+		report.Systems[system.Name] = SystemReport{
 			Status:  "failed",
 			Message: fmt.Sprintf("evaluated %v decisions in %v and found %v difference(s)%v", len(decisions.Items), time.Since(t0), nDiffs, reportLimit),
 			Details: diffs,
@@ -263,11 +271,6 @@ func saveFailure(b *bundle.Bundle, d das.V1Decision) (string, error) {
 	enc := json.NewEncoder(decisionFile)
 	enc.SetIndent("", "  ")
 	return path, enc.Encode(d)
-}
-
-type DecisionDiff struct {
-	Reason string `json:"reason"`
-	Path   string `json:"path"`
 }
 
 func compareResults(d *das.V1Decision, rs rego.ResultSet) error {
