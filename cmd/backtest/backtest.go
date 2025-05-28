@@ -30,28 +30,30 @@ type Options struct {
 	URL          string
 	Token        string
 	NumDecisions int
+	PolicyType   string
 	Output       io.Writer
 }
 
 func init() {
-	var params Options
+	var opts Options
 
-	params.Token = os.Getenv("STYRA_TOKEN")
+	opts.Token = os.Getenv("STYRA_TOKEN")
 
 	backtest := &cobra.Command{
 		Use:   "backtest",
-		Short: "Run decision backtest on Lighthouse bundles against bundles from Styra",
+		Short: "Run backtest on Lighthouse bundles against decisions from Styra",
 		Run: func(cmd *cobra.Command, args []string) {
-			params.Output = os.Stdout
-			if err := Run(params); err != nil {
+			opts.Output = os.Stdout
+			if err := Run(opts); err != nil {
 				log.Fatal(err)
 			}
 		},
 	}
 
-	backtest.Flags().StringSliceVarP(&params.ConfigFile, "config", "c", []string{"config.yaml"}, "Path to the configuration file")
-	backtest.Flags().StringVarP(&params.URL, "url", "u", "", "Styra tenant URL (e.g., https://expo.styra.com)")
-	backtest.Flags().IntVarP(&params.NumDecisions, "decisions", "n", 100, "Number of decisions to backtest")
+	backtest.Flags().StringSliceVarP(&opts.ConfigFile, "config", "c", []string{"config.yaml"}, "Path to the configuration file")
+	backtest.Flags().StringVarP(&opts.URL, "url", "u", "", "Styra tenant URL (e.g., https://expo.styra.com)")
+	backtest.Flags().IntVarP(&opts.NumDecisions, "decisions", "n", 100, "Number of decisions to backtest")
+	backtest.Flags().StringVarP(&opts.PolicyType, "policy-type", "", "", "Specify policy type to backtest against (e.g., validating, mutating, etc.)")
 
 	cmd.RootCommand.AddCommand(
 		backtest,
@@ -76,9 +78,9 @@ type DecisionDiff struct {
 	Path   string `json:"path"`
 }
 
-func Run(params Options) error {
+func Run(opts Options) error {
 
-	bs, err := config.Merge(params.ConfigFile)
+	bs, err := config.Merge(opts.ConfigFile)
 	if err != nil {
 		return err
 	}
@@ -90,8 +92,8 @@ func Run(params Options) error {
 
 	url := cfg.Metadata.ExportedFrom
 
-	if params.URL != "" {
-		url = params.URL
+	if opts.URL != "" {
+		url = opts.URL
 	}
 
 	if url == "" {
@@ -100,7 +102,7 @@ func Run(params Options) error {
 
 	styra := das.Client{
 		URL:    url,
-		Token:  params.Token,
+		Token:  opts.Token,
 		Client: http.DefaultClient}
 
 	log.Println("Fetching systems")
@@ -126,7 +128,8 @@ func Run(params Options) error {
 	ctx := context.Background()
 
 	for _, system := range cfg.Systems {
-		if err := backtestSystem(ctx, params.NumDecisions, &styra, v1SystemsByName, system, &report); err != nil {
+		log.Printf("Backtesting system %q", system.Name)
+		if err := backtestSystem(ctx, opts, &styra, v1SystemsByName, system, &report); err != nil {
 			report.Systems[system.Name] = SystemReport{
 				Status:  "error",
 				Message: err.Error(),
@@ -139,12 +142,12 @@ func Run(params Options) error {
 		return err
 	}
 
-	fmt.Fprintln(params.Output, string(bs))
+	fmt.Fprintln(opts.Output, string(bs))
 
 	return nil
 }
 
-func backtestSystem(ctx context.Context, n int, styra *das.Client, byName map[string]*das.V1System, system *config.System, report *Report) error {
+func backtestSystem(ctx context.Context, opts Options, styra *das.Client, byName map[string]*das.V1System, system *config.System, report *Report) error {
 
 	v1, ok := byName[system.Name]
 	if !ok {
@@ -152,12 +155,18 @@ func backtestSystem(ctx context.Context, n int, styra *das.Client, byName map[st
 		return nil
 	}
 
-	resp, err := styra.JSON("v1/decisions", das.Params{
+	params := das.Params{
 		Query: map[string]string{
-			"limit":  fmt.Sprintf("%d", n),
+			"limit":  fmt.Sprintf("%d", opts.NumDecisions),
 			"system": v1.Id,
 		},
-	})
+	}
+
+	if opts.PolicyType != "" {
+		params.Query["policy_type"] = opts.PolicyType
+	}
+
+	resp, err := styra.JSON("v1/decisions", params)
 	if err != nil {
 		return err
 	}
@@ -206,6 +215,7 @@ func backtestSystem(ctx context.Context, n int, styra *das.Client, byName map[st
 			args = append(args, rego.Input(*d.Input))
 		}
 
+		log.Printf("Evaluating decision %q for system %q", d.DecisionId, system.Name)
 		rs, err := rego.New(args...).Eval(ctx)
 		if err != nil {
 			return err

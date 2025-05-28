@@ -38,6 +38,7 @@ var systemTypeLibraries = []*config.Library{
 		Name: "kubernetes:v2",
 		Requirements: []config.Requirement{
 			{Library: strptr("kubernetes:v2-entrypoint-validating")},
+			{Library: strptr("kubernetes:v2-entrypoint-mutating")},
 			{Library: strptr("kubernetes:v2-conflicts")},
 			{Library: strptr("kubernetes:v2-library")},
 		},
@@ -77,6 +78,10 @@ var baseLibraries = []*config.Library{
 	{
 		Name:    "kubernetes:v2-entrypoint-validating",
 		Builtin: strptr("kubernetes-v2/validating"),
+	},
+	{
+		Name:    "kubernetes:v2-entrypoint-mutating",
+		Builtin: strptr("kubernetes-v2/mutating"),
 	},
 	{
 		Name:    "kubernetes:v2-conflicts",

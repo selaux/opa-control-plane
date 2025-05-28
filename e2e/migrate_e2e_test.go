@@ -42,6 +42,7 @@ func TestMigration(t *testing.T) {
 		systemName      string
 		systemIdEnvName string
 		extraConfigs    map[string]string
+		policyType      string // used to filter decisions for backtest
 	}{
 		{
 			name:            "envoy21",
@@ -102,6 +103,38 @@ func TestMigration(t *testing.T) {
 					},
 				}`,
 			},
+			policyType: "validating",
+		},
+		{
+			name:            "kubernetes2-mutating",
+			systemName:      "Banteng cluster",
+			systemIdEnvName: "STYRA_KUBERNETES_SYSTEM_ID",
+			extraConfigs: map[string]string{
+				"config.d/1-secrets.yaml": `{
+					secrets: {
+						libraries/test/git: {
+							type: http_basic_auth,
+							password: $GITHUB_PASSWORD,
+							username: $GITHUB_USERNAME,
+						},
+					},
+				}`,
+				"config.d/2-storage.yaml": `{
+					systems: {
+						Banteng cluster: {
+							object_storage: {
+								aws: {
+									url: {{ .URL }},
+									bucket: test,
+									region: mock-region,
+									key: bundle.tar.gz,
+								},
+							},
+						},
+					},
+				}`,
+			},
+			policyType: "mutating",
 		},
 	}
 
@@ -193,6 +226,7 @@ func TestMigration(t *testing.T) {
 					URL:          styraURL,
 					Token:        styraToken,
 					NumDecisions: 100,
+					PolicyType:   tc.policyType,
 					Output:       buf,
 				}); err != nil {
 					t.Fatal(err)
