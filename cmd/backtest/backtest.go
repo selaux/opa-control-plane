@@ -253,7 +253,15 @@ func backtestSystem(ctx context.Context, opts Options, styra *das.Client, byName
 	}
 
 	defer opa.Stop(ctx)
-	<-ready
+
+	select {
+	case <-time.After(15 * time.Second):
+		return errors.New("OPA SDK did not become ready in time")
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-ready:
+		// SDK is ready
+	}
 
 	// Re-evaluate decisions
 
