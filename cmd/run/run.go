@@ -68,7 +68,7 @@ func init() {
 	run.Flags().StringSliceVarP(&params.configFile, "config", "c", []string{"config.yaml"}, "Path to the configuration file")
 	run.Flags().StringVarP(&params.persistenceDir, "data-dir", "d", "data", "Path to the persistence directory")
 	run.Flags().BoolVarP(&params.resetPersistence, "reset-persistence", "", false, "Reset the persistence directory (for development purposes)")
-	run.Flags().BoolVarP(&params.singleShot, "single", "", false, "Build system bundles only once")
+	run.Flags().BoolVarP(&params.singleShot, "once", "", false, "Build system bundles only once")
 
 	cmd.RootCommand.AddCommand(
 		run,
