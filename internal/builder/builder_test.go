@@ -28,6 +28,7 @@ func TestBuilder(t *testing.T) {
 	cases := []struct {
 		note     string
 		sources  []sourceMock
+		excluded []string
 		exp      map[string]string
 		expError error
 	}{
@@ -39,9 +40,11 @@ func TestBuilder(t *testing.T) {
 						"/x/x.rego": `package x
 						p := 7`,
 						"/x/y/data.json": `{"A": 7}`,
+						"/x/z/data.json": `{"B": 7}`,
 					},
 				},
 			},
+			excluded: []string{"x/z/data.json"},
 			exp: map[string]string{
 				"/x/x.rego": `package x
 				p := 7`,
@@ -304,6 +307,7 @@ func TestBuilder(t *testing.T) {
 				}
 				b := builder.New().
 					WithSources(srcs).
+					WithExcluded(tc.excluded).
 					WithOutput(buf)
 
 				err := b.Build(context.Background())

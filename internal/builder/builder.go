@@ -13,6 +13,7 @@ import (
 	"github.com/open-policy-agent/opa/bundle"
 	"github.com/open-policy-agent/opa/compile"
 	"github.com/tsandall/lighthouse/internal/config"
+	"github.com/tsandall/lighthouse/internal/util"
 	"github.com/yalue/merged_fs"
 )
 
@@ -28,8 +29,9 @@ type Dir struct {
 }
 
 type Builder struct {
-	sources []*Source
-	output  io.Writer
+	sources  []*Source
+	output   io.Writer
+	excluded []string
 }
 
 func New() *Builder {
@@ -43,6 +45,11 @@ func (b *Builder) WithOutput(w io.Writer) *Builder {
 
 func (b *Builder) WithSources(srcs []*Source) *Builder {
 	b.sources = srcs
+	return b
+}
+
+func (b *Builder) WithExcluded(excluded []string) *Builder {
+	b.excluded = excluded
 	return b
 }
 
@@ -116,8 +123,13 @@ func (b *Builder) Build(ctx context.Context) error {
 		fses = append(fses, os.DirFS(srcDir.Path))
 	}
 
+	fs, err := util.NewFilterFS(merged_fs.MergeMultiple(fses...), b.excluded)
+	if err != nil {
+		return err
+	}
+
 	c := compile.New().
-		WithFS(merged_fs.MergeMultiple(fses...)).
+		WithFS(fs).
 		WithPaths(".")
 	if err := c.Build(ctx); err != nil {
 		return err
