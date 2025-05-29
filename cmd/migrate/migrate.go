@@ -436,72 +436,7 @@ func migrateV1System(client *das.Client, state *dasState, v1 *das.V1System) (*co
 	}
 
 	policies := state.SystemPolicies[v1.Id]
-	typeLib := getSystemTypeLib(v1.Type)
-	excludeLibs := make(map[string]struct{})
-
-	for _, p := range policies {
-		pkg := strings.TrimPrefix(p.Package, "systems/"+v1.Id+"/")
-
-		if rootsPrefix(gitRoots, p.Package) {
-			if typeLib != nil {
-				// If type lib provided file is Git backed then add it to the
-				// exclude list automatically. We assume the user has taken
-				// ownership of it.
-				baseLibs := baseLibPackageIndex[typeLib.Name].Lookup(pkg)
-				for name := range baseLibs {
-					excludeLibs[name] = struct{}{}
-				}
-			}
-		} else {
-			systemFiles := make(map[string]string)
-			for path, str := range p.Modules {
-				systemFiles[strings.TrimPrefix(pkg, "/")+"/"+path] = str
-			}
-
-			if typeLib != nil {
-				// If the type lib provided file is non-Git backed then check if the
-				// file content is the same. If not, add it to the exclude list because
-				// the user has changed it.
-				baseLibs := baseLibPackageIndex[typeLib.Name].Lookup(pkg)
-				files := make(map[string]string)
-				for name := range baseLibs {
-					for path, str := range baseLibFiles[name] {
-						files[strings.TrimPrefix(path, "/")] = str
-					}
-				}
-
-				// If the system files for this package are the same as the type lib then skip
-				// skip them (a requirement will be added below). If they differ then add the base lib
-				// to the exclude list and fallthrough to below to add the files.
-				if reflect.DeepEqual(systemFiles, files) {
-					continue
-				}
-
-				for name := range baseLibs {
-					excludeLibs[name] = struct{}{}
-				}
-			}
-
-			for path, str := range systemFiles {
-				if system.Files == nil {
-					system.Files = make(map[string]string)
-				}
-				system.Files[path] = str
-			}
-		}
-	}
-
-	if typeLib != nil {
-		if len(excludeLibs) == 0 {
-			system.Requirements = append(system.Requirements, typeLib.Requirement())
-		} else {
-			for _, r := range typeLib.Requirements {
-				if _, ok := excludeLibs[*r.Library]; !ok {
-					system.Requirements = append(system.Requirements, r)
-				}
-			}
-		}
-	}
+	system.Files, system.Requirements = migrateV1Policies(v1.Type, "systems/"+v1.Id+"/", policies, gitRoots)
 
 	resp, err = client.JSON(fmt.Sprintf("v1/data/metadata/%v/labels", v1.Id))
 	if err != nil {
@@ -553,6 +488,80 @@ func mapV1SystemToSystemAndSecretConfig(_ *das.Client, v1 *das.V1System) (*confi
 	}
 
 	return &system, secret, nil
+}
+
+func migrateV1Policies(typeName string, nsPrefix string, policies []*das.V1Policy, gitRoots []string) (config.Files, []config.Requirement) {
+
+	typeLib := getSystemTypeLib(typeName)
+	excludeLibs := make(map[string]struct{})
+	var files config.Files
+	var requirements []config.Requirement
+
+	for _, p := range policies {
+		pkg := strings.TrimPrefix(p.Package, nsPrefix)
+
+		if rootsPrefix(gitRoots, p.Package) {
+			if typeLib != nil {
+				// If type lib provided file is Git backed then add it to the
+				// exclude list automatically. We assume the user has taken
+				// ownership of it.
+				baseLibs := baseLibPackageIndex[typeLib.Name].Lookup(pkg)
+				for name := range baseLibs {
+					excludeLibs[name] = struct{}{}
+				}
+			}
+		} else {
+			modules := make(map[string]string)
+			for path, str := range p.Modules {
+				modules[strings.TrimPrefix(pkg, "/")+"/"+path] = str
+			}
+
+			if typeLib != nil {
+				// If the type lib provided file is non-Git backed then check if the
+				// file content is the same. If not, add it to the exclude list because
+				// the user has changed it.
+				baseLibs := baseLibPackageIndex[typeLib.Name].Lookup(pkg)
+				libFiles := make(map[string]string)
+				for name := range baseLibs {
+					for path, str := range baseLibFiles[name] {
+						libFiles[strings.TrimPrefix(path, "/")] = str
+					}
+				}
+
+				// If the system files for this package are the same as the type lib then skip
+				// skip them (a requirement will be added below). If they differ then add the base lib
+				// to the exclude list and fallthrough to below to add the files.
+				if reflect.DeepEqual(modules, libFiles) {
+					continue
+				}
+
+				for name := range baseLibs {
+					excludeLibs[name] = struct{}{}
+				}
+			}
+
+			for path, str := range modules {
+				if files == nil {
+					files = make(config.Files)
+				}
+				files[path] = str
+			}
+		}
+	}
+
+	if typeLib != nil {
+		if len(excludeLibs) == 0 {
+			requirements = append(requirements, typeLib.Requirement())
+		} else {
+			for _, r := range typeLib.Requirements {
+				if _, ok := excludeLibs[*r.Library]; !ok {
+					requirements = append(requirements, r)
+				}
+			}
+		}
+	}
+
+	return files, requirements
 }
 
 func migrateV1Stack(_ *das.Client, state *dasState, v1 *das.V1Stack) (*config.Stack, *config.Library, *config.Secret, error) {
