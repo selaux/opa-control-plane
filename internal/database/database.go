@@ -85,7 +85,8 @@ func (d *Database) InitDB(ctx context.Context, persistenceDir string) error {
 			s3url TEXT,
 			s3region TEXT,
 			s3bucket TEXT,
-			s3key TEXT
+			s3key TEXT,
+			excluded TEXT
 		);`,
 		`CREATE TABLE IF NOT EXISTS libraries (
 			id TEXT PRIMARY KEY,
@@ -275,6 +276,7 @@ func (d *Database) ListSystemsWithGitCredentials() ([]*config.System, error) {
 		systems.s3region,
 		systems.s3bucket,
 		systems.s3key,
+		systems.excluded,
         secrets.id AS secret_id,
 		systems_secrets.ref_type AS secret_ref_type,
         secrets.value AS secret_value,
@@ -303,8 +305,9 @@ func (d *Database) ListSystemsWithGitCredentials() ([]*config.System, error) {
 		var secretId, secretRefType, secretValue *string
 		var ref, gitCommit, path *string
 		var s3url, s3region, s3bucket, s3key *string
+		var excluded *string
 		var reqLib *string
-		if err := rows.Scan(&systemId, &labels, &repo, &ref, &gitCommit, &path, &s3url, &s3region, &s3bucket, &s3key, &secretId, &secretRefType, &secretValue, &reqLib); err != nil {
+		if err := rows.Scan(&systemId, &labels, &repo, &ref, &gitCommit, &path, &s3url, &s3region, &s3bucket, &s3key, &excluded, &secretId, &secretRefType, &secretValue, &reqLib); err != nil {
 			return nil, err
 		}
 
@@ -343,6 +346,12 @@ func (d *Database) ListSystemsWithGitCredentials() ([]*config.System, error) {
 				}
 				if s3url != nil {
 					system.ObjectStorage.AmazonS3.URL = *s3url
+				}
+			}
+
+			if excluded != nil {
+				if err := json.Unmarshal([]byte(*excluded), &system.ExcludedFiles); err != nil {
+					return nil, fmt.Errorf("failed to unmarshal excluded files for %q: %w", system.Name, err)
 				}
 			}
 		}
@@ -662,13 +671,18 @@ func (d *Database) loadSystems(root *config.Root) error {
 			s3key = &system.ObjectStorage.AmazonS3.Key
 		}
 
-		bs, err := json.Marshal(system.Labels)
+		labels, err := json.Marshal(system.Labels)
 		if err != nil {
 			return err
 		}
 
-		if _, err := d.db.Exec(`INSERT OR REPLACE INTO systems (id, labels, repo, ref, gitcommit, path, s3url, s3region, s3bucket, s3key) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-			system.Name, string(bs), system.Git.Repo, system.Git.Reference, system.Git.Commit, system.Git.Path, s3url, s3region, s3bucket, s3key); err != nil {
+		excluded, err := json.Marshal(system.ExcludedFiles)
+		if err != nil {
+			return err
+		}
+
+		if _, err := d.db.Exec(`INSERT OR REPLACE INTO systems (id, labels, repo, ref, gitcommit, path, s3url, s3region, s3bucket, s3key, excluded) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			system.Name, string(labels), system.Git.Repo, system.Git.Reference, system.Git.Commit, system.Git.Path, s3url, s3region, s3bucket, s3key, string(excluded)); err != nil {
 			return err
 		}
 

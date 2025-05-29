@@ -112,6 +112,7 @@ func (w *SystemWorker) Execute() time.Time {
 
 	b := builder.New().
 		WithSources(w.sources).
+		WithExcluded(w.systemConfig.ExcludedFiles).
 		WithOutput(buffer)
 
 	err := b.Build(ctx)

@@ -122,6 +122,7 @@ type System struct {
 	Datasources   []Datasource  `json:"datasources,omitempty" yaml:"datasources,omitempty"`
 	Files         Files         `json:"files,omitempty" yaml:"files,omitempty"`
 	Requirements  []Requirement `json:"requirements,omitempty" yaml:"requirements,omitempty"`
+	ExcludedFiles []string      `json:"excluded_files,omitempty" yaml:"excluded_files,omitempty"`
 }
 
 type Labels map[string]string
@@ -195,6 +196,40 @@ func (f *Files) unmarshal(raw map[string]string) error {
 	return nil
 }
 
+func (s *System) UnmarshalJSON(bs []byte) error {
+	type rawSystem System // avoid recursive calls to UnmarshalJSON by type aliasing
+	var raw rawSystem
+
+	if err := json.Unmarshal(bs, &raw); err != nil {
+		return fmt.Errorf("failed to decode System: %w", err)
+	}
+
+	*s = System(raw)
+	return s.validate()
+}
+
+func (s *System) UnmarshalYAML(node *yaml.Node) error {
+	type rawSystem System // avoid recursive calls to UnmarshalJSON by type aliasing
+	var raw rawSystem
+
+	if err := node.Decode(&raw); err != nil {
+		return fmt.Errorf("failed to decode System: %w", err)
+	}
+
+	*s = System(raw)
+	return s.validate()
+}
+
+func (s *System) validate() error {
+	for _, pattern := range s.ExcludedFiles {
+		if _, err := glob.Compile(pattern); err != nil {
+			return fmt.Errorf("failed to compile excluded file pattern %q: %w", pattern, err)
+		}
+	}
+
+	return nil
+}
+
 func (s *System) Equal(other *System) bool {
 	if s == other {
 		return true
@@ -204,7 +239,13 @@ func (s *System) Equal(other *System) bool {
 		return false
 	}
 
-	return s.Name == other.Name && s.Git.Equal(&other.Git) && s.ObjectStorage.Equal(&other.ObjectStorage) && equalDatasources(s.Datasources, other.Datasources) && s.Files.Equal(other.Files) && equalRequirements(s.Requirements, other.Requirements)
+	return s.Name == other.Name &&
+		s.Git.Equal(&other.Git) &&
+		s.ObjectStorage.Equal(&other.ObjectStorage) &&
+		equalDatasources(s.Datasources, other.Datasources) &&
+		s.Files.Equal(other.Files) &&
+		equalRequirements(s.Requirements, other.Requirements) &&
+		equalStringSets(s.ExcludedFiles, other.ExcludedFiles)
 }
 
 func equalRequirements(a, b []Requirement) bool {
