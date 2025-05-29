@@ -7,8 +7,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"log"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -17,7 +19,7 @@ import (
 	"github.com/akedrou/textdiff"
 	"github.com/open-policy-agent/opa/ast"
 	"github.com/open-policy-agent/opa/bundle"
-	"github.com/open-policy-agent/opa/rego"
+	"github.com/open-policy-agent/opa/sdk"
 	"github.com/spf13/cobra"
 	"github.com/tsandall/lighthouse/cmd"
 	"github.com/tsandall/lighthouse/cmd/internal/das"
@@ -192,7 +194,12 @@ func backtestSystem(ctx context.Context, opts Options, styra *das.Client, byName
 		return err
 	}
 
-	a, err := bundle.NewReader(r).Read()
+	b, err := ioutil.ReadAll(r)
+	if err != nil {
+		return err
+	}
+
+	a, err := bundle.NewReader(bytes.NewReader(b)).Read()
 	if err != nil {
 		return err
 	}
@@ -201,27 +208,78 @@ func backtestSystem(ctx context.Context, opts Options, styra *das.Client, byName
 
 	var diffs []DecisionDiff
 
-	for _, d := range decisions.Items {
+	// Start a HTTP server for bundle.
 
-		var args []func(*rego.Rego)
-		args = append(args, rego.ParsedBundle("", &a))
-		path := []*ast.Term{ast.DefaultRootDocument}
-		for _, k := range strings.Split(d.Path, "/") {
-			path = append(path, ast.StringTerm(k))
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		files := map[string][]byte{
+			"/bundle.tar.gz": b,
 		}
 
-		args = append(args, rego.Query(ast.RefTerm(path...).String()))
+		content, ok := files[r.URL.Path]
+		if !ok {
+			http.Error(w, "file not found", http.StatusNotFound)
+			return
+		}
+
+		if _, err := w.Write([]byte(content)); err != nil {
+			http.Error(w, "failed to write response", http.StatusInternalServerError)
+		}
+	}))
+
+	defer ts.Close()
+
+	// Start OPA SDK
+
+	config := fmt.Sprintf(`{
+                "services": {
+                        "test": {
+                                "url": %q
+                        }
+                },
+                "bundles": {
+                        "test": {
+                                "resource": "/bundle.tar.gz"
+                        }
+                }
+        }`, ts.URL)
+
+	ready := make(chan struct{})
+	opa, err := sdk.New(ctx, sdk.Options{
+		Config: strings.NewReader(config),
+		Ready:  ready,
+	})
+	if err != nil {
+		return err
+	}
+
+	defer opa.Stop(ctx)
+	<-ready
+
+	// Re-evaluate decisions
+
+	for _, d := range decisions.Items {
+
+		options := sdk.DecisionOptions{
+			Path: d.Path,
+		}
 		if d.Input != nil {
-			args = append(args, rego.Input(*d.Input))
+			options.Input = *d.Input
 		}
 
 		log.Printf("Evaluating decision %q for system %q", d.DecisionId, system.Name)
-		rs, err := rego.New(args...).Eval(ctx)
-		if err != nil {
+
+		var result *interface{}
+
+		r, err := opa.Decision(ctx, options)
+		if err != nil && !sdk.IsUndefinedErr(err) {
 			return err
+		} else if sdk.IsUndefinedErr(err) {
+			result = nil
+		} else {
+			result = &r.Result
 		}
 
-		if err := compareResults(&d, rs); err != nil {
+		if err := compareResults(&d, result); err != nil {
 			path, innerErr := saveFailure(&a, d)
 			if innerErr != nil {
 				return innerErr
@@ -300,20 +358,20 @@ func saveFailure(b *bundle.Bundle, d das.V1Decision) (string, error) {
 	return path, nil
 }
 
-func compareResults(d *das.V1Decision, rs rego.ResultSet) error {
+func compareResults(d *das.V1Decision, r *interface{}) error {
 
 	if d.Result == nil {
-		if len(rs) > 0 {
+		if r != nil {
 			return errors.New("logged decision was undefined but bundle decision was not")
 		}
 		return nil
 	}
 
-	if len(rs) == 0 {
+	if r == nil {
 		return errors.New("logged decision was defined but bundle decision was not")
 	}
 
-	a, err := ast.InterfaceToValue(rs[0].Expressions[0].Value)
+	a, err := ast.InterfaceToValue(*r)
 	if err != nil {
 		return err
 	}
@@ -325,7 +383,7 @@ func compareResults(d *das.V1Decision, rs rego.ResultSet) error {
 
 	if a.Compare(b) != 0 {
 
-		aBytes, err := json.MarshalIndent(rs[0].Expressions[0].Value, "", "  ")
+		aBytes, err := json.MarshalIndent(*r, "", "  ")
 		if err != nil {
 			return err
 		}
