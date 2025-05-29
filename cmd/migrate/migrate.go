@@ -175,11 +175,12 @@ var baseLibPackageIndex = func() map[string]*libraryPackageIndex {
 }()
 
 type Options struct {
-	Token    string
-	URL      string
-	SystemId string
-	Prune    bool
-	Output   io.Writer
+	Token       string
+	URL         string
+	SystemId    string
+	Prune       bool
+	Datasources bool
+	Output      io.Writer
 }
 
 func init() {
@@ -202,6 +203,7 @@ func init() {
 	migrate.Flags().StringVarP(&params.URL, "url", "u", "", "Styra tenant URL (e.g., https://expo.styra.com)")
 	migrate.Flags().StringVarP(&params.SystemId, "system-id", "", "", "Scope migraton to a specific system (id)")
 	migrate.Flags().BoolVarP(&params.Prune, "prune", "", false, "Prune unused resources")
+	migrate.Flags().BoolVarP(&params.Datasources, "datasources", "", false, "Copy datasource content")
 
 	cmd.RootCommand.AddCommand(
 		migrate,
@@ -259,7 +261,7 @@ func Run(params Options) error {
 	}
 
 	for _, system := range state.SystemsById {
-		sc, secret, err := migrateV1System(&c, state, system)
+		sc, secret, err := migrateV1System(&c, state, system, params.Datasources)
 		if err != nil {
 			return err
 		}
@@ -409,7 +411,7 @@ func mapV1LibraryToLibraryAndSecretConfig(v1 *das.V1Library) (*config.Library, *
 	return &library, secret, nil
 }
 
-func migrateV1System(client *das.Client, state *dasState, v1 *das.V1System) (*config.System, *config.Secret, error) {
+func migrateV1System(client *das.Client, state *dasState, v1 *das.V1System, datasources bool) (*config.System, *config.Secret, error) {
 
 	system, secret, err := mapV1SystemToSystemAndSecretConfig(client, v1)
 	if err != nil {
@@ -452,6 +454,33 @@ func migrateV1System(client *das.Client, state *dasState, v1 *das.V1System) (*co
 		}
 		system.Labels = x.Labels
 		system.Labels["system-type"] = v1.Type // TODO(tsandall): remove template. prefix?
+	}
+
+	if datasources {
+		log.Printf("Fetching datasources for system %q", v1.Name)
+		for _, ref := range v1.Datasources {
+			resp, err := client.JSON("v1/datasources/" + ref.Id)
+			if err != nil {
+				return nil, nil, err
+			}
+
+			var ds das.V1Datasource
+			if err := resp.Decode(&ds); err != nil {
+				return nil, nil, err
+			}
+
+			if ds.Category == "rest" && ds.Type == "push" {
+				files, err := migrateV1PushDatasource(client, "systems/"+v1.Id+"/", ds.Id)
+				if err != nil {
+					return nil, nil, err
+				}
+				for path, content := range files {
+					system.Files[path] = content
+				}
+			} else {
+				log.Printf("Unsupported datasource category/type: %v/%v", ds.Category, ds.Type)
+			}
+		}
 	}
 
 	return system, secret, nil
@@ -565,6 +594,17 @@ func migrateV1Policies(typeName string, nsPrefix string, policies []*das.V1Polic
 	}
 
 	return files, requirements
+}
+
+func migrateV1PushDatasource(c *das.Client, nsPrefix string, id string) (config.Files, error) {
+	resp, err := c.JSON("v1/data/" + id)
+	if err != nil {
+		return nil, err
+	}
+
+	result := make(config.Files)
+	result[strings.TrimPrefix(id, nsPrefix)+"/data.json"] = string(resp.Result)
+	return result, nil
 }
 
 func migrateV1Stack(_ *das.Client, state *dasState, v1 *das.V1Stack) (*config.Stack, *config.Library, *config.Secret, error) {
@@ -880,6 +920,7 @@ func (g graph) dfs(n string, iter func(node), visited map[string]struct{}) {
 }
 
 type dasState struct {
+	DatasourcesById map[string]*das.V1Datasource
 	SystemsById     map[string]*das.V1System
 	SystemPolicies  map[string][]*das.V1Policy
 	StacksById      map[string]*das.V1Stack

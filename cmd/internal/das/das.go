@@ -18,6 +18,9 @@ type V1System struct {
 		Origin V1GitRepoConfig `json:"origin"`
 	} `json:"source_control"`
 	MatchingStacks []string `json:"matching_stacks"`
+	Datasources    []struct {
+		Id string `json:"id"`
+	}
 }
 
 type V1Library struct {
@@ -39,6 +42,12 @@ type V1Stack struct {
 		Origin               V1GitRepoConfig `json:"origin"`
 		StackOrigin          V1GitRepoConfig `json:"stack_origin"`
 	} `json:"source_control"`
+}
+
+type V1Datasource struct {
+	Id       string `json:"id"`
+	Category string `json:"category"`
+	Type     string `json:"type"`
 }
 
 type V1GitRepoConfig struct {

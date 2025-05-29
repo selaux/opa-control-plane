@@ -43,6 +43,7 @@ func TestMigration(t *testing.T) {
 		systemIdEnvName string
 		extraConfigs    map[string]string
 		policyType      string // used to filter decisions for backtest
+		datasources     bool   // indicates whether to include datasource content in migration
 	}{
 		{
 			name:            "envoy21",
@@ -136,6 +137,42 @@ func TestMigration(t *testing.T) {
 			},
 			policyType: "mutating",
 		},
+		{
+			name:            "custom system with push datasource",
+			systemName:      "Custom app",
+			systemIdEnvName: "STYRA_CUSTOM_SYSTEM_ID",
+			extraConfigs: map[string]string{
+				"config.d/1-secrets.yaml": `{
+					secrets: {
+						libraries/custom_snippets/git: {
+							type: http_basic_auth,
+							password: $GITHUB_PASSWORD,
+							username: $GITHUB_USERNAME,
+						},
+						systems/a8318943a5814712a69adcb2d9f76976/git: {
+							type: http_basic_auth,
+							password: $GITHUB_PASSWORD,
+							username: $GITHUB_USERNAME,
+						},
+					},
+				}`,
+				"config.d/2-storage.yaml": `{
+					systems: {
+						Custom app: {
+							object_storage: {
+								aws: {
+									url: {{ .URL }},
+									bucket: test,
+									region: mock-region,
+									key: bundle.tar.gz,
+								},
+							},
+						},
+					},
+				}`,
+			},
+			datasources: true,
+		},
 	}
 
 	type templateParams struct {
@@ -171,17 +208,20 @@ func TestMigration(t *testing.T) {
 
 			tempfs.WithTempFS(t, files, func(t *testing.T, dir string) {
 
+				t.Logf("Root directory: %v", dir)
+
 				f, err := os.Create(filepath.Join(dir, "config.d", "0-config.yaml"))
 				if err != nil {
 					t.Fatal(err)
 				}
 
 				err = migrate.Run(migrate.Options{
-					URL:      styraURL,
-					Token:    styraToken,
-					SystemId: systemId,
-					Prune:    true,
-					Output:   f,
+					URL:         styraURL,
+					Token:       styraToken,
+					SystemId:    systemId,
+					Prune:       true,
+					Datasources: tc.datasources,
+					Output:      f,
 				})
 				if err != nil {
 					t.Fatal(err)
