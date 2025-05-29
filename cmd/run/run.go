@@ -21,6 +21,7 @@ type runParams struct {
 	configFile       []string
 	persistenceDir   string
 	resetPersistence bool
+	singleShot       bool
 }
 
 func init() {
@@ -48,7 +49,8 @@ func init() {
 			svc := service.New().
 				WithPersistenceDir(params.persistenceDir).
 				WithConfig(bs).
-				WithBuiltinFS(util.NewEscapeFS(libraries.FS))
+				WithBuiltinFS(util.NewEscapeFS(libraries.FS)).
+				WithSingleShot(params.singleShot)
 
 			go func() {
 				if err := server.New().WithDatabase(svc.Database()).Init().ListenAndServe(params.addr); err != nil {
@@ -66,6 +68,7 @@ func init() {
 	run.Flags().StringSliceVarP(&params.configFile, "config", "c", []string{"config.yaml"}, "Path to the configuration file")
 	run.Flags().StringVarP(&params.persistenceDir, "data-dir", "d", "data", "Path to the persistence directory")
 	run.Flags().BoolVarP(&params.resetPersistence, "reset-persistence", "", false, "Reset the persistence directory (for development purposes)")
+	run.Flags().BoolVarP(&params.singleShot, "single", "", false, "Build system bundles only once")
 
 	cmd.RootCommand.AddCommand(
 		run,

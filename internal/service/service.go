@@ -29,6 +29,7 @@ type Service struct {
 	workers        map[string]*SystemWorker
 	database       database.Database
 	builtinFS      fs.FS
+	singleShot     bool
 }
 
 func New() *Service {
@@ -53,6 +54,11 @@ func (s *Service) WithBuiltinFS(fs fs.FS) *Service {
 	return s
 }
 
+func (s *Service) WithSingleShot(singleShot bool) *Service {
+	s.singleShot = singleShot
+	return s
+}
+
 func (s *Service) Database() *database.Database {
 	return &s.database
 }
@@ -73,6 +79,14 @@ func (s *Service) Run(ctx context.Context) error {
 shutdown:
 	for {
 		s.launchWorkers(ctx)
+
+		for s.singleShot {
+			if s.allWorkersDone() {
+				break shutdown
+			}
+
+			time.Sleep(100 * time.Millisecond)
+		}
 
 		select {
 		case <-time.After(reconfigurationInterval):
@@ -221,11 +235,21 @@ func (s *Service) launchWorkers(ctx context.Context) {
 		w := NewSystemWorker(system, libraries, stacks).
 			WithSources(sources).
 			WithSynchronizers(syncs).
-			WithStorage(storage)
+			WithStorage(storage).
+			WithSingleShot(s.singleShot)
 		s.pool.Add(w.Execute)
 
 		s.workers[system.Name] = w
 	}
+}
+
+func (s *Service) allWorkersDone() bool {
+	for _, worker := range s.workers {
+		if !worker.Done() {
+			return false
+		}
+	}
+	return true
 }
 
 func md5sum(s string) string {

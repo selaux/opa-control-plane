@@ -33,6 +33,7 @@ type SystemWorker struct {
 	storage        s3.ObjectStorage
 	changed        chan struct{}
 	done           chan struct{}
+	singleShot     bool
 }
 
 type Synchronizer interface {
@@ -40,7 +41,7 @@ type Synchronizer interface {
 }
 
 func NewSystemWorker(system *config.System, libraries []*config.Library, stacks []*config.Stack) *SystemWorker {
-	return &SystemWorker{systemConfig: system, libraryConfigs: libraries, stackConfigs: stacks, done: make(chan struct{})}
+	return &SystemWorker{systemConfig: system, libraryConfigs: libraries, stackConfigs: stacks, changed: make(chan struct{}), done: make(chan struct{})}
 }
 
 func (worker *SystemWorker) WithSynchronizers(synchronizers []Synchronizer) *SystemWorker {
@@ -58,6 +59,11 @@ func (worker *SystemWorker) WithStorage(storage s3.ObjectStorage) *SystemWorker 
 	return worker
 }
 
+func (worker *SystemWorker) WithSingleShot(singleShot bool) *SystemWorker {
+	worker.singleShot = singleShot
+	return worker
+}
+
 func (worker *SystemWorker) Done() bool {
 	select {
 	case <-worker.done:
@@ -69,11 +75,7 @@ func (worker *SystemWorker) Done() bool {
 
 func (worker *SystemWorker) UpdateConfig(system *config.System, libraries []*config.Library, stacks []*config.Stack) {
 	if system == nil || !worker.systemConfig.Equal(system) || !config.EqualLibraries(worker.libraryConfigs, libraries) || !config.EqualStacks(worker.stackConfigs, stacks) {
-		select {
-		case <-worker.changed:
-		default:
-			close(worker.changed)
-		}
+		worker.changeConfiguration()
 	}
 }
 
@@ -84,20 +86,16 @@ func (w *SystemWorker) Execute() time.Time {
 
 	// If a configuration change was requested, request the worker to be removed from the pool and signal this worker being done.
 
-	select {
-	case <-w.changed:
-		close(w.done)
-		var zero time.Time
-		return zero
-	default:
+	if w.configurationChanged() {
+		return w.die()
 	}
 
 	// Wipe any old files synchronized during the previous run to avoid deleted files in database/http from reappearing to system bundles.
 	for _, src := range w.sources {
 		for _, dir := range src.Dirs {
 			if dir.Wipe {
-				if next, ok := removeDir(dir.Path); ok {
-					return next
+				if err := removeDir(dir.Path); err != nil {
+					return w.errorf("failed to remove a directory for system %q: %v", w.systemConfig.Name, err)
 				}
 			}
 		}
@@ -106,8 +104,7 @@ func (w *SystemWorker) Execute() time.Time {
 	for _, synchronizer := range w.synchronizers {
 		err := synchronizer.Execute(ctx)
 		if err != nil {
-			log.Printf("failed to synchronize system %q: %v", w.systemConfig.Name, err)
-			return time.Now().Add(errorDelay)
+			return w.errorf("failed to synchronize system %q: %v", w.systemConfig.Name, err)
 		}
 	}
 
@@ -119,43 +116,81 @@ func (w *SystemWorker) Execute() time.Time {
 
 	err := b.Build(ctx)
 	if err != nil {
-		log.Printf("failed to build a system bundle %q: %v", w.systemConfig.Name, err)
-		return time.Now().Add(errorDelay)
+		return w.errorf("failed to build a system bundle %q: %v", w.systemConfig.Name, err)
 	}
 
 	if w.storage != nil {
 		if err := w.storage.Upload(ctx, bytes.NewReader(buffer.Bytes())); err != nil {
-			log.Printf("failed to upload system bundle %q: %v", w.systemConfig.Name, err)
-			return time.Now().Add(errorDelay)
+			return w.errorf("failed to upload system bundle %q: %v", w.systemConfig.Name, err)
 		}
+	}
+
+	return w.success()
+}
+
+func (w *SystemWorker) success() time.Time {
+	if w.singleShot {
+		return w.die()
 	}
 
 	return time.Now().Add(successDelay)
 }
 
-func removeDir(path string) (time.Time, bool) {
+func (w *SystemWorker) errorf(msg string, args ...interface{}) time.Time {
+	log.Printf(msg, args...)
+
+	if w.singleShot {
+		return w.die()
+	}
+
+	return time.Now().Add(errorDelay)
+}
+
+func (w *SystemWorker) changeConfiguration() {
+	select {
+	case <-w.changed:
+	default:
+		close(w.changed)
+	}
+}
+
+func (w *SystemWorker) configurationChanged() bool {
+	select {
+	case <-w.changed:
+		return true
+	default:
+		return false
+	}
+}
+
+func (w *SystemWorker) die() time.Time {
+	close(w.done)
+
+	var zero time.Time
+	return zero
+}
+
+func removeDir(path string) error {
 
 	if path == "" {
-		return time.Time{}, false
+		return nil
 	}
 
 	if _, err := os.Stat(path); os.IsNotExist(err) {
-		return time.Time{}, false
+		return nil
 	}
 
 	files, err := os.ReadDir(path)
 	if err != nil {
-		log.Printf("failed to read directory %q: %v", path, err)
-		return time.Now().Add(errorDelay), true
+		return err
 	}
 
 	for _, f := range files {
 		err := os.RemoveAll(filepath.Join(path, f.Name()))
 		if err != nil {
-			log.Printf("failed to remove file %q: %v", filepath.Join(path, f.Name()), err)
-			return time.Now().Add(errorDelay), true
+			return err
 		}
 	}
 
-	return time.Time{}, false
+	return nil
 }
