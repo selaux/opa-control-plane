@@ -351,7 +351,9 @@ func (s *Selector) UnmarshalJSON(bs []byte) error {
 func (s *Selector) unmarshal(raw map[string][]string) error {
 	*s = Selector{s: make(map[string][]string), m: make(map[string][]glob.Glob)}
 	for key, encodedValue := range raw {
-		s.Set(key, encodedValue)
+		if err := s.Set(key, encodedValue); err != nil {
+			return err
+		}
 	}
 	return nil
 }
