@@ -325,6 +325,23 @@ func TestMigrateV1Policies(t *testing.T) {
 				"template.envoy:2.1-conflicts",
 			},
 		},
+		{
+			name: "file-level git roots",
+			policies: []*das.V1Policy{
+				{
+					Package: "systems/x1234/policy",
+					Modules: map[string]string{
+						"policy.rego": `package policy`,
+						"rules.rego":  "package policy\np := 7",
+					},
+				},
+			},
+			nsPrefix: "systems/x1234",
+			gitRoots: []string{"policy/policy.rego"},
+			expFiles: config.Files{
+				"policy/rules.rego": "package policy\np := 7",
+			},
+		},
 	}
 
 	for _, tc := range cases {

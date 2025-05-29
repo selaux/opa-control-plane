@@ -513,7 +513,10 @@ func migrateV1Policies(typeName string, nsPrefix string, policies []*das.V1Polic
 		} else {
 			modules := make(map[string]string)
 			for path, str := range p.Modules {
-				modules[strings.TrimPrefix(pkg, "/")+"/"+path] = str
+				path = strings.TrimPrefix(pkg, "/") + "/" + path
+				if !stringSliceContains(gitRoots, path) {
+					modules[path] = str
+				}
 			}
 
 			if typeLib != nil {
@@ -1187,6 +1190,15 @@ func stringSlicePrefix(prefix []string, s []string) bool {
 		}
 	}
 	return true
+}
+
+func stringSliceContains(slice []string, s string) bool {
+	for _, item := range slice {
+		if item == s {
+			return true
+		}
+	}
+	return false
 }
 
 func strptr(s string) *string { return &s }
