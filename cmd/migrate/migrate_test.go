@@ -7,7 +7,9 @@ import (
 	"sort"
 	"testing"
 
+	"github.com/tsandall/lighthouse/cmd/internal/das"
 	"github.com/tsandall/lighthouse/internal/config"
+	"github.com/tsandall/lighthouse/libraries"
 )
 
 func TestLibraryPackageIndex(t *testing.T) {
@@ -221,4 +223,127 @@ func TestPruneConfig(t *testing.T) {
 	if !reflect.DeepEqual(expRoot, root) {
 		t.Fatal("expected root differed from pruned root")
 	}
+}
+
+func TestMigrateV1Policies(t *testing.T) {
+
+	libraryFile := func(path string) string {
+		bs, err := libraries.FS.ReadFile(path)
+		if err != nil {
+			panic(err)
+		}
+		return string(bs)
+	}
+
+	cases := []struct {
+		name     string
+		policies []*das.V1Policy
+		nsPrefix string
+		gitRoots []string
+		typeLib  string
+		expFiles config.Files
+		expReqs  []string
+	}{
+		{
+			name:     "envoy21: no policies, no git",
+			policies: []*das.V1Policy{},
+			nsPrefix: "systems/x1234",
+			gitRoots: []string{},
+			typeLib:  "template.envoy:2.1",
+			expFiles: config.Files{},
+			expReqs:  []string{"template.envoy:2.1"},
+		},
+		{
+			name: "envoy21: git owns policy/ but not system/ which differs",
+			policies: []*das.V1Policy{
+				{
+					Package: "systems/x1234/policy/ingress",
+					Modules: map[string]string{"rules.rego": `package policy.ingress`},
+				},
+				{
+					Package: "systems/x1234/system/log",
+					Modules: map[string]string{"mask.rego": `package system.log`},
+				},
+			},
+			nsPrefix: "systems/x1234",
+			gitRoots: []string{"policy"},
+			typeLib:  "template.envoy:2.1",
+			expFiles: config.Files{
+				"system/log/mask.rego": `package system.log`,
+			},
+			expReqs: []string{
+				"template.envoy:2.1-entrypoint-application",
+				"template.envoy:2.1-entrypoint-main",
+				"template.envoy:2.1-entrypoint-authz",
+				"template.envoy:2.1-conflicts",
+			},
+		},
+		{
+			name: "envoy21: git owns policy/ but not system/ which is identical to library",
+			policies: []*das.V1Policy{
+				{
+					Package: "systems/x1234/policy/ingress",
+					Modules: map[string]string{"rules.rego": `package policy.ingress`},
+				},
+				{
+					Package: "systems/x1234/system/log",
+					Modules: map[string]string{"mask.rego": libraryFile("envoy-v2.1/log/system/log/mask.rego")},
+				},
+				{
+					Package: "systems/x1234/system/authz",
+					Modules: map[string]string{"authz.rego": libraryFile("envoy-v2.1/authz/system/authz/authz.rego")},
+				},
+			},
+			nsPrefix: "systems/x1234",
+			gitRoots: []string{"policy"},
+			typeLib:  "template.envoy:2.1",
+			expReqs:  []string{"template.envoy:2.1"},
+		},
+		{
+			name: "envoy21: git owns policy/ and system/",
+			policies: []*das.V1Policy{
+				{
+					Package: "systems/x1234/policy/ingress",
+					Modules: map[string]string{"rules.rego": `package policy.ingress`},
+				},
+				{
+					Package: "systems/x1234/system/log",
+					Modules: map[string]string{"mask.rego": `package system.log`},
+				},
+				{
+					Package: "systems/x1234/system/authz",
+					Modules: map[string]string{"authz.rego": `package system.authz`},
+				},
+			},
+			nsPrefix: "systems/x1234",
+			gitRoots: []string{"policy", "system"},
+			typeLib:  "template.envoy:2.1",
+			expFiles: config.Files{},
+			expReqs: []string{
+				"template.envoy:2.1-entrypoint-application",
+				"template.envoy:2.1-entrypoint-main",
+				"template.envoy:2.1-conflicts",
+			},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			files, reqs := migrateV1Policies(tc.typeLib, tc.nsPrefix, tc.policies, tc.gitRoots)
+
+			if !tc.expFiles.Equal(files) {
+				t.Fatalf("expected files %v but got %v", tc.expFiles, files)
+			}
+
+			var expReqs []config.Requirement
+			for _, r := range tc.expReqs {
+				expReqs = append(expReqs, config.Requirement{Library: &r})
+			}
+
+			if !reflect.DeepEqual(expReqs, reqs) {
+				t.Fatalf("expected requirements %v but got %v", expReqs, reqs)
+			}
+		})
+	}
+
 }

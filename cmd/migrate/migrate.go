@@ -500,7 +500,7 @@ func migrateV1Policies(typeName string, nsPrefix string, policies []*das.V1Polic
 	for _, p := range policies {
 		pkg := strings.TrimPrefix(p.Package, nsPrefix)
 
-		if rootsPrefix(gitRoots, p.Package) {
+		if rootsPrefix(gitRoots, pkg) {
 			if typeLib != nil {
 				// If type lib provided file is Git backed then add it to the
 				// exclude list automatically. We assume the user has taken
@@ -1126,7 +1126,7 @@ func newLibraryPackageIndex() *libraryPackageIndex {
 
 func (idx *libraryPackageIndex) Lookup(path string) map[string]struct{} {
 	result := map[string]struct{}{}
-	keys := strings.Split(path, "/")
+	keys := strings.Split(strings.Trim(path, "/"), "/")
 	curr := idx
 	for _, key := range keys {
 		node, ok := curr.nodes[key]
@@ -1167,15 +1167,26 @@ func (idx *libraryPackageIndex) Add(path string, lib string) {
 }
 
 func rootsPrefix(roots []string, path string) bool {
+	pathParts := strings.Split(strings.Trim(path, "/"), "/")
 	for _, r := range roots {
-		if path == r {
-			return true
-		}
-		if strings.HasPrefix(path, r+"/") {
+		rParts := strings.Split(strings.Trim(r, "/"), "/")
+		if stringSlicePrefix(rParts, pathParts) {
 			return true
 		}
 	}
 	return false
+}
+
+func stringSlicePrefix(prefix []string, s []string) bool {
+	if len(prefix) > len(s) {
+		return false
+	}
+	for i := range prefix {
+		if prefix[i] != s[i] {
+			return false
+		}
+	}
+	return true
 }
 
 func strptr(s string) *string { return &s }
