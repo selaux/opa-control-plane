@@ -73,9 +73,10 @@ type compareRegoReport struct {
 }
 
 type compareParams struct {
-	configFile []string
-	styraURL   string
-	styraToken string
+	configFile        []string
+	styraURL          string
+	styraToken        string
+	mergeConflictFail bool
 }
 
 func init() {
@@ -96,6 +97,7 @@ func init() {
 
 	compare.Flags().StringSliceVarP(&params.configFile, "config", "c", []string{"config.yaml"}, "Path to the configuration file")
 	compare.Flags().StringVarP(&params.styraURL, "url", "u", "", "Styra tenant URL (e.g., https://expo.styra.com)")
+	compare.Flags().BoolVarP(&params.mergeConflictFail, "merge-conflict-fail", "", false, "Fail on config merge conflicts")
 
 	cmd.RootCommand.AddCommand(
 		compare,
@@ -106,7 +108,7 @@ func doCompare(params compareParams) error {
 
 	log.Printf("Loading configuration from %v...", params.configFile)
 
-	bs, err := config.Merge(params.configFile)
+	bs, err := config.Merge(params.configFile, params.mergeConflictFail)
 	if err != nil {
 		return err
 	}

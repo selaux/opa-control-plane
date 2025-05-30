@@ -14,35 +14,35 @@ func TestMerge(t *testing.T) {
 
 	config1 := `{
 			"keep0": 0,
-			"overwrite1": 0,
 			"merge": {
 				"keep0": 0,
-				"overwrite2": 0,
 				"merge1": {
 					"keep0": 0,
 					"overwrite1": 0
-				}
-			}
+				},
+				"overwrite2": 0
+			},
+			"overwrite1": 0
 		}`
 
 	config2 := `{
-			"overwrite1": 1,
 			"keep1": 1,
 			"merge": {
 				"keep1": 1,
-				"overwrite2": 1,
 				"merge1": {
 					"overwrite1": 1
-				}
-			}
+				},
+				"overwrite2": 1
+			},
+			"overwrite1": 1
 		}`
 
 	config3 := `{
+			"keep2": 2,
 			"merge": {
-				"overwrite2": 2,
-				"keep2": 2
-			},
-			"keep2": 2
+				"keep2": 2,
+				"overwrite2": 2
+			}
 		}`
 
 	files := map[string]string{
@@ -52,7 +52,7 @@ func TestMerge(t *testing.T) {
 	}
 
 	tempfs.WithTempFS(t, files, func(t *testing.T, dir string) {
-		bs, err := config.Merge([]string{dir})
+		bs, err := config.Merge([]string{dir}, false)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -95,6 +95,13 @@ func TestMerge(t *testing.T) {
 
 		if !reflect.DeepEqual(result, exp) {
 			t.Fatalf("expected %v but got %v", exp, result)
+		}
+
+		// Test with conflict errors enabled
+
+		_, err = config.Merge([]string{dir}, true)
+		if err.Error() != "conflict for config path /merge/merge1/overwrite1" {
+			t.Fatal(err)
 		}
 
 	})

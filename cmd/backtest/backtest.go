@@ -34,6 +34,7 @@ type Options struct {
 	NumDecisions         int
 	PolicyType           string
 	MaxEvalTimeInflation int
+	MergeConflictFail    bool
 	Output               io.Writer
 }
 
@@ -58,6 +59,7 @@ func init() {
 	backtest.Flags().IntVarP(&opts.NumDecisions, "decisions", "n", 100, "Number of decisions to backtest")
 	backtest.Flags().StringVarP(&opts.PolicyType, "policy-type", "", "", "Specify policy type to backtest against (e.g., validating, mutating, etc.)")
 	backtest.Flags().IntVarP(&opts.MaxEvalTimeInflation, "max-eval-time-inflation", "", 100, "Maximum allowed increase in decision evaluation time (in percents)")
+	backtest.Flags().BoolVarP(&opts.MergeConflictFail, "merge-conflict-fail", "", false, "Fail on config merge conflicts")
 
 	cmd.RootCommand.AddCommand(
 		backtest,
@@ -84,7 +86,7 @@ type DecisionDiff struct {
 
 func Run(opts Options) error {
 
-	bs, err := config.Merge(opts.ConfigFile)
+	bs, err := config.Merge(opts.ConfigFile, opts.MergeConflictFail)
 	if err != nil {
 		return err
 	}

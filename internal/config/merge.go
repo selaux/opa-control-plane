@@ -5,11 +5,13 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"reflect"
+	"sort"
 
 	"gopkg.in/yaml.v3"
 )
 
-func Merge(configFiles []string) ([]byte, error) {
+func Merge(configFiles []string, conflictError bool) ([]byte, error) {
 
 	var paths []string
 	for _, f := range configFiles {
@@ -38,7 +40,11 @@ func Merge(configFiles []string) ([]byte, error) {
 		docs = append(docs, x)
 	}
 
-	merged := merge(docs)
+	merged, err := merge(docs, "", conflictError)
+	if err != nil {
+		return nil, err
+	}
+
 	bs, err := yaml.Marshal(merged)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal merged configuration: %v", err)
@@ -47,20 +53,35 @@ func Merge(configFiles []string) ([]byte, error) {
 	return bs, nil
 }
 
-func merge(docs []map[string]interface{}) map[string]interface{} {
+func merge(docs []map[string]interface{}, path string, conflictError bool) (map[string]interface{}, error) {
 	result := make(map[string]interface{})
 	for _, doc := range docs {
-		for key, value := range doc {
+		keys := make([]string, 0, len(doc))
+		for key := range doc {
+			keys = append(keys, key)
+		}
+		sort.Strings(keys) // Sort keys to ensure deterministic merge errors.
+
+		for _, key := range keys {
+			value := doc[key]
 			if existing, ok := result[key]; ok {
 				if existingMap, ok1 := existing.(map[string]interface{}); ok1 {
 					if valueMap, ok2 := value.(map[string]interface{}); ok2 {
-						result[key] = merge([]map[string]interface{}{existingMap, valueMap})
+						var err error
+						result[key], err = merge([]map[string]interface{}{existingMap, valueMap}, path+"/"+key, conflictError)
+						if err != nil {
+							return nil, err
+						}
 						continue
 					}
+				}
+
+				if conflictError && !reflect.DeepEqual(existing, value) {
+					return nil, fmt.Errorf("conflict for config path %s", path+"/"+key)
 				}
 			}
 			result[key] = value
 		}
 	}
-	return result
+	return result, nil
 }
