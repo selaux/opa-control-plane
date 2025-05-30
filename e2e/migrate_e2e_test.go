@@ -194,6 +194,30 @@ func TestMigration(t *testing.T) {
 				}`,
 			},
 		},
+		{
+			// NOTE(tsandall): policies depend on two datasources however system
+			// does not have any decisions that exercise that part of the
+			// policy, so we are not enabling datasource content migration here.
+			name:            "kong-gateway10",
+			systemName:      "Kong Gateway - prod",
+			systemIdEnvName: "STYRA_KONG_GATEWAY_SYSTEM_ID",
+			extraConfigs: map[string]string{
+				"config.d/2-storage.yaml": `{
+					systems: {
+						Kong Gateway - prod: {
+							object_storage: {
+								aws: {
+									url: {{ .URL }},
+									bucket: test,
+									region: mock-region,
+									key: bundle.tar.gz,
+								},
+							},
+						},
+					},
+				}`,
+			},
+		},
 	}
 
 	type templateParams struct {

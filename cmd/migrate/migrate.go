@@ -55,6 +55,13 @@ var systemTypeLibraries = []*config.Library{
 		},
 	},
 	{
+		Name: "template.kong-gateway:1.0",
+		Requirements: []config.Requirement{
+			{Library: strptr("template.kong-gateway:1.0-entrypoint-main")},
+			{Library: strptr("template.kong-gateway:1.0-conflicts")},
+		},
+	},
+	{
 		Name: "kubernetes:v2",
 		Requirements: []config.Requirement{
 			{Library: strptr("kubernetes:v2-entrypoint-validating")},
@@ -115,6 +122,14 @@ var baseLibraries = []*config.Library{
 	{
 		Name:    "template.envoy:2.0-conflicts",
 		Builtin: strptr("envoy-v2.0/conflicts"),
+	},
+	{
+		Name:    "template.kong-gateway:1.0-entrypoint-main",
+		Builtin: strptr("kong-gateway-v1/main"),
+	},
+	{
+		Name:    "template.kong-gateway:1.0-conflicts",
+		Builtin: strptr("kong-gateway-v1/conflicts"),
 	},
 	{
 		Name:    "kubernetes:v2-entrypoint-validating",
