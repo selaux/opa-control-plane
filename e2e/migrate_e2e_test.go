@@ -293,7 +293,7 @@ func TestMigration(t *testing.T) {
 					t.Fatal(err)
 				}
 
-				merged, err := config.Merge([]string{filepath.Join(dir, "config.d")})
+				merged, err := config.Merge([]string{filepath.Join(dir, "config.d")}, true)
 				if err != nil {
 					t.Fatal(err)
 				}
