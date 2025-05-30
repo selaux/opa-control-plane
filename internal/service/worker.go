@@ -124,6 +124,8 @@ func (w *SystemWorker) Execute() time.Time {
 		if err := w.storage.Upload(ctx, bytes.NewReader(buffer.Bytes())); err != nil {
 			return w.errorf("failed to upload system bundle %q: %v", w.systemConfig.Name, err)
 		}
+
+		log.Printf("System %q bundle uploaded successfully.", w.systemConfig.Name)
 	}
 
 	return w.success()
