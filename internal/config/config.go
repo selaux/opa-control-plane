@@ -32,7 +32,7 @@ type Root struct {
 	Stacks    map[string]*Stack   `json:"stacks,omitempty" yaml:"stacks,omitempty"`
 	Libraries map[string]*Library `json:"libraries,omitempty" yaml:"libraries,omitempty"`
 	Secrets   map[string]*Secret  `json:"secrets,omitempty" yaml:"secrets,omitempty"` // Schema validation overrides Secret to object type.
-	Database  Database            `json:"database" yaml:"database"`
+	Database  *Database           `json:"database,omitempty" yaml:"database,omitempty"`
 }
 
 // UnmarshalYAML implements the yaml.Marshaler interface for the Root struct. This
