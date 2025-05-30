@@ -249,6 +249,7 @@ type Options struct {
 	SystemId    string
 	Prune       bool
 	Datasources bool
+	FilesPath   string
 	Output      io.Writer
 }
 
@@ -273,6 +274,7 @@ func init() {
 	migrate.Flags().StringVarP(&params.SystemId, "system-id", "", "", "Scope migraton to a specific system (id)")
 	migrate.Flags().BoolVarP(&params.Prune, "prune", "", false, "Prune unused resources")
 	migrate.Flags().BoolVarP(&params.Datasources, "datasources", "", false, "Copy datasource content")
+	migrate.Flags().StringVarP(&params.FilesPath, "files", "", "files", "Path to write the non-git stored files to (default: files/)")
 
 	cmd.RootCommand.AddCommand(
 		migrate,
@@ -421,10 +423,10 @@ func Run(params Options) error {
 		}
 	}
 
-	if len(files) > 0 {
-		log.Printf("Found %d files for systems and libraries. Writing them to disk under files/.", len(files))
+	if len(files) > 0 && params.FilesPath != "" {
+		root := params.FilesPath
 
-		root := "files"
+		log.Printf("Found %d files for systems and libraries. Writing them to disk under %s.", len(files), root)
 
 		for path, content := range files {
 			if err := os.MkdirAll(filepath.Join(root, filepath.Dir(path)), 0755); err != nil {
