@@ -300,7 +300,6 @@ func backtestSystem(ctx context.Context, opts Options, styra *das.Client, byName
 	}
 
 	if len(diffs) == 0 {
-		// TODO(tsandall): improve report to include latency comparison
 		report.Systems[system.Name] = SystemReport{
 			Status:  "passed",
 			Message: fmt.Sprintf("evaluated %v decisions in %v and found no difference(s)", len(decisions.Items), time.Since(t0)),
