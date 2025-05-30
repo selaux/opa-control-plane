@@ -173,6 +173,27 @@ func TestMigration(t *testing.T) {
 			},
 			datasources: true,
 		},
+		{
+			name:            "istio10",
+			systemName:      "Istio App",
+			systemIdEnvName: "STYRA_ISTIO_SYSTEM_ID",
+			extraConfigs: map[string]string{
+				"config.d/2-storage.yaml": `{
+					systems: {
+						Istio App: {
+							object_storage: {
+								aws: {
+									url: {{ .URL }},
+									bucket: test,
+									region: mock-region,
+									key: bundle.tar.gz,
+								},
+							},
+						},
+					},
+				}`,
+			},
+		},
 	}
 
 	type templateParams struct {

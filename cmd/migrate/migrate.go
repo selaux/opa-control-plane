@@ -35,6 +35,26 @@ var systemTypeLibraries = []*config.Library{
 		},
 	},
 	{
+		Name: "template.envoy:2.0",
+		Requirements: []config.Requirement{
+			{Library: strptr("template.envoy:2.0-entrypoint-application")},
+			{Library: strptr("template.envoy:2.0-entrypoint-main")},
+			{Library: strptr("template.envoy:2.0-entrypoint-authz")},
+			{Library: strptr("template.envoy:2.0-entrypoint-log")},
+			{Library: strptr("template.envoy:2.0-conflicts")},
+		},
+	},
+	{
+		Name: "template.istio:1.0",
+		Requirements: []config.Requirement{
+			{Library: strptr("template.envoy:2.0-entrypoint-application")},
+			{Library: strptr("template.envoy:2.0-entrypoint-main")},
+			{Library: strptr("template.envoy:2.0-entrypoint-authz")},
+			{Library: strptr("template.envoy:2.0-entrypoint-log")},
+			{Library: strptr("template.envoy:2.0-conflicts")},
+		},
+	},
+	{
 		Name: "kubernetes:v2",
 		Requirements: []config.Requirement{
 			{Library: strptr("kubernetes:v2-entrypoint-validating")},
@@ -75,6 +95,26 @@ var baseLibraries = []*config.Library{
 	{
 		Name:    "template.envoy:2.1-conflicts",
 		Builtin: strptr("envoy-v2.1/conflicts"),
+	},
+	{
+		Name:    "template.envoy:2.0-entrypoint-application",
+		Builtin: strptr("envoy-v2.0/application"),
+	},
+	{
+		Name:    "template.envoy:2.0-entrypoint-main",
+		Builtin: strptr("envoy-v2.0/main"),
+	},
+	{
+		Name:    "template.envoy:2.0-entrypoint-authz",
+		Builtin: strptr("envoy-v2.0/authz"),
+	},
+	{
+		Name:    "template.envoy:2.0-entrypoint-log",
+		Builtin: strptr("envoy-v2.0/log"),
+	},
+	{
+		Name:    "template.envoy:2.0-conflicts",
+		Builtin: strptr("envoy-v2.0/conflicts"),
 	},
 	{
 		Name:    "kubernetes:v2-entrypoint-validating",
@@ -139,6 +179,9 @@ var baseLibPackageIndex = func() map[string]*libraryPackageIndex {
 	for _, lib := range systemTypeLibraries {
 		for _, r := range lib.Requirements {
 			bi := getBaseLib(r)
+			if bi == nil {
+				panic(fmt.Sprintf("%v was not found", *r.Library))
+			}
 			err := fs.WalkDir(libraries.FS, *bi.Builtin, func(file string, fi fs.DirEntry, err error) error {
 				if err != nil {
 					return err
