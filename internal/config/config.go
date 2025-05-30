@@ -117,8 +117,8 @@ func (r *Root) Validate() error {
 type System struct {
 	Name          string        `json:"-" yaml:"-"`
 	Labels        Labels        `json:"labels,omitempty" yaml:"labels,omitempty"`
-	Git           Git           `json:"git,omitempty" yaml:"git,omitempty"`
-	ObjectStorage ObjectStorage `json:"object_storage,omitempty" yaml:"object_storage,omitempty"`
+	Git           Git           `json:"git" yaml:"git"`
+	ObjectStorage ObjectStorage `json:"object_storage" yaml:"object_storage"`
 	Datasources   []Datasource  `json:"datasources,omitempty" yaml:"datasources,omitempty"`
 	Files         Files         `json:"files,omitempty" yaml:"files,omitempty"`
 	Requirements  []Requirement `json:"requirements,omitempty" yaml:"requirements,omitempty"`
@@ -264,7 +264,7 @@ func equalRequirements(a, b []Requirement) bool {
 type Library struct {
 	Name         string        `json:"-" yaml:"-"`
 	Builtin      *string       `json:"builtin,omitempty" yaml:"builtin,omitempty"`
-	Git          Git           `json:"git,omitempty" yaml:"git,omitempty"`
+	Git          Git           `json:"git" yaml:"git"`
 	Datasources  []Datasource  `json:"datasources,omitempty" yaml:"datasources,omitempty"`
 	Files        Files         `json:"files,omitempty" yaml:"files,omitempty"`
 	Requirements []Requirement `json:"requirements,omitempty" yaml:"requirements,omitempty"`
