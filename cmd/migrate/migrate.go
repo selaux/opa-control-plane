@@ -55,6 +55,16 @@ var systemTypeLibraries = []*config.Library{
 		},
 	},
 	{
+		Name: "template.kuma:1.0",
+		Requirements: []config.Requirement{
+			{Library: strptr("template.envoy:2.0-entrypoint-application")},
+			{Library: strptr("template.envoy:2.0-entrypoint-main")},
+			{Library: strptr("template.envoy:2.0-entrypoint-authz")},
+			{Library: strptr("template.envoy:2.0-entrypoint-log")},
+			{Library: strptr("template.envoy:2.0-conflicts")},
+		},
+	},
+	{
 		Name: "template.kong-gateway:1.0",
 		Requirements: []config.Requirement{
 			{Library: strptr("template.kong-gateway:1.0-entrypoint-main")},

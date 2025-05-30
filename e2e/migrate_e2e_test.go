@@ -195,6 +195,27 @@ func TestMigration(t *testing.T) {
 			},
 		},
 		{
+			name:            "kuma10",
+			systemName:      "Kuma",
+			systemIdEnvName: "STYRA_KUMA_SYSTEM_ID",
+			extraConfigs: map[string]string{
+				"config.d/2-storage.yaml": `{
+					systems: {
+						Kuma: {
+							object_storage: {
+								aws: {
+									url: {{ .URL }},
+									bucket: test,
+									region: mock-region,
+									key: bundle.tar.gz,
+								},
+							},
+						},
+					},
+				}`,
+			},
+		},
+		{
 			// NOTE(tsandall): policies depend on two datasources however system
 			// does not have any decisions that exercise that part of the
 			// policy, so we are not enabling datasource content migration here.
