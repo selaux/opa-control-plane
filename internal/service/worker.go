@@ -125,13 +125,15 @@ func (w *SystemWorker) Execute() time.Time {
 			return w.errorf("failed to upload system bundle %q: %v", w.systemConfig.Name, err)
 		}
 
-		log.Printf("System %q bundle uploaded successfully.", w.systemConfig.Name)
+		return w.success("System %q bundle built and uploaded.", w.systemConfig.Name)
 	}
 
-	return w.success()
+	return w.success("System %q bundle built.", w.systemConfig.Name)
 }
 
-func (w *SystemWorker) success() time.Time {
+func (w *SystemWorker) success(msg string, args ...interface{}) time.Time {
+	log.Printf(msg, args...)
+
 	if w.singleShot {
 		return w.die()
 	}
