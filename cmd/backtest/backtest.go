@@ -28,12 +28,13 @@ import (
 )
 
 type Options struct {
-	ConfigFile   []string
-	URL          string
-	Token        string
-	NumDecisions int
-	PolicyType   string
-	Output       io.Writer
+	ConfigFile           []string
+	URL                  string
+	Token                string
+	NumDecisions         int
+	PolicyType           string
+	MaxEvalTimeInflation int
+	Output               io.Writer
 }
 
 func init() {
@@ -56,6 +57,7 @@ func init() {
 	backtest.Flags().StringVarP(&opts.URL, "url", "u", "", "Styra tenant URL (e.g., https://expo.styra.com)")
 	backtest.Flags().IntVarP(&opts.NumDecisions, "decisions", "n", 100, "Number of decisions to backtest")
 	backtest.Flags().StringVarP(&opts.PolicyType, "policy-type", "", "", "Specify policy type to backtest against (e.g., validating, mutating, etc.)")
+	backtest.Flags().IntVarP(&opts.MaxEvalTimeInflation, "max-eval-time-inflation", "", 100, "Maximum allowed increase in decision evaluation time (in percents)")
 
 	cmd.RootCommand.AddCommand(
 		backtest,
@@ -277,6 +279,7 @@ func backtestSystem(ctx context.Context, opts Options, styra *das.Client, byName
 		log.Printf("Evaluating decision %q for system %q", d.DecisionId, system.Name)
 
 		var result *interface{}
+		var start time.Time = time.Now()
 
 		r, err := opa.Decision(ctx, options)
 		if err != nil && !sdk.IsUndefinedErr(err) {
@@ -287,7 +290,7 @@ func backtestSystem(ctx context.Context, opts Options, styra *das.Client, byName
 			result = &r.Result
 		}
 
-		if err := compareResults(&d, result); err != nil {
+		if err := compareResults(&d, result, time.Now().Sub(start), opts.MaxEvalTimeInflation); err != nil {
 			path, innerErr := saveFailure(&a, d)
 			if innerErr != nil {
 				return innerErr
@@ -366,7 +369,7 @@ func saveFailure(b *bundle.Bundle, d das.V1Decision) (string, error) {
 	return path, nil
 }
 
-func compareResults(d *das.V1Decision, r *interface{}) error {
+func compareResults(d *das.V1Decision, r *interface{}, t time.Duration, maxEvalInflation int) error {
 
 	if d.Result == nil {
 		if r != nil {
@@ -402,6 +405,10 @@ func compareResults(d *das.V1Decision, r *interface{}) error {
 		}
 
 		return errors.New(textdiff.Unified("Expected", "Found", string(bBytes), string(aBytes)))
+	}
+
+	if o := time.Duration(d.Metrics.TimerRegoQueryEvalNs); o*time.Duration(maxEvalInflation+100)/100 < t {
+		return fmt.Errorf("bundle decision took over %d%% longer than original decision to evaluate", maxEvalInflation)
 	}
 
 	return nil

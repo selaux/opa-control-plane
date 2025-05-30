@@ -262,12 +262,13 @@ func TestMigration(t *testing.T) {
 				buf := bytes.NewBuffer(nil)
 
 				if err := backtest.Run(backtest.Options{
-					ConfigFile:   []string{filepath.Join(dir, "config.d")},
-					URL:          styraURL,
-					Token:        styraToken,
-					NumDecisions: 100,
-					PolicyType:   tc.policyType,
-					Output:       buf,
+					ConfigFile:           []string{filepath.Join(dir, "config.d")},
+					URL:                  styraURL,
+					Token:                styraToken,
+					NumDecisions:         100,
+					PolicyType:           tc.policyType,
+					MaxEvalTimeInflation: 100,
+					Output:               buf,
 				}); err != nil {
 					t.Fatal(err)
 				}
