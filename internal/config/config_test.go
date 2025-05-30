@@ -77,8 +77,8 @@ func TestFilesMarshallingRoundtrip(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if cfg.Systems["foo"].Files["foo.rego"] != "package foo" {
-		t.Fatalf("expected file to be 'package foo' but got:\n%v", cfg.Systems["foo"].Files["foo.rego"])
+	if cfg.Systems["foo"].Files()["foo.rego"] != "package foo" {
+		t.Fatalf("expected file to be 'package foo' but got:\n%v", cfg.Systems["foo"].Files()["foo.rego"])
 	}
 
 	bs, err := yaml.Marshal(cfg)

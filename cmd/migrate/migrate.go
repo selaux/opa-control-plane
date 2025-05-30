@@ -426,11 +426,8 @@ func migrateV1Library(_ *das.Client, state *dasState, v1 *das.V1Library) (*confi
 	policies := state.LibraryPolicies[v1.Id]
 
 	for _, p := range policies {
-		if library.Files == nil {
-			library.Files = make(map[string]string)
-		}
 		for file, str := range p.Modules {
-			library.Files[p.Package+"/"+file] = str
+			library.SetEmbeddedFile(p.Package+"/"+file, str)
 		}
 	}
 
@@ -506,7 +503,9 @@ func migrateV1System(client *das.Client, state *dasState, v1 *das.V1System, data
 	}
 
 	policies := state.SystemPolicies[v1.Id]
-	system.Files, system.Requirements = migrateV1Policies(v1.Type, "systems/"+v1.Id+"/", policies, gitRoots)
+	var files map[string]string
+	files, system.Requirements = migrateV1Policies(v1.Type, "systems/"+v1.Id+"/", policies, gitRoots)
+	system.SetEmbeddedFiles(files)
 
 	resp, err = client.JSON(fmt.Sprintf("v1/data/metadata/%v/labels", v1.Id))
 	if err != nil {
@@ -543,7 +542,7 @@ func migrateV1System(client *das.Client, state *dasState, v1 *das.V1System, data
 					return nil, nil, err
 				}
 				for path, content := range files {
-					system.Files[path] = content
+					system.SetEmbeddedFile(path, content)
 				}
 			} else {
 				log.Printf("Unsupported datasource category/type: %v/%v", ds.Category, ds.Type)
@@ -692,11 +691,8 @@ func migrateV1Stack(_ *das.Client, state *dasState, v1 *das.V1Stack) (*config.St
 	policies := state.StackPolicies[v1.Id]
 
 	for i := range policies {
-		if library.Files == nil {
-			library.Files = make(map[string]string)
-		}
 		for file, str := range policies[i].Modules {
-			library.Files[policies[i].Package+"/"+file] = str
+			library.SetEmbeddedFile(policies[i].Package+"/"+file, str)
 		}
 	}
 

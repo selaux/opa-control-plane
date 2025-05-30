@@ -707,7 +707,7 @@ func (d *Database) loadSystems(root *config.Root) error {
 			}
 		}
 
-		for path, data := range system.Files {
+		for path, data := range system.Files() {
 			if _, err := d.db.Exec(`INSERT OR REPLACE INTO systems_data (system_id, path, data) VALUES (?, ?, ?)`, name, path, data); err != nil {
 				return err
 			}
@@ -756,7 +756,7 @@ func (d *Database) loadLibraries(root *config.Root) error {
 			}
 		}
 
-		for path, data := range library.Files {
+		for path, data := range library.Files() {
 			if _, err := d.db.Exec(`INSERT OR REPLACE INTO libraries_data (library_id, path, data) VALUES (?, ?, ?)`, name, path, data); err != nil {
 				return err
 			}

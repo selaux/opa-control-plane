@@ -120,7 +120,7 @@ type System struct {
 	Git           Git           `json:"git,omitempty" yaml:"git,omitempty"`
 	ObjectStorage ObjectStorage `json:"object_storage,omitempty" yaml:"object_storage,omitempty"`
 	Datasources   []Datasource  `json:"datasources,omitempty" yaml:"datasources,omitempty"`
-	Files         Files         `json:"files,omitempty" yaml:"files,omitempty"`
+	EmbeddedFiles Files         `json:"files,omitempty" yaml:"files,omitempty"`
 	Requirements  []Requirement `json:"requirements,omitempty" yaml:"requirements,omitempty"`
 	ExcludedFiles []string      `json:"excluded_files,omitempty" yaml:"excluded_files,omitempty"`
 }
@@ -196,6 +196,26 @@ func (f *Files) unmarshal(raw map[string]string) error {
 	return nil
 }
 
+func (s *System) Files() map[string]string {
+	return s.EmbeddedFiles
+}
+
+func (s *System) SetEmbeddedFile(path string, content string) {
+	if s.EmbeddedFiles == nil {
+		s.EmbeddedFiles = make(Files)
+	}
+	s.EmbeddedFiles[path] = content
+}
+
+func (s *System) SetEmbeddedFiles(files map[string]string) {
+	s.EmbeddedFiles = nil
+	for path, content := range files {
+		s.SetEmbeddedFile(path, content)
+	}
+}
+
+// MarshalYAML implements the yaml.Marshaler interface for the System struct. This
+
 func (s *System) UnmarshalJSON(bs []byte) error {
 	type rawSystem System // avoid recursive calls to UnmarshalJSON by type aliasing
 	var raw rawSystem
@@ -243,7 +263,7 @@ func (s *System) Equal(other *System) bool {
 		s.Git.Equal(&other.Git) &&
 		s.ObjectStorage.Equal(&other.ObjectStorage) &&
 		equalDatasources(s.Datasources, other.Datasources) &&
-		s.Files.Equal(other.Files) &&
+		s.EmbeddedFiles.Equal(other.EmbeddedFiles) &&
 		equalRequirements(s.Requirements, other.Requirements) &&
 		equalStringSets(s.ExcludedFiles, other.ExcludedFiles)
 }
@@ -262,12 +282,12 @@ func equalRequirements(a, b []Requirement) bool {
 
 // Library defines the configuration for a Lighthouse Library.
 type Library struct {
-	Name         string        `json:"-" yaml:"-"`
-	Builtin      *string       `json:"builtin,omitempty" yaml:"builtin,omitempty"`
-	Git          Git           `json:"git,omitempty" yaml:"git,omitempty"`
-	Datasources  []Datasource  `json:"datasources,omitempty" yaml:"datasources,omitempty"`
-	Files        Files         `json:"files,omitempty" yaml:"files,omitempty"`
-	Requirements []Requirement `json:"requirements,omitempty" yaml:"requirements,omitempty"`
+	Name          string        `json:"-" yaml:"-"`
+	Builtin       *string       `json:"builtin,omitempty" yaml:"builtin,omitempty"`
+	Git           Git           `json:"git,omitempty" yaml:"git,omitempty"`
+	Datasources   []Datasource  `json:"datasources,omitempty" yaml:"datasources,omitempty"`
+	EmbeddedFiles Files         `json:"files,omitempty" yaml:"files,omitempty"`
+	Requirements  []Requirement `json:"requirements,omitempty" yaml:"requirements,omitempty"`
 }
 
 func (s *Library) Equal(other *Library) bool {
@@ -279,11 +299,27 @@ func (s *Library) Equal(other *Library) bool {
 		return false
 	}
 
-	return s.Name == other.Name && stringEqual(s.Builtin, other.Builtin) && s.Git.Equal(&other.Git) && equalDatasources(s.Datasources, other.Datasources) && s.Files.Equal(other.Files) && equalRequirements(s.Requirements, other.Requirements)
+	return s.Name == other.Name &&
+		stringEqual(s.Builtin, other.Builtin) &&
+		s.Git.Equal(&other.Git) &&
+		equalDatasources(s.Datasources, other.Datasources) &&
+		s.EmbeddedFiles.Equal(other.EmbeddedFiles) &&
+		equalRequirements(s.Requirements, other.Requirements)
 }
 
 func (s *Library) Requirement() Requirement {
 	return Requirement{Library: &s.Name}
+}
+
+func (s *Library) Files() map[string]string {
+	return s.EmbeddedFiles
+}
+
+func (s *Library) SetEmbeddedFile(path string, content string) {
+	if s.EmbeddedFiles == nil {
+		s.EmbeddedFiles = make(Files)
+	}
+	s.EmbeddedFiles[path] = content
 }
 
 // Stack defines the configuration for a Lighthouse Stack.
