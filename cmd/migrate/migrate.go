@@ -82,6 +82,14 @@ var systemTypeLibraries = []*config.Library{
 			{Library: strptr("kubernetes:v2-library")},
 		},
 	},
+	{
+		Name: "template.terraform:2.0",
+		Requirements: []config.Requirement{
+			{Library: strptr("template.terraform:2.0-entrypoint-main")},
+			{Library: strptr("template.terraform:2.0-conflicts")},
+			{Library: strptr("template.terraform:2.0-library")},
+		},
+	},
 }
 
 func getSystemTypeLib(t string) *config.Library {
@@ -161,6 +169,18 @@ var baseLibraries = []*config.Library{
 	{
 		Name:    "kubernetes:v2-library",
 		Builtin: strptr("kubernetes-v2/library"),
+	},
+	{
+		Name:    "template.terraform:2.0-entrypoint-main",
+		Builtin: strptr("terraform-v2.0/main"),
+	},
+	{
+		Name:    "template.terraform:2.0-conflicts",
+		Builtin: strptr("terraform-v2.0/conflicts"),
+	},
+	{
+		Name:    "template.terraform:2.0-library",
+		Builtin: strptr("terraform-v2.0/library"),
 	},
 	{
 		Name:    "match-v1",

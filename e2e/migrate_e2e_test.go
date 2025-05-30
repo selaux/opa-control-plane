@@ -239,6 +239,28 @@ func TestMigration(t *testing.T) {
 				}`,
 			},
 		},
+		{
+			name:            "terraform20",
+			systemName:      "Terraform - GCP",
+			systemIdEnvName: "STYRA_TERRAFORM_SYSTEM_ID",
+			extraConfigs: map[string]string{
+				"config.d/2-storage.yaml": `{
+					systems: {
+						Terraform - GCP: {
+							object_storage: {
+								aws: {
+									url: {{ .URL }},
+									bucket: test,
+									region: mock-region,
+									key: bundle.tar.gz,
+								},
+							},
+						},
+					},
+				}`,
+			},
+			datasources: true,
+		},
 	}
 
 	type templateParams struct {

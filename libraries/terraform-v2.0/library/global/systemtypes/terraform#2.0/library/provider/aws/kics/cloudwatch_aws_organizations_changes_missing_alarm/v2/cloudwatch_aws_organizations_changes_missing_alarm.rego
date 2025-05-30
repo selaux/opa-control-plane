@@ -1,0 +1,180 @@
+package global.systemtypes["terraform:2.0"].library.provider.aws.kics.cloudwatch_aws_organizations_changes_missing_alarm.v2
+
+import data.global.systemtypes["terraform:2.0"].library.provider.aws.kics_libs.common as common_lib
+
+expressionArr := [
+	{
+		"op": "=",
+		"value": "organizations.amazonaws.com",
+		"name": "$.eventSource",
+	},
+	{
+		"op": "=",
+		"value": "AcceptHandshake",
+		"name": "$.eventName",
+	},
+	{
+		"op": "=",
+		"value": "AttachPolicy",
+		"name": "$.eventName",
+	},
+	{
+		"op": "=",
+		"value": "CreateAccount",
+		"name": "$.eventName",
+	},
+	{
+		"op": "=",
+		"value": "PutBucketLifecycle",
+		"name": "$.eventName",
+	},
+	{
+		"op": "=",
+		"value": "CreateOrganizationalUnit",
+		"name": "$.eventName",
+	},
+	{
+		"op": "=",
+		"value": "CreatePolicy",
+		"name": "$.eventName",
+	},
+	{
+		"op": "=",
+		"value": "DeclineHandshake",
+		"name": "$.eventName",
+	},
+	{
+		"op": "=",
+		"value": "DeleteOrganization",
+		"name": "$.eventName",
+	},
+	{
+		"op": "=",
+		"value": "DeleteOrganizationalUnit",
+		"name": "$.eventName",
+	},
+	{
+		"op": "=",
+		"value": "DeletePolicy",
+		"name": "$.eventName",
+	},
+	{
+		"op": "=",
+		"value": "DetachPolicy",
+		"name": "$.eventName",
+	},
+	{
+		"op": "=",
+		"value": "DisablePolicyType",
+		"name": "$.eventName",
+	},
+	{
+		"op": "=",
+		"value": "EnablePolicyType",
+		"name": "$.eventName",
+	},
+	{
+		"op": "=",
+		"value": "InviteAccountToOrganization",
+		"name": "$.eventName",
+	},
+	{
+		"op": "=",
+		"value": "LeaveOrganization",
+		"name": "$.eventName",
+	},
+	{
+		"op": "=",
+		"value": "MoveAccount",
+		"name": "$.eventName",
+	},
+	{
+		"op": "=",
+		"value": "RemoveAccountFromOrganization",
+		"name": "$.eventName",
+	},
+	{
+		"op": "=",
+		"value": "UpdatePolicy",
+		"name": "$.eventName",
+	},
+	{
+		"op": "=",
+		"value": "UpdateOrganizationalUni",
+		"name": "$.eventName",
+	},
+]
+
+check_selector(filter, value, op, name) {
+	selector := common_lib.find_selector_by_value(filter, value)
+	selector._op == op
+	selector._selector == name
+}
+
+# { ($.eventSource = \"organizations.amazonaws.com\") && (($.eventName = AcceptHandshake) || ($.eventName = AttachPolicy) || ($.eventName = CreateAccount) || ($.eventName = PutBucketLifecycle) || ($.eventName = CreateOrganizationalUnit) || ($.eventName = CreatePolicy) || ($.eventName = DeclineHandshake) || ($.eventName = DeleteOrganization) || ($.eventName = DeleteOrganizationalUnit) || ($.eventName = DeletePolicy) || ($.eventName = DetachPolicy) || ($.eventName = DisablePolicyType) || ($.eventName = EnablePolicyType) || ($.eventName = InviteAccountToOrganization) || ($.eventName = LeaveOrganization) || ($.eventName = MoveAccount) || ($.eventName = RemoveAccountFromOrganization) || ($.eventName = UpdatePolicy) || ($.eventName = UpdateOrganizationalUni)) }
+check_expression_missing(resName, filter, doc) {
+	alarm := doc.resource.aws_cloudwatch_metric_alarm[name]
+	contains(alarm.metric_name, resName)
+
+	count({x | exp := expressionArr[n]; common_lib.check_selector(filter, exp.value, exp.op, exp.name) == false; x := exp}) == 0
+}
+
+cloudwatch_aws_organizations_changes_missing_alarm_inner[result] {
+	doc := input.document[i]
+	resources := doc.resource.aws_cloudwatch_log_metric_filter
+	allPatternsCount := count([x | [path, value] := walk(resources); filter := common_lib.json_unmarshal(value.pattern); x = filter])
+	count([x | [path, value] := walk(resources); filter := common_lib.json_unmarshal(value.pattern); not check_expression_missing(path[0], filter, doc); x = filter]) == allPatternsCount
+	result := {"documentId": input.document[i].id, "issueType": "MissingAttribute", "keyActualValue": "aws_cloudwatch_log_metric_filter not filtering pattern { ($.eventSource = \"organizations.amazonaws.com\") && (($.eventName = AcceptHandshake) || ($.eventName = AttachPolicy) || ($.eventName = CreateAccount) || ($.eventName = PutBucketLifecycle) || ($.eventName = CreateOrganizationalUnit) || ($.eventName = CreatePolicy) || ($.eventName = DeclineHandshake) || ($.eventName = DeleteOrganization) || ($.eventName = DeleteOrganizationalUnit) || ($.eventName = DeletePolicy) || ($.eventName = DetachPolicy) || ($.eventName = DisablePolicyType) || ($.eventName = EnablePolicyType) || ($.eventName = InviteAccountToOrganization) || ($.eventName = LeaveOrganization) || ($.eventName = MoveAccount) || ($.eventName = RemoveAccountFromOrganization) || ($.eventName = UpdatePolicy) || ($.eventName = UpdateOrganizationalUni)) } or not associated with any aws_cloudwatch_metric_alarm", "keyExpectedValue": "aws_cloudwatch_log_metric_filter should have pattern { ($.eventSource = \"organizations.amazonaws.com\") && (($.eventName = AcceptHandshake) || ($.eventName = AttachPolicy) || ($.eventName = CreateAccount) || ($.eventName = PutBucketLifecycle) || ($.eventName = CreateOrganizationalUnit) || ($.eventName = CreatePolicy) || ($.eventName = DeclineHandshake) || ($.eventName = DeleteOrganization) || ($.eventName = DeleteOrganizationalUnit) || ($.eventName = DeletePolicy) || ($.eventName = DetachPolicy) || ($.eventName = DisablePolicyType) || ($.eventName = EnablePolicyType) || ($.eventName = InviteAccountToOrganization) || ($.eventName = LeaveOrganization) || ($.eventName = MoveAccount) || ($.eventName = RemoveAccountFromOrganization) || ($.eventName = UpdatePolicy) || ($.eventName = UpdateOrganizationalUni)) } and be associated an aws_cloudwatch_metric_alarm", "resourceName": "unknown", "resourceType": "aws_cloudwatch_log_metric_filter", "searchKey": "resource", "searchLine": common_lib.build_search_line([], [])}
+}
+
+# METADATA: library-snippet
+# version: v1
+# title: "KICS: CloudWatch AWS Organizations Changes Missing Alarm"
+# description: >-
+#   Ensure a log metric filter and alarm exist for AWS organizations changes
+# severity: "medium"
+# platform: "terraform"
+# resource-type: ""
+# custom:
+#   id: "aws.kics.cloudwatch_aws_organizations_changes_missing_alarm"
+#   impact: ""
+#   remediation: ""
+#   severity: "medium"
+#   resource_category: ""
+#   control_category: ""
+#   rule_link: "https://docs.styra.com/systems/terraform/snippets"
+#   platform:
+#     name: "terraform"
+#     versions:
+#       min: "v0.12"
+#       max: "v1.3"
+#   provider:
+#     name: "aws"
+#     versions:
+#       min: "v3"
+#       max: "v4"
+#   rule_targets:
+#     []
+# schema:
+#   decision:
+#     - type: rego
+#       key: allowed
+#       value: "false"
+#     - type: rego
+#       key: message
+#       value: "violation.message"
+#     - type: rego
+#       key: metadata
+#       value: "violation.metadata"
+# policy:
+#   rule:
+#     type: rego
+#     value: "{{this}}[violation]"
+cloudwatch_aws_organizations_changes_missing_alarm_snippet[violation] {
+	cloudwatch_aws_organizations_changes_missing_alarm_inner[inner] with input as data.global.systemtypes["terraform:2.0"].library.utils.v1.transformed_input
+	msg := sprintf("%s: %s, %s", [inner.issueType, inner.keyExpectedValue, inner.keyActualValue])
+	violation := {
+		"message": msg,
+		"metadata": data.global.systemtypes["terraform:2.0"].library.utils.v1.build_metadata_return(rego.metadata.rule(), null, null, null),
+	}
+}
