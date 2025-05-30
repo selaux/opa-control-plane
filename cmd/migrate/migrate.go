@@ -8,6 +8,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"path/filepath"
 	"reflect"
 	"sort"
 	"strings"
@@ -403,6 +404,36 @@ func Run(params Options) error {
 		}
 		if extra.Len() > 0 {
 			log.Printf("System %q has extra stacks %v", system.Name, extra)
+		}
+	}
+
+	files := make(map[string]string)
+
+	for _, system := range output.Systems {
+		for path, content := range system.Files() {
+			files[filepath.Join(append([]string{"systems", system.Name}, filepath.SplitList(path)...)...)] = content
+		}
+	}
+
+	for _, library := range output.Libraries {
+		for path, content := range library.Files() {
+			files[filepath.Join(append([]string{"libraries", library.Name}, filepath.SplitList(path)...)...)] = content
+		}
+	}
+
+	if len(files) > 0 {
+		log.Printf("Found %d files for systems and libraries. Writing them to disk under files/.", len(files))
+
+		root := "files"
+
+		for path, content := range files {
+			if err := os.MkdirAll(filepath.Join(root, filepath.Dir(path)), 0755); err != nil {
+				return err
+			}
+
+			if err := os.WriteFile(filepath.Join(root, path), []byte(content), 0644); err != nil {
+				return err
+			}
 		}
 	}
 
