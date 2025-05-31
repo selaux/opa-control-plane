@@ -215,6 +215,9 @@ var baseLibPackageIndex = func() map[string]*libraryPackageIndex {
 				if fi.IsDir() {
 					return nil
 				}
+				if filepath.Ext(file) != ".rego" {
+					return nil
+				}
 				bs, err := libraries.FS.ReadFile(file)
 				if err != nil {
 					return err
