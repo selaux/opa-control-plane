@@ -5,3 +5,4 @@ config.yaml
 config.d
 data
 lighthouse_*
+files
