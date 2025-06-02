@@ -73,10 +73,10 @@ cases:
                 stack_result := max([x | x := data.stacks[_].p])
     unused_rego: "package unused"
   expected_filesystem:
-  - "/files/58e247fc3935d8ea3fc0841eb200cfc7/main.rego" # lib conflicts
-  - "/files/651b945976b07287063e8967060724a4/app.rego" # lib
-  - "/files/c2b534eb974c87922eefa4e59bc893e1/unused.rego" # lib (unused): eventually we can avoid synching unused libs
-  - "/files/eddeac02e8901c7e34c59b0e2b6efe30/stacks/foo/foo.rego" # stacks
+  - "/651b945976b07287063e8967060724a4/files/app.rego"
+  - "/651b945976b07287063e8967060724a4/libraries/TestLib/files/stacks/foo/foo.rego"
+  - "/651b945976b07287063e8967060724a4/libraries/TestLibConflicts/files/main.rego"
+  - "/651b945976b07287063e8967060724a4/libraries/TestLibUnused/files/unused.rego" # lib (unused): eventually we can avoid synching unused libs
   expected_bundle:
     rego:
       app.rego:            *app_rego

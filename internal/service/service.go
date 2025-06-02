@@ -142,14 +142,14 @@ func (s *Service) launchWorkers(ctx context.Context) {
 	// when constructing bundles:
 	//
 	// persistenceDir/
-	// ├── files/
-	// │   ├── {md5(system.Name)}/                # System-specific files from SQL database and HTTP datasources.
-	// │   └── {md5(system.Name@library.Name)}/   # Library-specific files from SQL database and HTTP datasources.
-	// ├── repos/
-	// │   ├── {md5(system.Name)}/                # System git repositories
-	// │   └── {md5(system.Name@library.Name)}/   # Library repositories
-	// └── builtins/
-	//     └── {md5(system.Name@library.Name)}/   # Built-in library specific files
+	// └── {md5(system.Name)}/
+	//     ├── files/                     # System-specific files from config, SQL database, and HTTP datasources
+	//     ├── repo/                      # System git repository
+	//     └── libraries/
+	//         └── {library.Name}/
+	//             ├── files/             # Library-specific files from config, SQL database, and HTTP datasources
+	//             ├── repo/              # Library git repository
+	//             └── builtin/           # Built-in library specific files
 
 	for _, system := range systems {
 		if w, ok := s.workers[system.Name]; ok {
@@ -159,10 +159,12 @@ func (s *Service) launchWorkers(ctx context.Context) {
 
 		log.Println("(re)starting worker for system:", system.Name)
 
+		systemDir := path.Join(s.persistenceDir, md5sum(system.Name))
+
 		sources := []*builder.Source{
 			{
 				Name: system.Name,
-				Dirs: []builder.Dir{{Path: path.Join(s.persistenceDir, "files", md5sum(system.Name)), Wipe: true}},
+				Dirs: []builder.Dir{{Path: path.Join(systemDir, "files"), Wipe: true}},
 			},
 		}
 
@@ -171,7 +173,7 @@ func (s *Service) launchWorkers(ctx context.Context) {
 		}
 
 		if system.Git.Repo != "" {
-			repoDir := path.Join(s.persistenceDir, "repos", md5sum(system.Name))
+			repoDir := path.Join(systemDir, "repo")
 			syncs = append(syncs, gitsync.New(repoDir, system.Git))
 			srcDir := repoDir
 			if system.Git.Path != nil {
@@ -196,14 +198,15 @@ func (s *Service) launchWorkers(ctx context.Context) {
 		}
 
 		for _, l := range libraries {
+			libraryDir := path.Join(systemDir, "libraries", l.Name)
 
 			src := &builder.Source{
 				Name: l.Name,
-				Dirs: []builder.Dir{{Path: path.Join(s.persistenceDir, "files", md5sum(system.Name+"@"+l.Name)), Wipe: true}},
+				Dirs: []builder.Dir{{Path: path.Join(libraryDir, "files"), Wipe: true}},
 			}
 
 			if l.Git.Repo != "" {
-				repoDir := path.Join(s.persistenceDir, "repos", md5sum(system.Name+"@"+l.Name))
+				repoDir := path.Join(libraryDir, "repo")
 				syncs = append(syncs, gitsync.New(repoDir, l.Git))
 				srcDir := repoDir
 				if l.Git.Path != nil {
@@ -214,7 +217,7 @@ func (s *Service) launchWorkers(ctx context.Context) {
 				// TODO: Why not allow both Git and Builtin for libraries? Datasources and Builtin are not mutually
 				// exclusive either.
 				src.Dirs = append(src.Dirs, builder.Dir{
-					Path: path.Join(s.persistenceDir, "builtins", md5sum(system.Name+"@"+l.Name)),
+					Path: path.Join(libraryDir, "builtin"),
 					Wipe: true,
 				})
 				syncs = append(syncs, builtinsync.New(s.builtinFS, src.Dirs[len(src.Dirs)-1].Path, *l.Builtin))
