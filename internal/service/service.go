@@ -135,8 +135,21 @@ func (s *Service) launchWorkers(ctx context.Context) {
 		}
 	}
 
-	// Start any new workers for systems that are in the current configuration but not yet running. Inform any existing workers of the current configuration, which
-	// will cause them to shutdown if configuration has changed.
+	// Start any new workers for systems that are in the current configuration but not yet running. Inform any existing
+	// workers of the current configuration, which will cause them to shutdown if configuration has changed.
+	//
+	// For each system, create the following directory structure under persistencyDir for the builder to use
+	// when constructing bundles:
+	//
+	// persistenceDir/
+	// ├── files/
+	// │   ├── {md5(system.Name)}/                # System-specific files from SQL database and HTTP datasources.
+	// │   └── {md5(system.Name@library.Name)}/   # Library-specific files from SQL database and HTTP datasources.
+	// ├── repos/
+	// │   ├── {md5(system.Name)}/                # System git repositories
+	// │   └── {md5(system.Name@library.Name)}/   # Library repositories
+	// └── builtins/
+	//     └── {md5(system.Name@library.Name)}/   # Built-in library specific files
 
 	for _, system := range systems {
 		if w, ok := s.workers[system.Name]; ok {
@@ -198,6 +211,8 @@ func (s *Service) launchWorkers(ctx context.Context) {
 				}
 				src.Dirs = append(src.Dirs, builder.Dir{Path: srcDir})
 			} else if l.Builtin != nil {
+				// TODO: Why not allow both Git and Builtin for libraries? Datasources and Builtin are not mutually
+				// exclusive either.
 				src.Dirs = append(src.Dirs, builder.Dir{
 					Path: path.Join(s.persistenceDir, "builtins", md5sum(system.Name+"@"+l.Name)),
 					Wipe: true,
