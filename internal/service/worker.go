@@ -4,8 +4,6 @@ import (
 	"bytes"
 	"context"
 	"log"
-	"os"
-	"path/filepath"
 	"time"
 
 	"github.com/tsandall/lighthouse/internal/builder"
@@ -92,12 +90,8 @@ func (w *SystemWorker) Execute() time.Time {
 
 	// Wipe any old files synchronized during the previous run to avoid deleted files in database/http from reappearing to system bundles.
 	for _, src := range w.sources {
-		for _, dir := range src.Dirs {
-			if dir.Wipe {
-				if err := removeDir(dir.Path); err != nil {
-					return w.errorf("failed to remove a directory for system %q: %v", w.systemConfig.Name, err)
-				}
-			}
+		if err := src.Wipe(); err != nil {
+			return w.errorf("failed to remove a directory for system %q: %v", w.systemConfig.Name, err)
 		}
 	}
 
@@ -173,29 +167,4 @@ func (w *SystemWorker) die() time.Time {
 
 	var zero time.Time
 	return zero
-}
-
-func removeDir(path string) error {
-
-	if path == "" {
-		return nil
-	}
-
-	if _, err := os.Stat(path); os.IsNotExist(err) {
-		return nil
-	}
-
-	files, err := os.ReadDir(path)
-	if err != nil {
-		return err
-	}
-
-	for _, f := range files {
-		err := os.RemoveAll(filepath.Join(path, f.Name()))
-		if err != nil {
-			return err
-		}
-	}
-
-	return nil
 }

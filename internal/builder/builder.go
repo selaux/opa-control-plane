@@ -23,6 +23,17 @@ type Source struct {
 	Requirements []config.Requirement
 }
 
+func (s *Source) Wipe() error {
+	for _, dir := range s.Dirs {
+		if dir.Wipe {
+			if err := removeDir(dir.Path); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
 type Dir struct {
 	Path string // local fs path to source files
 	Wipe bool   // bit indicates if worker should delete directory before synchronization
@@ -225,4 +236,29 @@ func rootsOverlap(roots []ast.Ref, root ast.Ref) (result []ast.Ref) {
 		}
 	}
 	return result
+}
+
+func removeDir(path string) error {
+
+	if path == "" {
+		return nil
+	}
+
+	if _, err := os.Stat(path); os.IsNotExist(err) {
+		return nil
+	}
+
+	files, err := os.ReadDir(path)
+	if err != nil {
+		return err
+	}
+
+	for _, f := range files {
+		err := os.RemoveAll(filepath.Join(path, f.Name()))
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
