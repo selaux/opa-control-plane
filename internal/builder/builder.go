@@ -23,6 +23,12 @@ type Source struct {
 	Requirements []config.Requirement
 }
 
+func NewSource(name string) *Source {
+	return &Source{
+		Name: name,
+	}
+}
+
 func (s *Source) Wipe() error {
 	for _, dir := range s.Dirs {
 		if dir.Wipe {

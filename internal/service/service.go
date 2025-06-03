@@ -12,6 +12,7 @@ import (
 	_ "github.com/mattn/go-sqlite3"
 	"github.com/tsandall/lighthouse/internal/builder"
 	"github.com/tsandall/lighthouse/internal/builtinsync"
+	"github.com/tsandall/lighthouse/internal/config"
 	"github.com/tsandall/lighthouse/internal/database"
 	"github.com/tsandall/lighthouse/internal/gitsync"
 	"github.com/tsandall/lighthouse/internal/httpsync"
@@ -143,13 +144,15 @@ func (s *Service) launchWorkers(ctx context.Context) {
 	//
 	// persistenceDir/
 	// └── {md5(system.Name)}/
-	//     ├── files/                     # System-specific files from config, SQL database, and HTTP datasources
+	//     ├── database/                  # System-specific files from SQL database
+	//     ├── datasources/               # System-specific HTTP datasources
 	//     ├── repo/                      # System git repository
 	//     └── libraries/
 	//         └── {library.Name}/
-	//             ├── files/             # Library-specific files from config, SQL database, and HTTP datasources
-	//             ├── repo/              # Library git repository
-	//             └── builtin/           # Built-in library specific files
+	//             ├── builtin/           # Built-in library specific files
+	//             ├── database/          # Library-specific files from SQL database
+	//             ├── datasources/       # Library-specific HTTP datasources
+	//             └── repo/              # Library git repository
 
 	for _, system := range systems {
 		if w, ok := s.workers[system.Name]; ok {
@@ -159,89 +162,43 @@ func (s *Service) launchWorkers(ctx context.Context) {
 
 		log.Println("(re)starting worker for system:", system.Name)
 
+		syncs := []Synchronizer{}
+		sources := []*builder.Source{}
+
 		systemDir := path.Join(s.persistenceDir, md5sum(system.Name))
+		systemSQLDir := path.Join(systemDir, "database")
+		systemDatasourcesDir := path.Join(systemDir, "datasources")
+		systemRepoDir := path.Join(systemDir, "repo")
 
-		sources := []*builder.Source{
-			{
-				Name: system.Name,
-				Dirs: []builder.Dir{{Path: path.Join(systemDir, "files"), Wipe: true}},
-			},
-		}
-
-		syncs := []Synchronizer{
-			sqlsync.NewSQLSystemDataSynchronizer(sources[0].Dirs[0].Path, &s.database, system.Name),
-		}
-
-		if system.Git.Repo != "" {
-			repoDir := path.Join(systemDir, "repo")
-			syncs = append(syncs, gitsync.New(repoDir, system.Git))
-			srcDir := repoDir
-			if system.Git.Path != nil {
-				srcDir = path.Join(srcDir, *system.Git.Path)
-			}
-			sources[0].Dirs = append(sources[0].Dirs, builder.Dir{Path: srcDir})
-		}
-
-		for _, r := range system.Requirements {
-			if r.Library != nil {
-				sources[0].Requirements = append(sources[0].Requirements, r)
-			}
-		}
-
-		for _, datasource := range system.Datasources {
-			switch datasource.Type {
-			case "http":
-				url, _ := datasource.Config["url"].(string)
-				credentials := datasource.Credentials
-				syncs = append(syncs, httpsync.New(path.Join(sources[0].Dirs[0].Path, datasource.Path, "data.json"), url, credentials))
-			}
-		}
-
-		for _, l := range libraries {
-			libraryDir := path.Join(systemDir, "libraries", l.Name)
-
-			src := &builder.Source{
-				Name: l.Name,
-				Dirs: []builder.Dir{{Path: path.Join(libraryDir, "files"), Wipe: true}},
-			}
-
-			if l.Git.Repo != "" {
-				repoDir := path.Join(libraryDir, "repo")
-				syncs = append(syncs, gitsync.New(repoDir, l.Git))
-				srcDir := repoDir
-				if l.Git.Path != nil {
-					srcDir = path.Join(srcDir, *l.Git.Path)
-				}
-				src.Dirs = append(src.Dirs, builder.Dir{Path: srcDir})
-			} else if l.Builtin != nil {
-				// TODO: Why not allow both Git and Builtin for libraries? Datasources and Builtin are not mutually
-				// exclusive either.
-				src.Dirs = append(src.Dirs, builder.Dir{
-					Path: path.Join(libraryDir, "builtin"),
-					Wipe: true,
-				})
-				syncs = append(syncs, builtinsync.New(s.builtinFS, src.Dirs[len(src.Dirs)-1].Path, *l.Builtin))
-			}
-
-			for _, datasource := range l.Datasources {
-				switch datasource.Type {
-				case "http":
-					url, _ := datasource.Config["url"].(string)
-					credentials := datasource.Credentials
-					syncs = append(syncs, httpsync.New(path.Join(src.Dirs[0].Path, datasource.Path, "data.json"), url, credentials))
-				}
-			}
-
-			src.Requirements = append(src.Requirements, l.Requirements...)
-
-			syncs = append(syncs, sqlsync.NewSQLLibraryDataSynchronizer(src.Dirs[0].Path, &s.database, l.Name))
-			sources = append(sources, src)
-		}
+		src := newSource(system.Name).
+			SyncSystemSQL(&syncs, system.Name, &s.database, systemSQLDir).
+			SyncDatasources(&syncs, system.Datasources, systemDatasourcesDir).
+			SyncGit(&syncs, system.Git, systemRepoDir).
+			AddRequirements(system.Requirements)
 
 		for _, stack := range stacks {
 			if stack.Selector.Matches(system.Labels) {
-				sources[0].Requirements = append(sources[0].Requirements, stack.Requirements...)
+				src = src.AddRequirements(stack.Requirements)
 			}
+		}
+
+		sources = append(sources, &src.Source)
+
+		for _, l := range libraries {
+			libraryDir := path.Join(systemDir, "libraries", l.Name)
+			librarySQLDir := path.Join(libraryDir, "database")
+			libraryDatasourcesDir := path.Join(libraryDir, "datasources")
+			libraryRepoDir := path.Join(libraryDir, "repo")
+			libraryBuiltinDir := path.Join(libraryDir, "builtin")
+
+			src := newSource(l.Name).
+				SyncLibrarySQL(&syncs, l.Name, &s.database, librarySQLDir).
+				SyncDatasources(&syncs, l.Datasources, libraryDatasourcesDir).
+				SyncGit(&syncs, l.Git, libraryRepoDir).
+				SyncBuiltin(&syncs, l.Builtin, s.builtinFS, libraryBuiltinDir).
+				AddRequirements(l.Requirements)
+
+			sources = append(sources, &src.Source)
 		}
 
 		storage, err := s3.New(ctx, system.ObjectStorage)
@@ -268,6 +225,80 @@ func (s *Service) allWorkersDone() bool {
 		}
 	}
 	return true
+}
+
+type source struct {
+	builder.Source
+}
+
+func newSource(name string) *source {
+	return &source{
+		Source: *builder.NewSource(name),
+	}
+}
+
+func (src *source) addDir(dir string, wipe bool) {
+	src.Source.Dirs = append(src.Source.Dirs, builder.Dir{
+		Path: dir,
+		Wipe: wipe,
+	})
+}
+
+func (src *source) SyncGit(syncs *[]Synchronizer, git config.Git, repoDir string) *source {
+	if git.Repo != "" {
+		srcDir := repoDir
+		if git.Path != nil {
+			srcDir = path.Join(srcDir, *git.Path)
+		}
+		src.addDir(srcDir, false)
+		*syncs = append(*syncs, gitsync.New(repoDir, git))
+	}
+
+	return src
+}
+
+func (src *source) SyncBuiltin(syncs *[]Synchronizer, builtin *string, fs fs.FS, dir string) *source {
+	if builtin != nil {
+		src.addDir(dir, true)
+		*syncs = append(*syncs, builtinsync.New(fs, dir, *builtin))
+	}
+	return src
+}
+
+func (src *source) SyncDatasources(syncs *[]Synchronizer, datasources []config.Datasource, dir string) *source {
+	for _, datasource := range datasources {
+		switch datasource.Type {
+		case "http":
+			url, _ := datasource.Config["url"].(string)
+			credentials := datasource.Credentials
+			*syncs = append(*syncs, httpsync.New(path.Join(dir, datasource.Path, "data.json"), url, credentials))
+		}
+	}
+	if len(datasources) > 0 {
+		src.addDir(dir, true)
+	}
+	return src
+}
+
+func (src *source) SyncSystemSQL(syncs *[]Synchronizer, name string, database *database.Database, dir string) *source {
+	*syncs = append(*syncs, sqlsync.NewSQLSystemDataSynchronizer(dir, database, name))
+	src.addDir(dir, true)
+	return src
+}
+
+func (src *source) SyncLibrarySQL(syncs *[]Synchronizer, name string, database *database.Database, dir string) *source {
+	*syncs = append(*syncs, sqlsync.NewSQLLibraryDataSynchronizer(dir, database, name))
+	src.addDir(dir, true)
+	return src
+}
+
+func (src *source) AddRequirements(requirements []config.Requirement) *source {
+	for _, r := range requirements {
+		if r.Library != nil {
+			src.Requirements = append(src.Requirements, r)
+		}
+	}
+	return src
 }
 
 func md5sum(s string) string {
