@@ -79,9 +79,7 @@ func (worker *SystemWorker) UpdateConfig(system *config.System, libraries []*con
 
 // Execute runs a system synchronization iteration: git sync, bundle construct
 // and then push bundles to object storage.
-func (w *SystemWorker) Execute() time.Time {
-	ctx := context.Background()
-
+func (w *SystemWorker) Execute(ctx context.Context) time.Time {
 	// If a configuration change was requested, request the worker to be removed from the pool and signal this worker being done.
 
 	if w.configurationChanged() {

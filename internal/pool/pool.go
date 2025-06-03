@@ -1,6 +1,7 @@
 package pool
 
 import (
+	"context"
 	"slices"
 	"sync"
 	"time"
@@ -19,7 +20,7 @@ type Pool struct {
 }
 
 type task struct {
-	fn       func() time.Time
+	fn       func(context.Context) time.Time
 	deadline time.Time
 }
 
@@ -33,14 +34,15 @@ func New(workers int) *Pool {
 	return &pool
 }
 
-func (p *Pool) Add(fn func() time.Time) {
+func (p *Pool) Add(fn func(context.Context) time.Time) {
 	p.enqueue(&task{fn: fn, deadline: time.Now()})
 }
 
 // work is the main loop for each worker goroutine.
 func (p *Pool) work() {
 	for {
-		p.enqueue(p.dequeue().Execute())
+		ctx := context.Background()
+		p.enqueue(p.dequeue().Execute(ctx))
 	}
 }
 
@@ -108,7 +110,7 @@ func (p *Pool) dequeue() *task {
 	return t
 }
 
-func (t *task) Execute() *task {
-	t.deadline = t.fn()
+func (t *task) Execute(ctx context.Context) *task {
+	t.deadline = t.fn(ctx)
 	return t
 }

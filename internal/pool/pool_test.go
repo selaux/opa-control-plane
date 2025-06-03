@@ -1,6 +1,7 @@
 package pool
 
 import (
+	"context"
 	"testing"
 	"time"
 )
@@ -9,17 +10,17 @@ func TestPool(t *testing.T) {
 	p := New(2)
 
 	// Add a task that returns a deadline in the future.
-	p.Add(func() time.Time {
+	p.Add(func(_ context.Context) time.Time {
 		return time.Now().Add(100 * time.Millisecond)
 	})
 
 	// Add a task that returns a deadline in the past.
-	p.Add(func() time.Time {
+	p.Add(func(_ context.Context) time.Time {
 		return time.Now().Add(-100 * time.Millisecond)
 	})
 
 	// Add a task that returns a deadline in the future.
-	p.Add(func() time.Time {
+	p.Add(func(_ context.Context) time.Time {
 		return time.Now().Add(200 * time.Millisecond)
 	})
 
