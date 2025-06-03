@@ -166,14 +166,11 @@ func (s *Service) launchWorkers(ctx context.Context) {
 		sources := []*builder.Source{}
 
 		systemDir := path.Join(s.persistenceDir, md5sum(system.Name))
-		systemSQLDir := path.Join(systemDir, "database")
-		systemDatasourcesDir := path.Join(systemDir, "datasources")
-		systemRepoDir := path.Join(systemDir, "repo")
 
 		src := newSource(system.Name).
-			SyncSystemSQL(&syncs, system.Name, &s.database, systemSQLDir).
-			SyncDatasources(&syncs, system.Datasources, systemDatasourcesDir).
-			SyncGit(&syncs, system.Git, systemRepoDir).
+			SyncSystemSQL(&syncs, system.Name, &s.database, path.Join(systemDir, "database")).
+			SyncDatasources(&syncs, system.Datasources, path.Join(systemDir, "datasources")).
+			SyncGit(&syncs, system.Git, path.Join(systemDir, "repo")).
 			AddRequirements(system.Requirements)
 
 		for _, stack := range stacks {
@@ -186,16 +183,12 @@ func (s *Service) launchWorkers(ctx context.Context) {
 
 		for _, l := range libraries {
 			libraryDir := path.Join(systemDir, "libraries", l.Name)
-			librarySQLDir := path.Join(libraryDir, "database")
-			libraryDatasourcesDir := path.Join(libraryDir, "datasources")
-			libraryRepoDir := path.Join(libraryDir, "repo")
-			libraryBuiltinDir := path.Join(libraryDir, "builtin")
 
 			src := newSource(l.Name).
-				SyncLibrarySQL(&syncs, l.Name, &s.database, librarySQLDir).
-				SyncDatasources(&syncs, l.Datasources, libraryDatasourcesDir).
-				SyncGit(&syncs, l.Git, libraryRepoDir).
-				SyncBuiltin(&syncs, l.Builtin, s.builtinFS, libraryBuiltinDir).
+				SyncBuiltin(&syncs, l.Builtin, s.builtinFS, path.Join(libraryDir, "builtin")).
+				SyncLibrarySQL(&syncs, l.Name, &s.database, path.Join(libraryDir, "database")).
+				SyncDatasources(&syncs, l.Datasources, path.Join(libraryDir, "datasources")).
+				SyncGit(&syncs, l.Git, path.Join(libraryDir, "repo")).
 				AddRequirements(l.Requirements)
 
 			sources = append(sources, &src.Source)
