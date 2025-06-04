@@ -6,7 +6,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"log"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
@@ -29,12 +28,12 @@ import (
 func TestMigration(t *testing.T) {
 	var styraURL = os.Getenv("STYRA_URL")
 	if styraURL == "" {
-		log.Fatal("STYRA_URL environment variable is not set")
+		t.Fatal("STYRA_URL environment variable is not set")
 	}
 
 	var styraToken = os.Getenv("STYRA_TOKEN")
 	if styraToken == "" {
-		log.Fatal("STYRA_TOKEN environment variable is not set")
+		t.Fatal("STYRA_TOKEN environment variable is not set")
 	}
 
 	cases := []struct {
@@ -271,7 +270,7 @@ func TestMigration(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			systemId := os.Getenv(tc.systemIdEnvName)
 			if systemId == "" {
-				log.Fatalf("%v environment variable is not set", tc.systemIdEnvName)
+				t.Fatalf("%v environment variable is not set", tc.systemIdEnvName)
 			}
 
 			mock, s3TS := testS3Service(t, "test")

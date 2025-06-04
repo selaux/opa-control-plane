@@ -2,12 +2,12 @@ package cmd
 
 import (
 	"context"
-	"log"
 	"os"
 
 	"github.com/spf13/cobra"
 	"github.com/tsandall/lighthouse/cmd"
 	"github.com/tsandall/lighthouse/internal/config"
+	"github.com/tsandall/lighthouse/internal/logging"
 	"github.com/tsandall/lighthouse/internal/server"
 	"github.com/tsandall/lighthouse/internal/service"
 	"github.com/tsandall/lighthouse/internal/util"
@@ -23,6 +23,7 @@ type runParams struct {
 	resetPersistence  bool
 	singleShot        bool
 	mergeConflictFail bool
+	logging           logging.Config
 }
 
 func init() {
@@ -33,6 +34,9 @@ func init() {
 		Short: "Run the Lighthouse service",
 		Run: func(cmd *cobra.Command, args []string) {
 			ctx := context.Background()
+
+			log := logging.NewLogger(params.logging)
+
 			if params.resetPersistence {
 				if err := os.RemoveAll(params.persistenceDir); err != nil {
 					log.Fatalf("failed to remove persistence directory: %v", err)
@@ -51,7 +55,8 @@ func init() {
 				WithPersistenceDir(params.persistenceDir).
 				WithConfig(bs).
 				WithBuiltinFS(util.NewEscapeFS(libraries.FS)).
-				WithSingleShot(params.singleShot)
+				WithSingleShot(params.singleShot).
+				WithLogger(log)
 
 			go func() {
 				if err := server.New().WithDatabase(svc.Database()).Init().ListenAndServe(params.addr); err != nil {
@@ -60,7 +65,7 @@ func init() {
 			}()
 
 			if err := svc.Run(ctx); err != nil {
-				log.Fatal(err)
+				log.Fatal(err.Error())
 			}
 		},
 	}
@@ -71,6 +76,7 @@ func init() {
 	run.Flags().BoolVarP(&params.resetPersistence, "reset-persistence", "", false, "Reset the persistence directory (for development purposes)")
 	run.Flags().BoolVarP(&params.singleShot, "once", "", false, "Build system bundles only once")
 	run.Flags().BoolVarP(&params.mergeConflictFail, "merge-conflict-fail", "", false, "Fail on config merge conflicts")
+	logging.VarP(run, &params.logging)
 
 	cmd.RootCommand.AddCommand(
 		run,

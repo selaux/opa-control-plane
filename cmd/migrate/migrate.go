@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
-	"log"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -20,9 +19,12 @@ import (
 	"github.com/tsandall/lighthouse/cmd"
 	"github.com/tsandall/lighthouse/cmd/internal/das"
 	"github.com/tsandall/lighthouse/internal/config"
+	"github.com/tsandall/lighthouse/internal/logging"
 	"github.com/tsandall/lighthouse/libraries"
 	"gopkg.in/yaml.v3"
 )
+
+var log *logging.Logger
 
 var systemTypeLibraries = []*config.Library{
 	{
@@ -273,6 +275,7 @@ type Options struct {
 	Prune       bool
 	Datasources bool
 	FilesPath   string
+	Logging     logging.Config
 	Output      io.Writer
 }
 
@@ -287,8 +290,9 @@ func init() {
 		Short: "Migrate configuration and policies from Styra",
 		Run: func(cmd *cobra.Command, args []string) {
 			params.Output = os.Stdout
+
 			if err := Run(params); err != nil {
-				log.Fatal(err)
+				log.Fatal(err.Error())
 			}
 		},
 	}
@@ -298,6 +302,7 @@ func init() {
 	migrate.Flags().BoolVarP(&params.Prune, "prune", "", false, "Prune unused resources")
 	migrate.Flags().BoolVarP(&params.Datasources, "datasources", "", false, "Copy datasource content")
 	migrate.Flags().StringVarP(&params.FilesPath, "files", "", "files", "Path to write the non-git stored files to (default: files/)")
+	logging.VarP(migrate, &params.Logging)
 
 	cmd.RootCommand.AddCommand(
 		migrate,
@@ -305,6 +310,8 @@ func init() {
 }
 
 func Run(params Options) error {
+	log = logging.NewLogger(params.Logging)
+
 	if params.URL == "" {
 		return errors.New("please set Styra DAS URL with -u flag (e.g., https://example.styra.com)")
 	}
@@ -387,17 +394,17 @@ func Run(params Options) error {
 	if params.Prune {
 		stacks, libraries, secrets := pruneConfig(&output)
 		for _, stack := range stacks {
-			log.Printf("Removed unused stack %q", stack.Name)
+			log.Infof("Removed unused stack %q", stack.Name)
 		}
 		for _, lib := range libraries {
-			log.Printf("Removed unused library %q", lib.Name)
+			log.Infof("Removed unused library %q", lib.Name)
 		}
 		for _, s := range secrets {
-			log.Printf("Removed unused secret %q", s.Name)
+			log.Infof("Removed unused secret %q", s.Name)
 		}
 	}
 
-	log.Printf("Finished downloading resources from DAS. Printing migration configuration.")
+	log.Info("Finished downloading resources from DAS. Printing migration configuration.")
 
 	bs, err := yaml.Marshal(output)
 	if err != nil {
@@ -425,10 +432,10 @@ func Run(params Options) error {
 		missing := expectedMatches.Diff(matches)
 		extra := matches.Diff(expectedMatches)
 		if missing.Len() > 0 {
-			log.Printf("System %q has missing stacks %v", system.Name, missing)
+			log.Infof("System %q has missing stacks %v", system.Name, missing)
 		}
 		if extra.Len() > 0 {
-			log.Printf("System %q has extra stacks %v", system.Name, extra)
+			log.Infof("System %q has extra stacks %v", system.Name, extra)
 		}
 	}
 
@@ -449,7 +456,7 @@ func Run(params Options) error {
 	if len(files) > 0 && params.FilesPath != "" {
 		root := params.FilesPath
 
-		log.Printf("Found %d files for systems and libraries. Writing them to disk under %s.", len(files), root)
+		log.Infof("Found %d files for systems and libraries. Writing them to disk under %s.", len(files), root)
 
 		for path, content := range files {
 			if err := os.MkdirAll(filepath.Join(root, filepath.Dir(path)), 0755); err != nil {
@@ -539,7 +546,7 @@ func migrateV1System(client *das.Client, state *dasState, v1 *das.V1System, data
 		return nil, nil, err
 	}
 
-	log.Printf("Fetching git roots and labels for system %q", v1.Name)
+	log.Infof("Fetching git roots and labels for system %q", v1.Name)
 
 	resp, err := client.JSON("v1/systems/" + v1.Id + "/bundles")
 	if err != nil {
@@ -580,7 +587,7 @@ func migrateV1System(client *das.Client, state *dasState, v1 *das.V1System, data
 	}
 
 	if datasources {
-		log.Printf("Fetching datasources for system %q", v1.Name)
+		log.Infof("Fetching datasources for system %q", v1.Name)
 		for _, ref := range v1.Datasources {
 			resp, err := client.JSON("v1/datasources/" + ref.Id)
 			if err != nil {
@@ -601,7 +608,7 @@ func migrateV1System(client *das.Client, state *dasState, v1 *das.V1System, data
 					system.SetEmbeddedFile(path, content)
 				}
 			} else {
-				log.Printf("Unsupported datasource category/type: %v/%v", ds.Category, ds.Type)
+				log.Infof("Unsupported datasource category/type: %v/%v", ds.Category, ds.Type)
 			}
 		}
 	}
@@ -1059,7 +1066,7 @@ func fetchDASState(c *das.Client, opts dasFetchOptions) (*dasState, error) {
 	var systems []*das.V1System
 
 	if opts.SystemId == "" {
-		log.Println("Fetching v1/systems")
+		log.Info("Fetching v1/systems")
 		resp, err := c.JSON("v1/systems")
 		if err != nil {
 			return nil, err
@@ -1070,7 +1077,7 @@ func fetchDASState(c *das.Client, opts dasFetchOptions) (*dasState, error) {
 			return nil, err
 		}
 	} else {
-		log.Println("Fetching v1/systems/" + opts.SystemId)
+		log.Info("Fetching v1/systems/" + opts.SystemId)
 		resp, err := c.JSON("v1/systems/" + opts.SystemId)
 		if err != nil {
 			return nil, err
@@ -1084,7 +1091,7 @@ func fetchDASState(c *das.Client, opts dasFetchOptions) (*dasState, error) {
 		systems = append(systems, &x)
 	}
 
-	log.Println("Fetching v1/libraries")
+	log.Info("Fetching v1/libraries")
 	resp, err := c.JSON("v1/libraries")
 	if err != nil {
 		return nil, err
@@ -1096,7 +1103,7 @@ func fetchDASState(c *das.Client, opts dasFetchOptions) (*dasState, error) {
 		return nil, err
 	}
 
-	log.Println("Fetching v1/stacks")
+	log.Info("Fetching v1/stacks")
 	resp, err = c.JSON("v1/stacks")
 	if err != nil {
 		return nil, err
@@ -1149,7 +1156,7 @@ func fetchSystemPolicies(c *das.Client, state *dasState) error {
 		wg.Add(1)
 		go func() {
 			for s := range ch {
-				log.Printf("Fetching %d policies for system %q", len(s.Policies), s.Name)
+				log.Infof("Fetching %d policies for system %q", len(s.Policies), s.Name)
 				ps, err := fetchPolicies(c, s.Policies)
 				if err != nil {
 					panic(err)
@@ -1182,7 +1189,7 @@ func fetchStackPolicies(c *das.Client, state *dasState) error {
 		wg.Add(1)
 		go func() {
 			for s := range ch {
-				log.Printf("Fetching %d policies for stack %q", len(s.Policies), s.Name)
+				log.Infof("Fetching %d policies for stack %q", len(s.Policies), s.Name)
 				ps, err := fetchPolicies(c, s.Policies)
 				if err != nil {
 					panic(err)
@@ -1232,7 +1239,7 @@ func fetchLibraryPolicies(c *das.Client, state *dasState) error {
 					panic(err)
 				}
 
-				log.Printf("Fetching %d policies for library %q", len(l.Policies), l.Id)
+				log.Infof("Fetching %d policies for library %q", len(l.Policies), l.Id)
 				ps, err := fetchPolicies(c, l.Policies)
 				if err != nil {
 					panic(err)
@@ -1262,7 +1269,7 @@ func fetchPolicies(c *das.Client, refs []das.V1PoliciesRef) ([]*das.V1Policy, er
 		resp, err := c.JSON("v1/policies/" + ref.Id)
 		if err != nil {
 			if dErr, ok := err.(das.Error); ok && dErr.StatusCode == http.StatusNotFound {
-				log.Printf("Non-existent policy reference: %v", ref.Id)
+				log.Infof("Non-existent policy reference: %v", ref.Id)
 				continue
 			}
 			return nil, err

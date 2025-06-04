@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
-	"log"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -24,8 +23,11 @@ import (
 	"github.com/tsandall/lighthouse/cmd"
 	"github.com/tsandall/lighthouse/cmd/internal/das"
 	"github.com/tsandall/lighthouse/internal/config"
+	"github.com/tsandall/lighthouse/internal/logging"
 	"github.com/tsandall/lighthouse/internal/s3"
 )
+
+var log *logging.Logger
 
 type Options struct {
 	ConfigFile           []string
@@ -35,6 +37,7 @@ type Options struct {
 	PolicyType           string
 	MaxEvalTimeInflation int
 	MergeConflictFail    bool
+	Logging              logging.Config
 	Output               io.Writer
 }
 
@@ -49,7 +52,7 @@ func init() {
 		Run: func(cmd *cobra.Command, args []string) {
 			opts.Output = os.Stdout
 			if err := Run(opts); err != nil {
-				log.Fatal(err)
+				log.Fatal(err.Error())
 			}
 		},
 	}
@@ -60,6 +63,7 @@ func init() {
 	backtest.Flags().StringVarP(&opts.PolicyType, "policy-type", "", "", "Specify policy type to backtest against (e.g., validating, mutating, etc.)")
 	backtest.Flags().IntVarP(&opts.MaxEvalTimeInflation, "max-eval-time-inflation", "", 100, "Maximum allowed increase in decision evaluation time (in percents)")
 	backtest.Flags().BoolVarP(&opts.MergeConflictFail, "merge-conflict-fail", "", false, "Fail on config merge conflicts")
+	logging.VarP(backtest, &opts.Logging)
 
 	cmd.RootCommand.AddCommand(
 		backtest,
@@ -85,6 +89,7 @@ type DecisionDiff struct {
 }
 
 func Run(opts Options) error {
+	log = logging.NewLogger(opts.Logging)
 
 	bs, err := config.Merge(opts.ConfigFile, opts.MergeConflictFail)
 	if err != nil {
@@ -111,7 +116,7 @@ func Run(opts Options) error {
 		Token:  opts.Token,
 		Client: http.DefaultClient}
 
-	log.Println("Fetching systems")
+	log.Info("Fetching systems")
 	resp, err := styra.JSON("v1/systems")
 	if err != nil {
 		return err
@@ -134,7 +139,7 @@ func Run(opts Options) error {
 	ctx := context.Background()
 
 	for _, system := range cfg.Systems {
-		log.Printf("Backtesting system %q", system.Name)
+		log.Infof("Backtesting system %q", system.Name)
 		if err := backtestSystem(ctx, opts, &styra, v1SystemsByName, system, &report); err != nil {
 			report.Systems[system.Name] = SystemReport{
 				Status:  "error",
@@ -278,7 +283,7 @@ func backtestSystem(ctx context.Context, opts Options, styra *das.Client, byName
 			options.Input = *d.Input
 		}
 
-		log.Printf("Evaluating decision %q for system %q", d.DecisionId, system.Name)
+		log.Infof("Evaluating decision %q for system %q", d.DecisionId, system.Name)
 
 		var result *interface{}
 		var start time.Time = time.Now()

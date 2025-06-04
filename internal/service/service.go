@@ -5,7 +5,6 @@ import (
 	"crypto/md5"
 	"encoding/hex"
 	"io/fs"
-	"log"
 	"path"
 	"time"
 
@@ -16,6 +15,7 @@ import (
 	"github.com/tsandall/lighthouse/internal/database"
 	"github.com/tsandall/lighthouse/internal/gitsync"
 	"github.com/tsandall/lighthouse/internal/httpsync"
+	"github.com/tsandall/lighthouse/internal/logging"
 	"github.com/tsandall/lighthouse/internal/pool"
 	"github.com/tsandall/lighthouse/internal/s3"
 	"github.com/tsandall/lighthouse/internal/sqlsync"
@@ -31,6 +31,7 @@ type Service struct {
 	database       database.Database
 	builtinFS      fs.FS
 	singleShot     bool
+	log            *logging.Logger
 }
 
 func New() *Service {
@@ -64,8 +65,12 @@ func (s *Service) Database() *database.Database {
 	return &s.database
 }
 
-func (s *Service) Run(ctx context.Context) error {
+func (s *Service) WithLogger(logger *logging.Logger) *Service {
+	s.log = logger
+	return s
+}
 
+func (s *Service) Run(ctx context.Context) error {
 	if err := s.database.InitDB(ctx, s.persistenceDir); err != nil {
 		return err
 	}
@@ -103,19 +108,19 @@ func (s *Service) launchWorkers(ctx context.Context) {
 
 	systems, err := s.database.ListSystemsWithGitCredentials()
 	if err != nil {
-		log.Println("error listing systems:", err)
+		s.log.Error("error listing systems:", err)
 		return
 	}
 
 	libraries, err := s.database.ListLibrariesWithGitCredentials()
 	if err != nil {
-		log.Println("error listing libraries:", err)
+		s.log.Error("error listing libraries:", err)
 		return
 	}
 
 	stacks, err := s.database.ListStacks()
 	if err != nil {
-		log.Println("error listing stacks:", err)
+		s.log.Error("error listing stacks:", err)
 		return
 	}
 
@@ -160,7 +165,7 @@ func (s *Service) launchWorkers(ctx context.Context) {
 			continue
 		}
 
-		log.Println("(re)starting worker for system:", system.Name)
+		s.log.Debug("(re)starting worker for system:", system.Name)
 
 		syncs := []Synchronizer{}
 		sources := []*builder.Source{}
@@ -196,11 +201,11 @@ func (s *Service) launchWorkers(ctx context.Context) {
 
 		storage, err := s3.New(ctx, system.ObjectStorage)
 		if err != nil {
-			log.Println("error creating object storage client:", err)
+			s.log.Error("error creating object storage client:", err)
 			continue
 		}
 
-		w := NewSystemWorker(system, libraries, stacks).
+		w := NewSystemWorker(system, libraries, stacks, s.log).
 			WithSources(sources).
 			WithSynchronizers(syncs).
 			WithStorage(storage).

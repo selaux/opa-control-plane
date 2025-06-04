@@ -3,11 +3,11 @@ package service
 import (
 	"bytes"
 	"context"
-	"log"
 	"time"
 
 	"github.com/tsandall/lighthouse/internal/builder"
 	"github.com/tsandall/lighthouse/internal/config"
+	"github.com/tsandall/lighthouse/internal/logging"
 	"github.com/tsandall/lighthouse/internal/s3"
 )
 
@@ -32,14 +32,21 @@ type SystemWorker struct {
 	changed        chan struct{}
 	done           chan struct{}
 	singleShot     bool
+	log            *logging.Logger
 }
 
 type Synchronizer interface {
 	Execute(ctx context.Context) error
 }
 
-func NewSystemWorker(system *config.System, libraries []*config.Library, stacks []*config.Stack) *SystemWorker {
-	return &SystemWorker{systemConfig: system, libraryConfigs: libraries, stackConfigs: stacks, changed: make(chan struct{}), done: make(chan struct{})}
+func NewSystemWorker(system *config.System, libraries []*config.Library, stacks []*config.Stack, logger *logging.Logger) *SystemWorker {
+	return &SystemWorker{
+		systemConfig:   system,
+		libraryConfigs: libraries,
+		stackConfigs:   stacks,
+		log:            logger,
+		changed:        make(chan struct{}), done: make(chan struct{}),
+	}
 }
 
 func (worker *SystemWorker) WithSynchronizers(synchronizers []Synchronizer) *SystemWorker {
@@ -89,14 +96,14 @@ func (w *SystemWorker) Execute(ctx context.Context) time.Time {
 	// Wipe any old files synchronized during the previous run to avoid deleted files in database/http from reappearing to system bundles.
 	for _, src := range w.sources {
 		if err := src.Wipe(); err != nil {
-			return w.errorf("failed to remove a directory for system %q: %v", w.systemConfig.Name, err)
+			return w.warn("failed to remove a directory for system %q: %v", w.systemConfig.Name, err)
 		}
 	}
 
 	for _, synchronizer := range w.synchronizers {
 		err := synchronizer.Execute(ctx)
 		if err != nil {
-			return w.errorf("failed to synchronize system %q: %v", w.systemConfig.Name, err)
+			return w.warn("failed to synchronize system %q: %v", w.systemConfig.Name, err)
 		}
 	}
 
@@ -109,12 +116,12 @@ func (w *SystemWorker) Execute(ctx context.Context) time.Time {
 
 	err := b.Build(ctx)
 	if err != nil {
-		return w.errorf("failed to build a system bundle %q: %v", w.systemConfig.Name, err)
+		return w.warn("failed to build a system bundle %q: %v", w.systemConfig.Name, err)
 	}
 
 	if w.storage != nil {
 		if err := w.storage.Upload(ctx, bytes.NewReader(buffer.Bytes())); err != nil {
-			return w.errorf("failed to upload system bundle %q: %v", w.systemConfig.Name, err)
+			return w.warn("failed to upload system bundle %q: %v", w.systemConfig.Name, err)
 		}
 
 		return w.success("System %q bundle built and uploaded.", w.systemConfig.Name)
@@ -124,7 +131,7 @@ func (w *SystemWorker) Execute(ctx context.Context) time.Time {
 }
 
 func (w *SystemWorker) success(msg string, args ...interface{}) time.Time {
-	log.Printf(msg, args...)
+	w.log.Debug(msg, args...)
 
 	if w.singleShot {
 		return w.die()
@@ -133,8 +140,8 @@ func (w *SystemWorker) success(msg string, args ...interface{}) time.Time {
 	return time.Now().Add(successDelay)
 }
 
-func (w *SystemWorker) errorf(msg string, args ...interface{}) time.Time {
-	log.Printf(msg, args...)
+func (w *SystemWorker) warn(msg string, args ...interface{}) time.Time {
+	w.log.Warn(msg, args...)
 
 	if w.singleShot {
 		return w.die()

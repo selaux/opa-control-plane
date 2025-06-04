@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log"
 	"net/http"
 	"os"
 	"reflect"
@@ -20,8 +19,11 @@ import (
 	"github.com/tsandall/lighthouse/cmd"
 	"github.com/tsandall/lighthouse/cmd/internal/das"
 	"github.com/tsandall/lighthouse/internal/config"
+	"github.com/tsandall/lighthouse/internal/logging"
 	"github.com/tsandall/lighthouse/internal/s3"
 )
+
+var log *logging.Logger
 
 type compareReport struct {
 	MissingSystems []string                       `json:"missing_systems,omitempty"`
@@ -77,6 +79,7 @@ type compareParams struct {
 	styraURL          string
 	styraToken        string
 	mergeConflictFail bool
+	logging           logging.Config
 }
 
 func init() {
@@ -90,7 +93,7 @@ func init() {
 		Short: "Compare Lighthouse configuration and bundles to version from Styra",
 		Run: func(cmd *cobra.Command, args []string) {
 			if err := doCompare(params); err != nil {
-				log.Fatal(err)
+				log.Fatal(err.Error())
 			}
 		},
 	}
@@ -98,6 +101,7 @@ func init() {
 	compare.Flags().StringSliceVarP(&params.configFile, "config", "c", []string{"config.yaml"}, "Path to the configuration file")
 	compare.Flags().StringVarP(&params.styraURL, "url", "u", "", "Styra tenant URL (e.g., https://expo.styra.com)")
 	compare.Flags().BoolVarP(&params.mergeConflictFail, "merge-conflict-fail", "", false, "Fail on config merge conflicts")
+	logging.VarP(compare, &params.logging)
 
 	cmd.RootCommand.AddCommand(
 		compare,
@@ -105,8 +109,9 @@ func init() {
 }
 
 func doCompare(params compareParams) error {
+	log = logging.NewLogger(params.logging)
 
-	log.Printf("Loading configuration from %v...", params.configFile)
+	log.Infof("Loading configuration from %v...", params.configFile)
 
 	bs, err := config.Merge(params.configFile, params.mergeConflictFail)
 	if err != nil {
@@ -141,7 +146,7 @@ func doCompare(params compareParams) error {
 		URL:    url,
 		Token:  params.styraToken,
 		Client: http.DefaultClient}
-	log.Println("Fetching systems...")
+	log.Info("Fetching systems...")
 	resp, err := styra.JSON("v1/systems")
 	if err != nil {
 		return err
@@ -197,7 +202,7 @@ func doCompare(params compareParams) error {
 
 func compareSystem(ctx context.Context, client *das.Client, v1 *das.V1System, system *config.System) (*compareSystemReport, error) {
 
-	log.Printf("Checking system %q...", system.Name)
+	log.Infof("Checking system %q...", system.Name)
 
 	s, err := s3.New(ctx, system.ObjectStorage)
 	if err != nil {

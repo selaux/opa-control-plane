@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
 	"strings"
 	"testing"
 
@@ -326,7 +325,7 @@ func TestBuilder(t *testing.T) {
 
 				bundle, err := bundle.NewReader(buf).Read()
 				if err != nil {
-					log.Fatal(err)
+					t.Fatal(err)
 				}
 
 				if *bundle.Manifest.RegoVersion != 0 {
