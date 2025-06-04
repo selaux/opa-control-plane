@@ -268,14 +268,14 @@ input_excludes_key(key, input_value, requirements) {
 
 # input_includes returns true if the input_val is found in the requirements object and key field_name
 input_includes(field_name, input_val, requirements) {
-	data.library.v1.utils.labels.match.v1.includes_some(input_val, requirements[field_name])
+	data.library.v1.utils.labels.matchcopy.v1.includes_some(input_val, requirements[field_name])
 } else {
 	requirements_undefined(requirements, field_name)
 }
 
 # input_excludes returns true if the input_val is not found in the requirements object and key field_name
 input_excludes(field_name, input_val, requirements) {
-	data.library.v1.utils.labels.match.v1.includes_none(input_val, requirements[field_name])
+	data.library.v1.utils.labels.matchcopy.v1.includes_none(input_val, requirements[field_name])
 } else {
 	requirements_undefined(requirements, field_name)
 }
