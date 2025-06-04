@@ -341,9 +341,13 @@ func init() {
 	migrate := &cobra.Command{
 		Use:   "migrate",
 		Short: "Migrate configuration and policies from Styra",
+		PreRun: func(cmd *cobra.Command, args []string) {
+			if !cmd.Flags().Changed("prune") && params.SystemId != "" {
+				params.Prune = true
+			}
+		},
 		Run: func(cmd *cobra.Command, args []string) {
 			params.Output = os.Stdout
-
 			if err := Run(params); err != nil {
 				log.Fatal(err.Error())
 			}
