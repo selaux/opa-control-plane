@@ -322,6 +322,13 @@ func (s *Library) SetEmbeddedFile(path string, content string) {
 	s.EmbeddedFiles[path] = content
 }
 
+func (s *Library) SetEmbeddedFiles(files map[string]string) {
+	s.EmbeddedFiles = nil
+	for path, content := range files {
+		s.SetEmbeddedFile(path, content)
+	}
+}
+
 // Stack defines the configuration for a Lighthouse Stack.
 type Stack struct {
 	Name         string        `json:"-" yaml:"-"`

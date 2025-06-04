@@ -328,6 +328,7 @@ type Options struct {
 	Prune       bool
 	Datasources bool
 	FilesPath   string
+	EmbedFiles  bool
 	Logging     logging.Config
 	Output      io.Writer
 }
@@ -359,6 +360,7 @@ func init() {
 	migrate.Flags().BoolVarP(&params.Prune, "prune", "", false, "Prune unused resources")
 	migrate.Flags().BoolVarP(&params.Datasources, "datasources", "", false, "Copy datasource content")
 	migrate.Flags().StringVarP(&params.FilesPath, "files", "", "files", "Path to write the non-git stored files to (default: files/)")
+	migrate.Flags().BoolVarP(&params.EmbedFiles, "embed-files", "", false, "Embed non-git stored files into output configuration")
 	logging.VarP(migrate, &params.Logging)
 
 	cmd.RootCommand.AddCommand(
@@ -474,6 +476,47 @@ func Run(params Options) error {
 		}
 	}
 
+	files := make(map[string]string)
+
+	for _, system := range output.Systems {
+		for path, content := range system.Files() {
+			files[filepath.Join(append([]string{"systems", system.Name}, filepath.SplitList(path)...)...)] = content
+		}
+		if !params.EmbedFiles {
+			system.SetEmbeddedFiles(nil)
+		}
+	}
+
+	for _, library := range output.Libraries {
+		for path, content := range library.Files() {
+			files[filepath.Join(append([]string{"libraries", library.Name}, filepath.SplitList(path)...)...)] = content
+		}
+		if !params.EmbedFiles {
+			library.SetEmbeddedFiles(nil)
+		}
+	}
+
+	if len(files) > 0 && params.FilesPath != "" {
+		root := params.FilesPath
+
+		rootAbs, err := filepath.Abs(root)
+		if err != nil {
+			return err
+		}
+
+		log.Infof("Found %d files for systems and libraries. Writing them to disk under %s.", len(files), rootAbs)
+
+		for path, content := range files {
+			if err := os.MkdirAll(filepath.Join(root, filepath.Dir(path)), 0755); err != nil {
+				return err
+			}
+
+			if err := os.WriteFile(filepath.Join(root, path), []byte(content), 0644); err != nil {
+				return err
+			}
+		}
+	}
+
 	log.Info("Finished downloading resources from DAS. Printing migration configuration.")
 
 	bs, err := yaml.Marshal(output)
@@ -506,36 +549,6 @@ func Run(params Options) error {
 		}
 		if extra.Len() > 0 {
 			log.Infof("System %q has extra stacks %v", system.Name, extra)
-		}
-	}
-
-	files := make(map[string]string)
-
-	for _, system := range output.Systems {
-		for path, content := range system.Files() {
-			files[filepath.Join(append([]string{"systems", system.Name}, filepath.SplitList(path)...)...)] = content
-		}
-	}
-
-	for _, library := range output.Libraries {
-		for path, content := range library.Files() {
-			files[filepath.Join(append([]string{"libraries", library.Name}, filepath.SplitList(path)...)...)] = content
-		}
-	}
-
-	if len(files) > 0 && params.FilesPath != "" {
-		root := params.FilesPath
-
-		log.Infof("Found %d files for systems and libraries. Writing them to disk under %s.", len(files), root)
-
-		for path, content := range files {
-			if err := os.MkdirAll(filepath.Join(root, filepath.Dir(path)), 0755); err != nil {
-				return err
-			}
-
-			if err := os.WriteFile(filepath.Join(root, path), []byte(content), 0644); err != nil {
-				return err
-			}
 		}
 	}
 

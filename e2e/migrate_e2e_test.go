@@ -308,6 +308,7 @@ func TestMigration(t *testing.T) {
 					SystemId:    systemId,
 					Prune:       true,
 					Datasources: tc.datasources,
+					EmbedFiles:  true,
 					Output:      f,
 				})
 				if err != nil {
