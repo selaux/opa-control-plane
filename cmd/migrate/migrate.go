@@ -103,6 +103,53 @@ func getSystemTypeLib(t string) *config.Library {
 	return nil
 }
 
+var stackTypeLibraries = map[string]*config.Library{
+	"template.envoy:2.1": {
+		Name: "template.envoy:2.1-stack",
+		Requirements: []config.Requirement{
+			{Library: strptr("match-v1")},
+		},
+	},
+	"template.envoy:2.0": {
+		Name: "template.envoy:2.0-stack",
+		Requirements: []config.Requirement{
+			{Library: strptr("match-v1")},
+		},
+	},
+	"template.istio:1.0": {
+		Name: "template.istio:1.0-stack",
+		Requirements: []config.Requirement{
+			{Library: strptr("match-v1")},
+		},
+	},
+	"template.kuma:1.0": {
+		Name: "template.kuma:1.0-stack",
+		Requirements: []config.Requirement{
+			{Library: strptr("match-v1")},
+		},
+	},
+	"template.kong-gateway:1.0": {
+		Name: "template.kong-gateway:1.0-stack",
+		Requirements: []config.Requirement{
+			{Library: strptr("match-v1")},
+		},
+	},
+	"kubernetes:v2": {
+		Name: "kubernetes:v2-stack",
+		Requirements: []config.Requirement{
+			{Library: strptr("kubernetes:v2-library")},
+			{Library: strptr("match-v1")},
+		},
+	},
+	"template.terraform:2.0": {
+		Name: "template.terraform:2.0-stack",
+		Requirements: []config.Requirement{
+			{Library: strptr("template.terraform:2.0-library")},
+			{Library: strptr("match-v1")},
+		},
+	},
+}
+
 var baseLibraries = []*config.Library{
 	{
 		Name:    "template.envoy:2.1-entrypoint-application",
@@ -224,7 +271,7 @@ func getBaseLib(r config.Requirement) *config.Library {
 
 var baseLibPackageIndex = func() map[string]*libraryPackageIndex {
 	result := map[string]*libraryPackageIndex{}
-	for _, lib := range systemTypeLibraries {
+	addReqs := func(lib *config.Library) {
 		for _, r := range lib.Requirements {
 			bi := getBaseLib(r)
 			if bi == nil {
@@ -264,6 +311,12 @@ var baseLibPackageIndex = func() map[string]*libraryPackageIndex {
 				panic(err)
 			}
 		}
+	}
+	for _, lib := range systemTypeLibraries {
+		addReqs(lib)
+	}
+	for _, lib := range stackTypeLibraries {
+		addReqs(lib)
 	}
 	return result
 }()
@@ -354,6 +407,10 @@ func Run(params Options) error {
 	}
 
 	for _, bi := range systemTypeLibraries {
+		output.Libraries[bi.Name] = bi
+	}
+
+	for _, bi := range stackTypeLibraries {
 		output.Libraries[bi.Name] = bi
 	}
 
@@ -499,44 +556,25 @@ func migrateV1Library(_ *das.Client, state *dasState, v1 *das.V1Library) (*confi
 
 func mapV1LibraryToLibraryAndSecretConfig(v1 *das.V1Library) (*config.Library, *config.Secret, error) {
 
+	library := &config.Library{Name: v1.Id}
+
+	var origin das.V1GitRepoConfig
+
 	if v1.SourceControl.UseWorkspaceSettings {
-		// TODO(tsandall): need to find library that has this
-		// presumably need to export secret from workspace
-		return nil, nil, fmt.Errorf("workspace source control not supported yet")
+		origin = v1.SourceControl.Origin
+	} else if v1.SourceControl.LibraryOrigin.URL == "" {
+		return library, nil, nil
+	} else {
+		origin = v1.SourceControl.LibraryOrigin
 	}
 
-	var library config.Library
-	var secret *config.Secret
+	secret := migrateV1GitConfig(&origin, library)
 
-	library.Name = v1.Id
-
-	if v1.SourceControl.LibraryOrigin.URL == "" {
-		return &library, nil, nil
+	if v1.SourceControl.UseWorkspaceSettings {
+		library.Git.IncludedFiles = []string{"libraries/" + v1.Id + "/*"}
 	}
 
-	library.Git.Repo = v1.SourceControl.LibraryOrigin.URL
-
-	if v1.SourceControl.LibraryOrigin.Commit != "" {
-		library.Git.Commit = &v1.SourceControl.LibraryOrigin.Commit
-	} else if v1.SourceControl.LibraryOrigin.Reference != "" {
-		library.Git.Reference = &v1.SourceControl.LibraryOrigin.Reference
-	}
-
-	if v1.SourceControl.LibraryOrigin.Path != "" {
-		library.Git.Path = &v1.SourceControl.LibraryOrigin.Path
-	}
-
-	if v1.SourceControl.LibraryOrigin.Credentials != "" {
-		secret = &config.Secret{}
-		secret.Name = v1.SourceControl.LibraryOrigin.Credentials
-		library.Git.Credentials = &config.SecretRef{Name: secret.Name}
-	} else if v1.SourceControl.LibraryOrigin.SSHCredentials.PrivateKey != "" {
-		secret = &config.Secret{}
-		secret.Name = v1.SourceControl.LibraryOrigin.SSHCredentials.PrivateKey
-		library.Git.Credentials = &config.SecretRef{Name: secret.Name}
-	}
-
-	return &library, secret, nil
+	return library, secret, nil
 }
 
 func migrateV1System(client *das.Client, state *dasState, v1 *das.V1System, datasources bool) (*config.System, *config.Secret, error) {
@@ -546,31 +584,18 @@ func migrateV1System(client *das.Client, state *dasState, v1 *das.V1System, data
 		return nil, nil, err
 	}
 
-	log.Infof("Fetching git roots and labels for system %q", v1.Name)
-
-	resp, err := client.JSON("v1/systems/" + v1.Id + "/bundles")
+	gitRoots, err := getSystemGitRoots(client, state.FeatureFlags.SBOM, v1)
 	if err != nil {
-		return nil, nil, err
-	}
-
-	bundles := []*das.V1Bundle{}
-	if err := resp.Decode(&bundles); err != nil {
-		return nil, nil, err
-	}
-
-	var gitRoots []string
-	if len(bundles) > 0 {
-		for i := range bundles[0].SBOM.Origins {
-			gitRoots = append(gitRoots, bundles[0].SBOM.Origins[i].Roots...)
-		}
+		return nil, nil, fmt.Errorf("failed to get git roots for system %q: %w", v1.Name, err)
 	}
 
 	policies := state.SystemPolicies[v1.Id]
 	var files map[string]string
-	files, system.Requirements = migrateV1Policies(v1.Type, "systems/"+v1.Id+"/", policies, gitRoots)
+	typeLib := getSystemTypeLib(v1.Type)
+	files, system.Requirements = migrateV1Policies(typeLib, "systems/"+v1.Id+"/", policies, gitRoots)
 	system.SetEmbeddedFiles(files)
 
-	resp, err = client.JSON(fmt.Sprintf("v1/data/metadata/%v/labels", v1.Id))
+	resp, err := client.JSON(fmt.Sprintf("v1/data/metadata/%v/labels", v1.Id))
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to query labels for %q: %w", v1.Name, err)
 	}
@@ -649,9 +674,8 @@ func mapV1SystemToSystemAndSecretConfig(_ *das.Client, v1 *das.V1System) (*confi
 	return &system, secret, nil
 }
 
-func migrateV1Policies(typeName string, nsPrefix string, policies []*das.V1Policy, gitRoots []string) (config.Files, []config.Requirement) {
+func migrateV1Policies(typeLib *config.Library, nsPrefix string, policies []*das.V1Policy, gitRoots []string) (config.Files, []config.Requirement) {
 
-	typeLib := getSystemTypeLib(typeName)
 	excludeLibs := make(map[string]struct{})
 	var files config.Files
 	var requirements []config.Requirement
@@ -737,26 +761,28 @@ func migrateV1PushDatasource(c *das.Client, nsPrefix string, id string) (config.
 	return result, nil
 }
 
-func migrateV1Stack(_ *das.Client, state *dasState, v1 *das.V1Stack) (*config.Stack, *config.Library, *config.Secret, error) {
+func migrateV1Stack(c *das.Client, state *dasState, v1 *das.V1Stack) (*config.Stack, *config.Library, *config.Secret, error) {
 
 	var stack config.Stack
-	var library config.Library
-
 	stack.Name = v1.Name
-	library.Name = v1.Name
+
+	library, secret, err := mapV1StackToLibraryAndSecretConfig(v1)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+
 	stack.Requirements = append(stack.Requirements, config.Requirement{Library: &v1.Name})
 
-	// NOTE(tsandall): automatically add requirement on match library as all stacks have selectors
-	library.Requirements = append(library.Requirements, config.Requirement{Library: strptr("match-v1")})
+	gitRoots, err := getStackGitRoots(c, state.FeatureFlags.SBOM, v1)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("failed to get git roots for stack %q: %w", v1.Name, err)
+	}
 
-	// TODO(tsandall): add support for excluding git backed files
-	// may need to pick a bundle from a matching system to pull out roots
 	policies := state.StackPolicies[v1.Id]
-
-	for i := range policies {
-		for file, str := range policies[i].Modules {
-			library.SetEmbeddedFile(policies[i].Package+"/"+file, str)
-		}
+	var files config.Files
+	files, library.Requirements = migrateV1Policies(stackTypeLibraries[v1.Type], "", policies, gitRoots)
+	for path, content := range files {
+		library.SetEmbeddedFile(path, content)
 	}
 
 	pkg := fmt.Sprintf("stacks/%v/selectors", v1.Id)
@@ -782,11 +808,63 @@ func migrateV1Stack(_ *das.Client, state *dasState, v1 *das.V1Stack) (*config.St
 				return nil, nil, nil, fmt.Errorf("failed to set system-type label for %q: %w", v1.Name, err)
 			}
 
-			return &stack, &library, nil, err
+			return &stack, library, secret, err
 		}
 	}
 
 	return nil, nil, nil, fmt.Errorf("misisng selector policy for %q", v1.Name)
+}
+
+func mapV1StackToLibraryAndSecretConfig(v1 *das.V1Stack) (*config.Library, *config.Secret, error) {
+
+	library := &config.Library{Name: v1.Name}
+
+	var origin das.V1GitRepoConfig
+
+	if v1.SourceControl.UseWorkspaceSettings {
+		origin = v1.SourceControl.Origin
+	} else if v1.SourceControl.StackOrigin.URL == "" {
+		return library, nil, nil
+	} else {
+		origin = v1.SourceControl.StackOrigin
+	}
+
+	secret := migrateV1GitConfig(&origin, library)
+
+	if v1.SourceControl.UseWorkspaceSettings {
+		library.Git.IncludedFiles = []string{"stacks/" + v1.Id + "/*"}
+	}
+
+	return library, secret, nil
+}
+
+func migrateV1GitConfig(origin *das.V1GitRepoConfig, library *config.Library) *config.Secret {
+
+	library.Git.Repo = origin.URL
+
+	if origin.Commit != "" {
+		library.Git.Commit = &origin.Commit
+	} else if origin.Reference != "" {
+		library.Git.Reference = &origin.Reference
+	}
+
+	if origin.Path != "" {
+		library.Git.Path = &origin.Path
+	}
+
+	var secret *config.Secret
+
+	if origin.Credentials != "" {
+		secret = &config.Secret{}
+		secret.Name = origin.Credentials
+		library.Git.Credentials = &config.SecretRef{Name: secret.Name}
+	} else if origin.SSHCredentials.PrivateKey != "" {
+		secret = &config.Secret{}
+		secret.Name = origin.SSHCredentials.PrivateKey
+		library.Git.Credentials = &config.SecretRef{Name: secret.Name}
+	}
+
+	return secret
 }
 
 func migrateV1Selector(module *ast.Module) (config.Selector, error) {
@@ -856,6 +934,74 @@ func migrateV1Selector(module *ast.Module) (config.Selector, error) {
 		err = selector.Set("do-not-match", []string{})
 	}
 	return selector, err
+}
+
+func getSystemGitRoots(c *das.Client, sbomEnabled bool, v1 *das.V1System) ([]string, error) {
+
+	if v1.SourceControl == nil {
+		return nil, nil
+	}
+
+	if !sbomEnabled {
+		return []string{""}, nil
+	}
+
+	log.Infof("Fetching git roots and labels for system %q", v1.Name)
+
+	resp, err := c.JSON("v1/systems/" + v1.Id + "/bundles")
+	if err != nil {
+		return nil, err
+	}
+
+	bundles := []*das.V1Bundle{}
+	if err := resp.Decode(&bundles); err != nil {
+		return nil, err
+	}
+
+	var gitRoots []string
+	if len(bundles) > 0 {
+		for i := range bundles[0].SBOM.Origins {
+			gitRoots = append(gitRoots, bundles[0].SBOM.Origins[i].Roots...)
+		}
+	}
+
+	return nil, nil
+}
+
+func getStackGitRoots(c *das.Client, sbomEnabled bool, v1 *das.V1Stack) ([]string, error) {
+
+	if v1.SourceControl == nil {
+		return nil, nil
+	}
+
+	if len(v1.MatchingSystems) == 0 || !sbomEnabled {
+		return []string{""}, nil
+	}
+
+	log.Infof("Fetching git roots for stack %q", v1.Name)
+
+	resp, err := c.JSON("v1/systems/" + v1.MatchingSystems[0] + "/bundles")
+	if err != nil {
+		return nil, err
+	}
+
+	bundles := []*das.V1Bundle{}
+	if err := resp.Decode(&bundles); err != nil {
+		return nil, err
+	}
+
+	var gitRoots []string
+	if len(bundles) > 0 {
+		for i := range bundles[0].SBOM.Origins {
+			for _, root := range bundles[0].SBOM.Origins[i].Roots {
+				if strings.HasPrefix(root, "stacks/"+v1.Id+"/") {
+					gitRoots = append(gitRoots, root)
+				}
+			}
+		}
+	}
+
+	return gitRoots, nil
 }
 
 func migrateDependencies(_ *das.Client, state *dasState, output *config.Root) error {
@@ -1047,6 +1193,10 @@ func (g graph) dfs(n string, iter func(node), visited map[string]struct{}) {
 }
 
 type dasState struct {
+	FeatureFlags struct {
+		SBOM                  bool `json:"SBOM"`
+		LibraryEditingEnabled bool `json:"LIBRARY_EDITING_ENABLED"`
+	}
 	DatasourcesById map[string]*das.V1Datasource
 	SystemsById     map[string]*das.V1System
 	SystemPolicies  map[string][]*das.V1Policy
@@ -1062,6 +1212,16 @@ type dasFetchOptions struct {
 
 func fetchDASState(c *das.Client, opts dasFetchOptions) (*dasState, error) {
 	state := dasState{}
+
+	log.Info("Fetching v1/runtime/features")
+	resp, err := c.JSON("v1/runtime/features")
+	if err != nil {
+		return nil, err
+	}
+
+	if err := resp.Decode(&state.FeatureFlags); err != nil {
+		return nil, err
+	}
 
 	var systems []*das.V1System
 
@@ -1091,16 +1251,50 @@ func fetchDASState(c *das.Client, opts dasFetchOptions) (*dasState, error) {
 		systems = append(systems, &x)
 	}
 
-	log.Info("Fetching v1/libraries")
-	resp, err := c.JSON("v1/libraries")
-	if err != nil {
-		return nil, err
-	}
-
 	var libraries []*das.V1Library
-	err = resp.Decode(&libraries)
-	if err != nil {
-		return nil, err
+
+	if state.FeatureFlags.LibraryEditingEnabled {
+
+		log.Info("Fetching v1/libraries")
+		resp, err = c.JSON("v1/libraries")
+		if err != nil {
+			return nil, err
+		}
+
+		err = resp.Decode(&libraries)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+
+		log.Info("Fetching v1/datasources")
+		resp, err = c.JSON("v1/datasources")
+		if err != nil {
+			return nil, err
+		}
+
+		var datasources []*das.V1Datasource
+		if err := resp.Decode(&datasources); err != nil {
+			return nil, err
+		}
+
+		for i := range datasources {
+			if datasources[i].Type == "pull" && datasources[i].Category == "git/rego" && strings.HasPrefix(datasources[i].Id, "global/") {
+				resp, err := c.JSON("v1/datasources/" + datasources[i].Id)
+				if err != nil {
+					return nil, err
+				}
+				var git das.V1GitRepoConfig
+				if err := resp.Decode(&git); err != nil {
+					return nil, err
+				}
+				library, err := fetchLegacyLibrary(c, datasources[i].Id, git)
+				if err != nil {
+					return nil, err
+				}
+				libraries = append(libraries, library)
+			}
+		}
 	}
 
 	log.Info("Fetching v1/stacks")
@@ -1143,6 +1337,47 @@ func fetchDASState(c *das.Client, opts dasFetchOptions) (*dasState, error) {
 	}
 
 	return &state, nil
+}
+
+func fetchLegacyLibrary(c *das.Client, id string, git das.V1GitRepoConfig) (*das.V1Library, error) {
+
+	log.Infof("Fetching legacy library %q", id)
+
+	var library das.V1Library
+
+	library.Id = id
+	library.SourceControl = &das.V1LibrarySourceControl{Origin: git, LibraryOrigin: git}
+
+	process := []string{id}
+	seen := map[string]struct{}{}
+
+	for len(process) > 0 {
+		var next string
+		next, process = process[0], process[1:]
+		seen[next] = struct{}{}
+		resp, err := c.JSON("v1/policies/" + next)
+		if err != nil {
+			return nil, err
+		}
+		var x struct {
+			Modules  map[string]string `json:"modules"`
+			Packages []string          `json:"packages"`
+		}
+		if err := resp.Decode(&x); err != nil {
+			return nil, err
+		}
+		if len(x.Modules) > 0 {
+			library.Policies = append(library.Policies, das.V1PoliciesRef{Id: next})
+		}
+		for _, pkg := range x.Packages {
+			id := next + "/" + pkg
+			if _, ok := seen[id]; !ok {
+				process = append(process, id)
+			}
+		}
+	}
+
+	return &library, nil
 }
 
 func fetchSystemPolicies(c *das.Client, state *dasState) error {
@@ -1223,20 +1458,24 @@ func fetchLibraryPolicies(c *das.Client, state *dasState) error {
 		go func() {
 			for l := range ch {
 
-				// List libraries differs from systems/stacks. Result does not
-				// have policies on it. Need to fetch each library individually.
-				resp, err := c.JSON("v1/libraries/"+l.Id, das.Params{
-					Query: map[string]string{
-						"rule_counts": "false",
-						"modules":     "false",
-					},
-				})
-				if err != nil {
-					panic(err)
-				}
+				// Legacy libraries will have had policies fetched, but
+				// v1/libraries do not include policies in the list endpoint.
+				if len(l.Policies) == 0 {
+					// List libraries differs from systems/stacks. Result does not
+					// have policies on it. Need to fetch each library individually.
+					resp, err := c.JSON("v1/libraries/"+l.Id, das.Params{
+						Query: map[string]string{
+							"rule_counts": "false",
+							"modules":     "false",
+						},
+					})
+					if err != nil {
+						panic(err)
+					}
 
-				if err := resp.Decode(l); err != nil {
-					panic(err)
+					if err := resp.Decode(l); err != nil {
+						panic(err)
+					}
 				}
 
 				log.Infof("Fetching %d policies for library %q", len(l.Policies), l.Id)
@@ -1341,6 +1580,9 @@ func rootsPrefix(roots []string, path string) bool {
 	pathParts := strings.Split(strings.Trim(path, "/"), "/")
 	for _, r := range roots {
 		rParts := strings.Split(strings.Trim(r, "/"), "/")
+		if len(rParts) == 1 && rParts[0] == "" {
+			return true // empty root matches everything
+		}
 		if stringSlicePrefix(rParts, pathParts) {
 			return true
 		}

@@ -342,11 +342,25 @@ func TestMigrateV1Policies(t *testing.T) {
 				"policy/rules.rego": "package policy\np := 7",
 			},
 		},
+		{
+			name: "maximal git roots",
+			policies: []*das.V1Policy{
+				{
+					Package: "systems/x1234/policy",
+					Modules: map[string]string{
+						"policy.rego": `package policy`,
+					},
+				},
+			},
+			nsPrefix: "systems/x1234",
+			gitRoots: []string{""},
+			expFiles: config.Files{},
+		},
 	}
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			files, reqs := migrateV1Policies(tc.typeLib, tc.nsPrefix, tc.policies, tc.gitRoots)
+			files, reqs := migrateV1Policies(getSystemTypeLib(tc.typeLib), tc.nsPrefix, tc.policies, tc.gitRoots)
 
 			if !tc.expFiles.Equal(files) {
 				t.Fatalf("expected files %v but got %v", tc.expFiles, files)

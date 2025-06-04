@@ -24,12 +24,15 @@ type V1System struct {
 }
 
 type V1Library struct {
-	Id            string          `json:"id"`
-	Policies      []V1PoliciesRef `json:"policies"`
-	SourceControl *struct {
-		UseWorkspaceSettings bool            `json:"use_workspace_settings"`
-		LibraryOrigin        V1GitRepoConfig `json:"library_origin"`
-	} `json:"source_control"`
+	Id            string                  `json:"id"`
+	Policies      []V1PoliciesRef         `json:"policies"`
+	SourceControl *V1LibrarySourceControl `json:"source_control"`
+}
+
+type V1LibrarySourceControl struct {
+	UseWorkspaceSettings bool            `json:"use_workspace_settings"`
+	Origin               V1GitRepoConfig `json:"origin"`
+	LibraryOrigin        V1GitRepoConfig `json:"library_origin"`
 }
 
 type V1Stack struct {
@@ -42,6 +45,7 @@ type V1Stack struct {
 		Origin               V1GitRepoConfig `json:"origin"`
 		StackOrigin          V1GitRepoConfig `json:"stack_origin"`
 	} `json:"source_control"`
+	MatchingSystems []string `json:"matching_systems"`
 }
 
 type V1Datasource struct {
