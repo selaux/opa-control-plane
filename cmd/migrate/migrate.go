@@ -454,6 +454,15 @@ func Run(params Options) error {
 
 	if params.Prune {
 		stacks, libraries, secrets := pruneConfig(&output)
+		sort.Slice(stacks, func(i, j int) bool {
+			return stacks[i].Name < stacks[j].Name
+		})
+		sort.Slice(libraries, func(i, j int) bool {
+			return libraries[i].Name < libraries[j].Name
+		})
+		sort.Slice(secrets, func(i, j int) bool {
+			return secrets[i].Name < secrets[j].Name
+		})
 		for _, stack := range stacks {
 			log.Infof("Removed unused stack %q", stack.Name)
 		}
