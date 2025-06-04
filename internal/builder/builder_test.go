@@ -298,6 +298,28 @@ func TestBuilder(t *testing.T) {
 				"/z/z.rego": "package z\nq := 10",
 			},
 		},
+		{
+			note:     "excluded files apply to roots",
+			excluded: []string{"lib/x/*"},
+			sources: []sourceMock{
+				{
+					name:         "sys",
+					files:        map[string]string{"x.rego": "package x\np { data.lib.y.q }"},
+					requirements: []string{"lib"},
+				},
+				{
+					name: "lib",
+					files: map[string]string{
+						"lib/x/x.rego": "package x\np { false }", // would conflict w/ package x from previous source
+						"lib/y/y.rego": "package lib.y\nq := true",
+					},
+				},
+			},
+			exp: map[string]string{
+				"/x.rego":       "package x\np { data.lib.y.q }",
+				"/lib/y/y.rego": "package lib.y\nq := true",
+			},
+		},
 	}
 
 	for _, tc := range cases {
