@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/gobwas/glob"
 	"github.com/open-policy-agent/opa/ast"
 	"github.com/open-policy-agent/opa/bundle"
 	"github.com/open-policy-agent/opa/compile"
@@ -41,8 +42,9 @@ func (s *Source) Wipe() error {
 }
 
 type Dir struct {
-	Path string // local fs path to source files
-	Wipe bool   // bit indicates if worker should delete directory before synchronization
+	Path          string   // local fs path to source files
+	Wipe          bool     // bit indicates if worker should delete directory before synchronization
+	IncludedFiles []string // inclusion filter on files to load from path
 }
 
 type Builder struct {
@@ -136,11 +138,17 @@ func (b *Builder) Build(ctx context.Context) error {
 	}
 
 	var fses []fs.FS
+	var includes []string
 	for _, srcDir := range toBuild {
-		fses = append(fses, os.DirFS(srcDir.Path))
+		fs, err := util.NewFilterFS(os.DirFS(srcDir.Path), srcDir.IncludedFiles, nil)
+		if err != nil {
+			return err
+		}
+		fses = append(fses, fs)
+		includes = append(includes, srcDir.IncludedFiles...)
 	}
 
-	fs, err := util.NewFilterFS(merged_fs.MergeMultiple(fses...), b.excluded)
+	fs, err := util.NewFilterFS(merged_fs.MergeMultiple(fses...), nil, b.excluded)
 	if err != nil {
 		return err
 	}
@@ -157,12 +165,23 @@ func (b *Builder) Build(ctx context.Context) error {
 	return bundle.Write(b.output, *result)
 }
 
-func walkFilesRecursive(root string, suffix string, fn func(path string, fi os.FileInfo) error) error {
-	return filepath.Walk(root, func(path string, fi os.FileInfo, err error) error {
+func walkFilesRecursive(dir Dir, suffix string, fn func(path string, fi os.FileInfo) error) error {
+	var includes []glob.Glob
+	for _, i := range dir.IncludedFiles {
+		g, err := glob.Compile(i)
+		if err != nil {
+			return err
+		}
+		includes = append(includes, g)
+	}
+	return filepath.Walk(dir.Path, func(path string, fi os.FileInfo, err error) error {
 		if err != nil {
 			return err
 		}
 		if fi.IsDir() {
+			return nil
+		}
+		if !isIncluded(strings.TrimPrefix(path, dir.Path+"/"), includes) {
 			return nil
 		}
 		if filepath.Ext(path) != suffix {
@@ -170,6 +189,18 @@ func walkFilesRecursive(root string, suffix string, fn func(path string, fi os.F
 		}
 		return fn(path, fi)
 	})
+}
+
+func isIncluded(path string, includes []glob.Glob) bool {
+	if len(includes) == 0 {
+		return true
+	}
+	for _, g := range includes {
+		if g.Match(path) {
+			return true
+		}
+	}
+	return false
 }
 
 // getRegoAndJSONRootsForDirs returns the set of roots for the given directories. The
@@ -180,7 +211,7 @@ func getRegoAndJSONRootsForDirs(dirs []Dir) ([]ast.Ref, error) {
 
 	for _, dir := range dirs {
 
-		err := walkFilesRecursive(dir.Path, ".rego", func(path string, _ os.FileInfo) error {
+		err := walkFilesRecursive(dir, ".rego", func(path string, _ os.FileInfo) error {
 
 			bs, err := os.ReadFile(path)
 			if err != nil {
@@ -200,7 +231,7 @@ func getRegoAndJSONRootsForDirs(dirs []Dir) ([]ast.Ref, error) {
 			return nil, err
 		}
 
-		err = walkFilesRecursive(dir.Path, ".json", func(path string, _ os.FileInfo) error {
+		err = walkFilesRecursive(dir, ".json", func(path string, _ os.FileInfo) error {
 
 			path, err := filepath.Rel(dir.Path, path)
 			if err != nil {

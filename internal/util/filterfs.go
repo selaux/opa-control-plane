@@ -11,17 +11,28 @@ var _ fs.FS = &FilterFS{}
 
 type FilterFS struct {
 	fs       fs.FS
-	excluded []glob.Glob // List of file patterns to exclude
+	included []glob.Glob // List of file patterns to include
+	excluded []glob.Glob // List of file patterns to exclude (overrides includes)
 }
 
 type filteredDir struct {
 	d        fs.ReadDirFile
 	path     string
+	included []glob.Glob
 	excluded []glob.Glob
 }
 
-func NewFilterFS(fs fs.FS, exclude []string) (*FilterFS, error) {
+func NewFilterFS(fs fs.FS, include []string, exclude []string) (*FilterFS, error) {
 	ffs := FilterFS{fs: fs}
+
+	for _, pattern := range include {
+		g, err := glob.Compile(pattern)
+		if err != nil {
+			return nil, err
+		}
+
+		ffs.included = append(ffs.included, g)
+	}
 
 	for _, pattern := range exclude {
 		g, err := glob.Compile(pattern)
@@ -52,7 +63,15 @@ func (f *FilterFS) Open(name string) (fs.File, error) {
 	}
 
 	if dir, ok := file.(fs.ReadDirFile); ok {
-		return &filteredDir{d: dir, path: sname, excluded: f.excluded}, nil
+		return &filteredDir{d: dir, path: sname, included: f.included, excluded: f.excluded}, nil
+	}
+
+	if !isIncluded(f.included, name) {
+		return nil, &fs.PathError{
+			Op:   "open",
+			Path: name,
+			Err:  fs.ErrNotExist,
+		}
 	}
 
 	return file, nil
@@ -66,7 +85,11 @@ func (d *filteredDir) ReadDir(n int) ([]fs.DirEntry, error) {
 
 	var filtered []fs.DirEntry
 	for _, entry := range entries {
-		if !isExcluded(d.excluded, d.path+"/"+entry.Name()) {
+		path := d.path + "/" + entry.Name()
+		if !isExcluded(d.excluded, path) {
+			if !entry.IsDir() && !isIncluded(d.included, path) {
+				continue
+			}
 			filtered = append(filtered, entry)
 		}
 	}
@@ -93,5 +116,17 @@ func isExcluded(excluded []glob.Glob, name string) bool {
 		}
 	}
 
+	return false
+}
+
+func isIncluded(included []glob.Glob, name string) bool {
+	if len(included) == 0 {
+		return true
+	}
+	for _, g := range included {
+		if g.Match(name) {
+			return true
+		}
+	}
 	return false
 }

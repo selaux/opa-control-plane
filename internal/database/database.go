@@ -82,6 +82,7 @@ func (d *Database) InitDB(ctx context.Context, persistenceDir string) error {
 			ref TEXT,
 			gitcommit TEXT,
 			path TEXT,
+			git_included_files TEXT,
 			s3url TEXT,
 			s3region TEXT,
 			s3bucket TEXT,
@@ -94,7 +95,8 @@ func (d *Database) InitDB(ctx context.Context, persistenceDir string) error {
 			repo TEXT NOT NULL,
 			ref TEXT,
 			gitcommit TEXT,
-			path TEXT
+			path TEXT,
+			git_included_files TEXT
 		);`,
 		`CREATE TABLE IF NOT EXISTS stacks (
 			id TEXT PRIMARY KEY,
@@ -272,6 +274,7 @@ func (d *Database) ListSystemsWithGitCredentials() ([]*config.System, error) {
         systems.ref,
         systems.gitcommit,
         systems.path,
+		systems.git_included_files,
 		systems.s3url,
 		systems.s3region,
 		systems.s3bucket,
@@ -303,11 +306,11 @@ func (d *Database) ListSystemsWithGitCredentials() ([]*config.System, error) {
 		var systemId, repo string
 		var labels *string
 		var secretId, secretRefType, secretValue *string
-		var ref, gitCommit, path *string
+		var ref, gitCommit, path, includePaths *string
 		var s3url, s3region, s3bucket, s3key *string
 		var excluded *string
 		var reqLib *string
-		if err := rows.Scan(&systemId, &labels, &repo, &ref, &gitCommit, &path, &s3url, &s3region, &s3bucket, &s3key, &excluded, &secretId, &secretRefType, &secretValue, &reqLib); err != nil {
+		if err := rows.Scan(&systemId, &labels, &repo, &ref, &gitCommit, &path, &includePaths, &s3url, &s3region, &s3bucket, &s3key, &excluded, &secretId, &secretRefType, &secretValue, &reqLib); err != nil {
 			return nil, err
 		}
 
@@ -336,6 +339,11 @@ func (d *Database) ListSystemsWithGitCredentials() ([]*config.System, error) {
 			}
 			if path != nil {
 				system.Git.Path = path
+			}
+			if includePaths != nil {
+				if err := json.Unmarshal([]byte(*includePaths), &system.Git.IncludedFiles); err != nil {
+					return nil, fmt.Errorf("failed to unmarshal include paths for %q: %w", system.Name, err)
+				}
 			}
 
 			if s3region != nil && s3bucket != nil && s3key != nil {
@@ -438,6 +446,7 @@ func (d *Database) ListLibrariesWithGitCredentials() ([]*config.Library, error) 
 	libraries.ref,
 	libraries.gitcommit,
 	libraries.path,
+	libraries.git_included_files,
 	secrets.id AS secret_id,
 	libraries_secrets.ref_type as secret_ref_type,
 	secrets.value AS secret_value,
@@ -462,9 +471,9 @@ WHERE (libraries_secrets.ref_type = 'git_credentials' AND secrets.value IS NOT N
 		var libraryId, repo string
 		var builtin *string
 		var secretId, secretRefType, secretValue *string
-		var ref, gitCommit, path *string
+		var ref, gitCommit, path, includePaths *string
 		var requirementId *string
-		if err := rows.Scan(&libraryId, &builtin, &repo, &ref, &gitCommit, &path, &secretId, &secretRefType, &secretValue, &requirementId); err != nil {
+		if err := rows.Scan(&libraryId, &builtin, &repo, &ref, &gitCommit, &path, &includePaths, &secretId, &secretRefType, &secretValue, &requirementId); err != nil {
 			return nil, err
 		}
 
@@ -487,6 +496,11 @@ WHERE (libraries_secrets.ref_type = 'git_credentials' AND secrets.value IS NOT N
 			}
 			if path != nil {
 				library.Git.Path = path
+			}
+			if includePaths != nil {
+				if err := json.Unmarshal([]byte(*includePaths), &library.Git.IncludedFiles); err != nil {
+					return nil, fmt.Errorf("failed to unmarshal include paths for %q: %w", library.Name, err)
+				}
 			}
 		}
 
@@ -681,8 +695,13 @@ func (d *Database) loadSystems(root *config.Root) error {
 			return err
 		}
 
-		if _, err := d.db.Exec(`INSERT OR REPLACE INTO systems (id, labels, repo, ref, gitcommit, path, s3url, s3region, s3bucket, s3key, excluded) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-			system.Name, string(labels), system.Git.Repo, system.Git.Reference, system.Git.Commit, system.Git.Path, s3url, s3region, s3bucket, s3key, string(excluded)); err != nil {
+		includedFiles, err := json.Marshal(system.Git.IncludedFiles)
+		if err != nil {
+			return err
+		}
+
+		if _, err := d.db.Exec(`INSERT OR REPLACE INTO systems (id, labels, repo, ref, gitcommit, path, git_included_files, s3url, s3region, s3bucket, s3key, excluded) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			system.Name, string(labels), system.Git.Repo, system.Git.Reference, system.Git.Commit, system.Git.Path, string(includedFiles), s3url, s3region, s3bucket, s3key, string(excluded)); err != nil {
 			return err
 		}
 
@@ -737,7 +756,13 @@ func (d *Database) loadLibraries(root *config.Root) error {
 
 	for _, name := range names {
 		library := root.Libraries[name]
-		if _, err := d.db.Exec(`INSERT OR REPLACE INTO libraries (id, builtin, repo, ref, gitcommit, path) VALUES (?, ?, ?, ?, ?, ?)`, library.Name, library.Builtin, library.Git.Repo, library.Git.Reference, library.Git.Commit, library.Git.Path); err != nil {
+
+		includedFiles, err := json.Marshal(library.Git.IncludedFiles)
+		if err != nil {
+			return err
+		}
+
+		if _, err := d.db.Exec(`INSERT OR REPLACE INTO libraries (id, builtin, repo, ref, gitcommit, path, git_included_files) VALUES (?, ?, ?, ?, ?, ?, ?)`, library.Name, library.Builtin, library.Git.Repo, library.Git.Reference, library.Git.Commit, library.Git.Path, string(includedFiles)); err != nil {
 			return err
 		}
 

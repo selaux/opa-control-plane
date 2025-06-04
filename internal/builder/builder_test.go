@@ -19,9 +19,10 @@ import (
 func TestBuilder(t *testing.T) {
 
 	type sourceMock struct {
-		name         string
-		files        map[string]string
-		requirements []string
+		name          string
+		files         map[string]string
+		requirements  []string
+		includedFiles []string
 	}
 
 	cases := []struct {
@@ -272,6 +273,31 @@ func TestBuilder(t *testing.T) {
 				r := 7`,
 			},
 		},
+		{
+			note: "included files (source level)",
+			sources: []sourceMock{
+				{
+					files: map[string]string{
+						"x/x.rego": "package x\np := 7",
+						"y/y.rego": "package y\nq := 8",
+					},
+					includedFiles: []string{"x/*"},
+					requirements:  []string{"lib"},
+				},
+				{
+					name: "lib",
+					files: map[string]string{
+						"x/x.rego": "package x\np := 9",
+						"z/z.rego": "package z\nq := 10",
+					},
+					includedFiles: []string{"z/*"},
+				},
+			},
+			exp: map[string]string{
+				"/x/x.rego": "package x\np := 7",
+				"/z/z.rego": "package z\nq := 10",
+			},
+		},
 	}
 
 	for _, tc := range cases {
@@ -300,7 +326,7 @@ func TestBuilder(t *testing.T) {
 					}
 					srcs = append(srcs, &builder.Source{
 						Name:         src.name,
-						Dirs:         []builder.Dir{{Path: fmt.Sprintf("%v/src%d", root, i)}},
+						Dirs:         []builder.Dir{{Path: fmt.Sprintf("%v/src%d", root, i), IncludedFiles: src.includedFiles}},
 						Requirements: rs,
 					})
 				}

@@ -493,11 +493,12 @@ func equalStringSets(a, b []string) bool {
 // Git defines the Git synchronization configuration used by Lighthouse
 // resources like Systems, Stacks, and Libraries.
 type Git struct {
-	Repo        string     `json:"repo" yaml:"repo"`
-	Reference   *string    `json:"reference,omitempty" yaml:"reference,omitempty"`
-	Commit      *string    `json:"commit,omitempty" yaml:"commit,omitempty"`
-	Path        *string    `json:"path,omitempty" yaml:"path,omitempty"`
-	Credentials *SecretRef `json:"credentials,omitempty" yaml:"credentials,omitempty"` // Schema validation overrides this to string type.
+	Repo          string     `json:"repo" yaml:"repo"`
+	Reference     *string    `json:"reference,omitempty" yaml:"reference,omitempty"`
+	Commit        *string    `json:"commit,omitempty" yaml:"commit,omitempty"`
+	Path          *string    `json:"path,omitempty" yaml:"path,omitempty"`
+	IncludedFiles []string   `json:"included_files,omitempty" yaml:"included_files,omitempty"`
+	Credentials   *SecretRef `json:"credentials,omitempty" yaml:"credentials,omitempty"` // Schema validation overrides this to string type.
 }
 
 func (g *Git) Equal(other *Git) bool {
@@ -509,7 +510,7 @@ func (g *Git) Equal(other *Git) bool {
 		return false
 	}
 
-	return stringEqual(g.Reference, other.Reference) && stringEqual(g.Commit, other.Commit) && stringEqual(g.Path, other.Path) && g.Credentials.Equal(other.Credentials)
+	return stringEqual(g.Reference, other.Reference) && stringEqual(g.Commit, other.Commit) && stringEqual(g.Path, other.Path) && g.Credentials.Equal(other.Credentials) && equalStringSets(g.IncludedFiles, other.IncludedFiles)
 }
 
 type SecretRef struct {
