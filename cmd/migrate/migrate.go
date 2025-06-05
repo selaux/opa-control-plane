@@ -1080,6 +1080,9 @@ func getRequirementsForPolicies(policies []*das.V1Policy, index *libraryPackageI
 	librarySet := map[string]struct{}{}
 	for _, p := range policies {
 		for file, content := range p.Modules {
+			if filepath.Ext(file) != ".rego" {
+				continue
+			}
 			module, err := ast.ParseModule(p.Package+"/"+file, content)
 			if err != nil {
 				return nil, err
