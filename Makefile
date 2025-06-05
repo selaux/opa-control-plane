@@ -33,6 +33,7 @@ go-test: generate
 	$(GO) test $(GO_TAGS) ./...
 
 library-test:
+	$(GO) run github.com/open-policy-agent/opa test --v0-compatible libraries/entitlements-v1
 	$(GO) run github.com/open-policy-agent/opa test --v0-compatible libraries/envoy-v2.0
 	$(GO) run github.com/open-policy-agent/opa test --v0-compatible libraries/envoy-v2.1
 	$(GO) run github.com/open-policy-agent/opa test --v0-compatible libraries/kong-gateway-v1
