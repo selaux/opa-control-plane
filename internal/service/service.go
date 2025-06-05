@@ -108,19 +108,19 @@ func (s *Service) launchWorkers(ctx context.Context) {
 
 	systems, err := s.database.ListSystemsWithGitCredentials()
 	if err != nil {
-		s.log.Error("error listing systems:", err)
+		s.log.Errorf("error listing systems: %s", err.Error())
 		return
 	}
 
 	libraries, err := s.database.ListLibrariesWithGitCredentials()
 	if err != nil {
-		s.log.Error("error listing libraries:", err)
+		s.log.Errorf("error listing libraries: %s", err.Error())
 		return
 	}
 
 	stacks, err := s.database.ListStacks()
 	if err != nil {
-		s.log.Error("error listing stacks:", err)
+		s.log.Errorf("error listing stacks: %s", err.Error())
 		return
 	}
 
@@ -165,7 +165,7 @@ func (s *Service) launchWorkers(ctx context.Context) {
 			continue
 		}
 
-		s.log.Debug("(re)starting worker for system:", system.Name)
+		s.log.Debugf("(re)starting worker for system: %s", system.Name)
 
 		syncs := []Synchronizer{}
 		sources := []*builder.Source{}
@@ -201,7 +201,7 @@ func (s *Service) launchWorkers(ctx context.Context) {
 
 		storage, err := s3.New(ctx, system.ObjectStorage)
 		if err != nil {
-			s.log.Error("error creating object storage client:", err)
+			s.log.Errorf("error creating object storage client: %s", err.Error())
 			continue
 		}
 

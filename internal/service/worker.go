@@ -131,7 +131,7 @@ func (w *SystemWorker) Execute(ctx context.Context) time.Time {
 }
 
 func (w *SystemWorker) success(msg string, args ...interface{}) time.Time {
-	w.log.Debug(msg, args...)
+	w.log.Debugf(msg, args...)
 
 	if w.singleShot {
 		return w.die()
@@ -141,7 +141,7 @@ func (w *SystemWorker) success(msg string, args ...interface{}) time.Time {
 }
 
 func (w *SystemWorker) warn(msg string, args ...interface{}) time.Time {
-	w.log.Warn(msg, args...)
+	w.log.Warnf(msg, args...)
 
 	if w.singleShot {
 		return w.die()
