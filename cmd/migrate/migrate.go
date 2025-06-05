@@ -584,24 +584,24 @@ func mapV1LibraryToLibraryAndSecretConfig(v1 *das.V1Library) (*config.Library, *
 
 	library := &config.Library{Name: v1.Id}
 
-	var origin das.V1GitRepoConfig
-	workspaceGitInUse := v1.SourceControl.UseWorkspaceSettings && v1.SourceControl.Origin.URL != ""
+	workspace, origin := getLibraryGitOrigin(v1)
+	secret := migrateV1GitConfig(origin, library)
 
-	if workspaceGitInUse {
-		origin = v1.SourceControl.Origin
-	} else if v1.SourceControl.LibraryOrigin.URL == "" {
-		return library, nil, nil
-	} else {
-		origin = v1.SourceControl.LibraryOrigin
-	}
-
-	secret := migrateV1GitConfig(&origin, library)
-
-	if workspaceGitInUse {
+	if workspace {
 		library.Git.IncludedFiles = []string{"libraries/" + v1.Id + "/*"}
 	}
 
 	return library, secret, nil
+}
+
+func getLibraryGitOrigin(v1 *das.V1Library) (bool, *das.V1GitRepoConfig) {
+	if v1.SourceControl == nil {
+		return false, nil
+	}
+	if v1.SourceControl.UseWorkspaceSettings && v1.SourceControl.Origin.URL != "" {
+		return true, &v1.SourceControl.Origin
+	}
+	return false, &v1.SourceControl.LibraryOrigin
 }
 
 func migrateV1System(client *das.Client, state *dasState, v1 *das.V1System, datasources bool) (*config.System, *config.Secret, error) {
@@ -846,25 +846,27 @@ func mapV1StackToLibraryAndSecretConfig(v1 *das.V1Stack) (*config.Library, *conf
 
 	library := &config.Library{Name: v1.Name}
 
-	var origin das.V1GitRepoConfig
-
-	workspaceGitInUse := v1.SourceControl.UseWorkspaceSettings && v1.SourceControl.Origin.URL != ""
-
-	if workspaceGitInUse {
-		origin = v1.SourceControl.Origin
-	} else if v1.SourceControl.StackOrigin.URL == "" {
+	workspace, origin := getStackGitOrigin(v1)
+	if origin == nil {
 		return library, nil, nil
-	} else {
-		origin = v1.SourceControl.StackOrigin
 	}
 
-	secret := migrateV1GitConfig(&origin, library)
-
-	if workspaceGitInUse {
+	secret := migrateV1GitConfig(origin, library)
+	if workspace {
 		library.Git.IncludedFiles = []string{"stacks/" + v1.Id + "/*"}
 	}
 
 	return library, secret, nil
+}
+
+func getStackGitOrigin(v1 *das.V1Stack) (bool, *das.V1GitRepoConfig) {
+	if v1.SourceControl == nil {
+		return false, nil
+	}
+	if v1.SourceControl.UseWorkspaceSettings && v1.SourceControl.Origin.URL != "" {
+		return true, &v1.SourceControl.Origin
+	}
+	return false, &v1.SourceControl.StackOrigin
 }
 
 func migrateV1GitConfig(origin *das.V1GitRepoConfig, library *config.Library) *config.Secret {
