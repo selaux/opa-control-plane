@@ -92,6 +92,17 @@ var systemTypeLibraries = []*config.Library{
 			{Library: strptr("template.terraform:2.0-library")},
 		},
 	},
+	{
+		Name: "template.entitlements:1.0",
+		Requirements: []config.Requirement{
+			{Library: strptr("template.entitlements:1.0-entrypoint-main")},
+			{Library: strptr("template.entitlements:1.0-object")},
+			{Library: strptr("template.entitlements:1.0-completions")},
+			{Library: strptr("template.entitlements:1.0-conflicts")},
+			{Library: strptr("template.entitlements:1.0-transform")},
+			{Library: strptr("template.entitlements:1.0-library")},
+		},
+	},
 }
 
 func getSystemTypeLib(t string) *config.Library {
@@ -145,6 +156,13 @@ var stackTypeLibraries = map[string]*config.Library{
 		Name: "template.terraform:2.0-stack",
 		Requirements: []config.Requirement{
 			{Library: strptr("template.terraform:2.0-library")},
+			{Library: strptr("match-v1")},
+		},
+	},
+	"template.entitlements:1.0": {
+		Name: "template.entitlements:1.0-stack",
+		Requirements: []config.Requirement{
+			{Library: strptr("template.entitlements:1.0-library")},
 			{Library: strptr("match-v1")},
 		},
 	},
@@ -230,6 +248,30 @@ var baseLibraries = []*config.Library{
 	{
 		Name:    "template.terraform:2.0-library",
 		Builtin: strptr("terraform-v2.0/library"),
+	},
+	{
+		Name:    "template.entitlements:1.0-completions",
+		Builtin: strptr("entitlements-v1/completions"),
+	},
+	{
+		Name:    "template.entitlements:1.0-transform",
+		Builtin: strptr("entitlements-v1/transform"),
+	},
+	{
+		Name:    "template.entitlements:1.0-object",
+		Builtin: strptr("entitlements-v1/object"),
+	},
+	{
+		Name:    "template.entitlements:1.0-library",
+		Builtin: strptr("entitlements-v1/library"),
+	},
+	{
+		Name:    "template.entitlements:1.0-conflicts",
+		Builtin: strptr("entitlements-v1/conflicts"),
+	},
+	{
+		Name:    "template.entitlements:1.0-entrypoint-main",
+		Builtin: strptr("entitlements-v1/main"),
 	},
 	{
 		Name:    "match-v1",
