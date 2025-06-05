@@ -133,8 +133,8 @@ stacks_entz[entz] {
 }
 
 applicable_stacks[stack_id] {
-	data.styra.stacks[stack_id].config.type == data.self.metadata.system_type
-	data.stacks[stack_id].selectors.systems[data.self.metadata.system_id]
+	some stack_id
+	data.stacks[stack_id] = _
 }
 
 ### Notifications handling

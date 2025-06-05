@@ -207,7 +207,9 @@ test_applicable_stacks {
 		with data.stacks.stack4.selectors.systems as {"myid2"}
 		with data.self.metadata as {"system_type": "entitlements", "system_id": "myid"}
 
-	ans == {"stack1", "stack2"}
+	# ans == {"stack1", "stack2"}
+	# NOTE(tsandall): bundle build only includes applicable stacks
+	ans == {"stack1", "stack2", "stack3", "stack4"}
 }
 
 # notifications
