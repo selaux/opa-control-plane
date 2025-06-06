@@ -444,7 +444,7 @@ func Run(params Options) error {
 	}
 
 	output := config.Root{
-		Systems:   map[string]*config.System{},
+		Bundles:   map[string]*config.Bundle{},
 		Secrets:   map[string]*config.Secret{},
 		Libraries: map[string]*config.Library{},
 		Stacks:    map[string]*config.Stack{},
@@ -488,7 +488,7 @@ func Run(params Options) error {
 			return err
 		}
 
-		output.Systems[sc.Name] = sc
+		output.Bundles[sc.Name] = sc
 		for _, s := range secrets {
 			output.Secrets[s.Name] = s
 		}
@@ -536,7 +536,7 @@ func Run(params Options) error {
 
 	files := make(map[string]string)
 
-	for _, system := range output.Systems {
+	for _, system := range output.Bundles {
 		for path, content := range system.Files() {
 			files[filepath.Join(append([]string{"systems", system.Name}, filepath.SplitList(path)...)...)] = content
 		}
@@ -576,8 +576,8 @@ func Run(params Options) error {
 	}
 
 	if len(params.S3BucketName) > 0 {
-		for name := range output.Systems {
-			output.Systems[name].ObjectStorage = config.ObjectStorage{
+		for name := range output.Bundles {
+			output.Bundles[name].ObjectStorage = config.ObjectStorage{
 				AmazonS3: &config.AmazonS3{
 					Bucket:      params.S3BucketName,
 					Region:      params.S3BucketRegion,
@@ -586,7 +586,7 @@ func Run(params Options) error {
 				},
 			}
 		}
-		if len(output.Systems) > 0 {
+		if len(output.Bundles) > 0 {
 			output.Secrets["storage-creds"] = &config.Secret{
 				Name: "storage-creds",
 				Value: map[string]interface{}{
@@ -635,7 +635,7 @@ func Run(params Options) error {
 		v1SystemsByName[system.Name] = system
 	}
 
-	for _, system := range output.Systems {
+	for _, system := range output.Bundles {
 		matches := ast.NewSet()
 		for _, stack := range output.Stacks {
 			if stack.Selector.Matches(system.Labels) {
@@ -661,18 +661,18 @@ func Run(params Options) error {
 
 func splitConfig(outputDir string, output config.Root) (map[string][]byte, error) {
 
-	systemsStorage := make(map[string]*config.System)
-	for name, original := range output.Systems {
+	bundleStorage := make(map[string]*config.Bundle)
+	for name, original := range output.Bundles {
 		if original.ObjectStorage.AmazonS3 != nil {
-			systemsStorage[name] = &config.System{ObjectStorage: original.ObjectStorage}
+			bundleStorage[name] = &config.Bundle{ObjectStorage: original.ObjectStorage}
 			original.ObjectStorage.AmazonS3 = nil
 		}
 	}
 
 	configs := make(map[string]config.Root)
 
-	if len(output.Systems) > 0 {
-		configs["config-systems.yaml"] = config.Root{Systems: output.Systems}
+	if len(output.Bundles) > 0 {
+		configs["config-bundles.yaml"] = config.Root{Bundles: output.Bundles}
 	}
 	if len(output.Stacks) > 0 {
 		configs["config-stacks.yaml"] = config.Root{Stacks: output.Stacks}
@@ -683,16 +683,16 @@ func splitConfig(outputDir string, output config.Root) (map[string][]byte, error
 	if len(output.Secrets) > 0 {
 		configs["config-secrets.yaml"] = config.Root{Secrets: output.Secrets}
 	}
-	if len(systemsStorage) > 0 {
-		configs["config-storage.yaml"] = config.Root{Systems: systemsStorage}
+	if len(bundleStorage) > 0 {
+		configs["config-storage.yaml"] = config.Root{Bundles: bundleStorage}
 	}
 
-	testSystemsFiles := make(map[string]*config.System)
-	for name, original := range output.Systems {
+	testBundlesFiles := make(map[string]*config.Bundle)
+	for name, original := range output.Bundles {
 		if len(original.Files()) > 0 {
-			cpy := &config.System{Name: name}
+			cpy := &config.Bundle{Name: name}
 			cpy.SetEmbeddedFiles(original.Files())
-			testSystemsFiles[name] = cpy
+			testBundlesFiles[name] = cpy
 			original.SetEmbeddedFiles(nil)
 		}
 	}
@@ -707,8 +707,8 @@ func splitConfig(outputDir string, output config.Root) (map[string][]byte, error
 		}
 	}
 
-	if len(testSystemsFiles)+len(testLibrariesFiles) > 0 {
-		configs["test-config-files.yaml"] = config.Root{Systems: testSystemsFiles, Libraries: testLibrariesFiles}
+	if len(testBundlesFiles)+len(testLibrariesFiles) > 0 {
+		configs["test-config-files.yaml"] = config.Root{Bundles: testBundlesFiles, Libraries: testLibrariesFiles}
 	}
 
 	result := make(map[string][]byte)
@@ -795,10 +795,10 @@ func getLibraryGitOrigin(v1 *das.V1Library) (bool, *das.V1GitRepoConfig) {
 	return false, &v1.SourceControl.LibraryOrigin
 }
 
-func migrateV1System(client *das.Client, state *dasState, v1 *das.V1System, migrateDSContent bool) (*config.System, []*config.Secret, error) {
+func migrateV1System(client *das.Client, state *dasState, v1 *das.V1System, migrateDSContent bool) (*config.Bundle, []*config.Secret, error) {
 
 	var secrets []*config.Secret
-	system, secret, err := mapV1SystemToSystemAndSecretConfig(client, v1)
+	bundle, secret, err := mapV1SystemToBundleAndSecretConfig(client, v1)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -815,8 +815,8 @@ func migrateV1System(client *das.Client, state *dasState, v1 *das.V1System, migr
 	policies := state.SystemPolicies[v1.Id]
 	var files map[string]string
 	typeLib := getSystemTypeLib(v1.Type)
-	files, system.Requirements = migrateV1Policies(typeLib, "systems/"+v1.Id+"/", policies, gitRoots)
-	system.SetEmbeddedFiles(files)
+	files, bundle.Requirements = migrateV1Policies(typeLib, "systems/"+v1.Id+"/", policies, gitRoots)
+	bundle.SetEmbeddedFiles(files)
 
 	resp, err := client.JSON(fmt.Sprintf("v1/data/metadata/%v/labels", v1.Id))
 	if err != nil {
@@ -830,8 +830,8 @@ func migrateV1System(client *das.Client, state *dasState, v1 *das.V1System, migr
 		if err := resp.Decode(&x); err != nil {
 			return nil, nil, fmt.Errorf("failed to decode labels for %q: %w", v1.Name, err)
 		}
-		system.Labels = x.Labels
-		system.Labels["system-type"] = v1.Type // TODO(tsandall): remove template. prefix?
+		bundle.Labels = x.Labels
+		bundle.Labels["system-type"] = v1.Type // TODO(tsandall): remove template. prefix?
 	}
 
 	if len(v1.Datasources) > 0 {
@@ -844,15 +844,15 @@ func migrateV1System(client *das.Client, state *dasState, v1 *das.V1System, migr
 
 		for _, fs := range files {
 			for file, content := range fs {
-				system.SetEmbeddedFile(file, content)
+				bundle.SetEmbeddedFile(file, content)
 			}
 		}
 
-		system.Datasources = ds
+		bundle.Datasources = ds
 		secrets = append(secrets, dsSecrets...)
 	}
 
-	return system, secrets, nil
+	return bundle, secrets, nil
 }
 
 func migrateV1Datasources(client *das.Client, nsPrefix string, v1 []das.V1DatasourceRef, migrateDSContent bool) ([]config.Datasource, []config.Files, []*config.Secret, error) {
@@ -917,37 +917,37 @@ func migrateV1HTTPPullDatasource(nsPrefix string, v1 *das.V1Datasource) (config.
 	return ds, nil, nil
 }
 
-func mapV1SystemToSystemAndSecretConfig(_ *das.Client, v1 *das.V1System) (*config.System, *config.Secret, error) {
-	var system config.System
+func mapV1SystemToBundleAndSecretConfig(_ *das.Client, v1 *das.V1System) (*config.Bundle, *config.Secret, error) {
+	var bundle config.Bundle
 	var secret *config.Secret
 
-	system.Name = v1.Name
+	bundle.Name = v1.Name
 
 	if v1.SourceControl != nil {
-		system.Git.Repo = v1.SourceControl.Origin.URL
+		bundle.Git.Repo = v1.SourceControl.Origin.URL
 
 		if v1.SourceControl.Origin.Commit != "" {
-			system.Git.Commit = &v1.SourceControl.Origin.Commit
+			bundle.Git.Commit = &v1.SourceControl.Origin.Commit
 		} else if v1.SourceControl.Origin.Reference != "" {
-			system.Git.Reference = &v1.SourceControl.Origin.Reference
+			bundle.Git.Reference = &v1.SourceControl.Origin.Reference
 		}
 
 		if v1.SourceControl.Origin.Path != "" {
-			system.Git.Path = &v1.SourceControl.Origin.Path
+			bundle.Git.Path = &v1.SourceControl.Origin.Path
 		}
 
 		if v1.SourceControl.Origin.Credentials != "" {
 			secret = &config.Secret{}
 			secret.Name = v1.SourceControl.Origin.Credentials
-			system.Git.Credentials = &config.SecretRef{Name: secret.Name}
+			bundle.Git.Credentials = &config.SecretRef{Name: secret.Name}
 		} else if v1.SourceControl.Origin.SSHCredentials.PrivateKey != "" {
 			secret = &config.Secret{}
 			secret.Name = v1.SourceControl.Origin.SSHCredentials.PrivateKey
-			system.Git.Credentials = &config.SecretRef{Name: secret.Name}
+			bundle.Git.Credentials = &config.SecretRef{Name: secret.Name}
 		}
 	}
 
-	return &system, secret, nil
+	return &bundle, secret, nil
 }
 
 func migrateV1Policies(typeLib *config.Library, nsPrefix string, policies []*das.V1Policy, gitRoots []string) (config.Files, []config.Requirement) {
@@ -1322,7 +1322,7 @@ func migrateDependencies(_ *das.Client, state *dasState, output *config.Root) er
 			return err
 		}
 
-		sc := output.Systems[state.SystemsById[id].Name]
+		sc := output.Bundles[state.SystemsById[id].Name]
 		sc.Requirements = append(sc.Requirements, rs...)
 	}
 
@@ -1399,8 +1399,8 @@ func pruneConfig(root *config.Root) ([]*config.Stack, []*config.Library, []*conf
 
 	for _, stack := range root.Stacks {
 		var found bool
-		for _, system := range root.Systems {
-			if stack.Selector.Matches(system.Labels) {
+		for _, b := range root.Bundles {
+			if stack.Selector.Matches(b.Labels) {
 				found = true
 			}
 		}
@@ -1412,10 +1412,10 @@ func pruneConfig(root *config.Root) ([]*config.Stack, []*config.Library, []*conf
 
 	g := make(graph)
 
-	for _, system := range root.Systems {
-		for _, r := range system.Requirements {
+	for _, b := range root.Bundles {
+		for _, r := range b.Requirements {
 			if r.Library != nil {
-				g[*r.Library] = append(g[*r.Library], node{name: system.Name})
+				g[*r.Library] = append(g[*r.Library], node{name: b.Name})
 			}
 		}
 	}
@@ -1450,9 +1450,9 @@ func pruneConfig(root *config.Root) ([]*config.Stack, []*config.Library, []*conf
 	}
 
 	credentials := make(map[string]struct{})
-	for _, system := range root.Systems {
-		if system.Git.Credentials != nil {
-			credentials[system.Git.Credentials.Name] = struct{}{}
+	for _, b := range root.Bundles {
+		if b.Git.Credentials != nil {
+			credentials[b.Git.Credentials.Name] = struct{}{}
 		}
 	}
 	for _, lib := range root.Libraries {

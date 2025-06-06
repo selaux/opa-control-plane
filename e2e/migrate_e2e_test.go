@@ -59,7 +59,7 @@ func TestMigration(t *testing.T) {
 					},
 				}`,
 				"config.d/2-storage.yaml": `{
-					systems: {
+					bundles: {
 						Envoy App: {
 							object_storage: {
 								aws: {
@@ -89,7 +89,7 @@ func TestMigration(t *testing.T) {
 					},
 				}`,
 				"config.d/2-storage.yaml": `{
-					systems: {
+					bundles: {
 						Banteng cluster: {
 							object_storage: {
 								aws: {
@@ -120,7 +120,7 @@ func TestMigration(t *testing.T) {
 					},
 				}`,
 				"config.d/2-storage.yaml": `{
-					systems: {
+					bundles: {
 						Banteng cluster: {
 							object_storage: {
 								aws: {
@@ -156,7 +156,7 @@ func TestMigration(t *testing.T) {
 					},
 				}`,
 				"config.d/2-storage.yaml": `{
-					systems: {
+					bundles: {
 						Custom app: {
 							object_storage: {
 								aws: {
@@ -178,7 +178,7 @@ func TestMigration(t *testing.T) {
 			systemIdEnvName: "STYRA_ISTIO_SYSTEM_ID",
 			extraConfigs: map[string]string{
 				"config.d/2-storage.yaml": `{
-					systems: {
+					bundles: {
 						Istio App: {
 							object_storage: {
 								aws: {
@@ -199,7 +199,7 @@ func TestMigration(t *testing.T) {
 			systemIdEnvName: "STYRA_KUMA_SYSTEM_ID",
 			extraConfigs: map[string]string{
 				"config.d/2-storage.yaml": `{
-					systems: {
+					bundles: {
 						Kuma: {
 							object_storage: {
 								aws: {
@@ -223,7 +223,7 @@ func TestMigration(t *testing.T) {
 			systemIdEnvName: "STYRA_KONG_GATEWAY_SYSTEM_ID",
 			extraConfigs: map[string]string{
 				"config.d/2-storage.yaml": `{
-					systems: {
+					bundles: {
 						Kong Gateway - prod: {
 							object_storage: {
 								aws: {
@@ -244,7 +244,7 @@ func TestMigration(t *testing.T) {
 			systemIdEnvName: "STYRA_TERRAFORM_SYSTEM_ID",
 			extraConfigs: map[string]string{
 				"config.d/2-storage.yaml": `{
-					systems: {
+					bundles: {
 						Terraform - GCP: {
 							object_storage: {
 								aws: {
@@ -268,7 +268,7 @@ func TestMigration(t *testing.T) {
 			systemIdEnvName:   "STYRA_PULL_TEST_SYSTEM_ID",
 			extraConfigs: map[string]string{
 				"config.d/2-storage.yaml": `{
-					systems: {
+					bundles: {
 						"torin-pull-test-2": {
 							object_storage: {
 								aws: {

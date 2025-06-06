@@ -2,7 +2,7 @@ cases:
 - note: config with builtins
   config: |
         {
-          systems: {
+          bundles: {
             TestSystem: {
               object_storage: {
                 aws: {

@@ -138,10 +138,10 @@ func Run(opts Options) error {
 
 	ctx := context.Background()
 
-	for _, system := range cfg.Systems {
-		log.Infof("Backtesting system %q", system.Name)
-		if err := backtestSystem(ctx, opts, &styra, v1SystemsByName, system, &report); err != nil {
-			report.Systems[system.Name] = SystemReport{
+	for _, b := range cfg.Bundles {
+		log.Infof("Backtesting bundle %q", b.Name)
+		if err := backtestSystem(ctx, opts, &styra, v1SystemsByName, b, &report); err != nil {
+			report.Systems[b.Name] = SystemReport{
 				Status:  "error",
 				Message: err.Error(),
 			}
@@ -158,7 +158,7 @@ func Run(opts Options) error {
 	return nil
 }
 
-func backtestSystem(ctx context.Context, opts Options, styra *das.Client, byName map[string]*das.V1System, system *config.System, report *Report) error {
+func backtestSystem(ctx context.Context, opts Options, styra *das.Client, byName map[string]*das.V1System, system *config.Bundle, report *Report) error {
 
 	v1, ok := byName[system.Name]
 	if !ok {

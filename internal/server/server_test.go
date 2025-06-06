@@ -27,7 +27,7 @@ func TestServer(t *testing.T) {
 		{
 			name:       "GET",
 			method:     "GET",
-			path:       "/v1/systems/system1/foo",
+			path:       "/v1/bundles/system1/foo",
 			body:       "",
 			statusCode: 200,
 			result:     "{}\n",
@@ -35,7 +35,7 @@ func TestServer(t *testing.T) {
 		{
 			name:       "PUT",
 			method:     "PUT",
-			path:       "/v1/systems/system1/foo",
+			path:       "/v1/bundles/system1/foo",
 			body:       `{"key": "value"}`,
 			statusCode: 200,
 			result:     "{}\n",
@@ -43,7 +43,7 @@ func TestServer(t *testing.T) {
 		{
 			name:       "GET after PUT",
 			method:     "GET",
-			path:       "/v1/systems/system1/foo",
+			path:       "/v1/bundles/system1/foo",
 			body:       "",
 			statusCode: 200,
 			result: `{"result":{"key":"value"}}
@@ -52,7 +52,7 @@ func TestServer(t *testing.T) {
 		{
 			name:       "POST",
 			method:     "POST",
-			path:       "/v1/systems/system1/foo",
+			path:       "/v1/bundles/system1/foo",
 			body:       `{"key": "value2"}`,
 			statusCode: 200,
 			result:     "{}\n",
@@ -60,7 +60,7 @@ func TestServer(t *testing.T) {
 		{
 			name:       "GET after POST",
 			method:     "GET",
-			path:       "/v1/systems/system1/foo",
+			path:       "/v1/bundles/system1/foo",
 			body:       "",
 			statusCode: 200,
 			result: `{"result":{"key":"value2"}}
@@ -69,7 +69,7 @@ func TestServer(t *testing.T) {
 		{
 			name:       "DELETE",
 			method:     "DELETE",
-			path:       "/v1/systems/system1/foo",
+			path:       "/v1/bundles/system1/foo",
 			body:       "",
 			statusCode: 200,
 			result:     "{}\n",
@@ -77,7 +77,7 @@ func TestServer(t *testing.T) {
 		{
 			name:       "GET after DELETE",
 			method:     "GET",
-			path:       "/v1/systems/system1/foo",
+			path:       "/v1/bundles/system1/foo",
 			body:       "",
 			statusCode: 200,
 			result:     "{}\n",
@@ -119,23 +119,23 @@ func newMockDatabase() *mockDatabase {
 }
 
 type key struct {
-	systemId string
+	bundleId string
 	path     string
 }
 
-func (m *mockDatabase) SystemsDataGet(ctx context.Context, systemId, path string) (interface{}, bool, error) {
-	if data, ok := m.data[key{systemId, path}]; ok {
+func (m *mockDatabase) BundlesDataGet(ctx context.Context, bundleId, path string) (interface{}, bool, error) {
+	if data, ok := m.data[key{bundleId, path}]; ok {
 		return data, true, nil
 	}
 	return nil, false, nil
 }
 
-func (m *mockDatabase) SystemsDataPut(ctx context.Context, systemId, path string, data interface{}) error {
-	m.data[key{systemId, path}] = data
+func (m *mockDatabase) BundlesDataPut(ctx context.Context, bundleId, path string, data interface{}) error {
+	m.data[key{bundleId, path}] = data
 	return nil
 }
 
-func (m *mockDatabase) SystemsDataDelete(ctx context.Context, systemId, path string) error {
-	delete(m.data, key{systemId, path})
+func (m *mockDatabase) BundlesDataDelete(ctx context.Context, bundleId, path string) error {
+	delete(m.data, key{bundleId, path})
 	return nil
 }

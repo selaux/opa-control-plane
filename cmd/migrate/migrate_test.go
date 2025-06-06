@@ -82,7 +82,7 @@ func TestBaseLibIndex(t *testing.T) {
 func TestPruneConfig(t *testing.T) {
 
 	root, err := config.Parse(bytes.NewBufferString(`{
-		systems: {
+		bundles: {
 			sys1: {
 				requirements: [{library: lib1}],
 				git: {credentials: sec1},
@@ -179,7 +179,7 @@ func TestPruneConfig(t *testing.T) {
 	}
 
 	expRoot, err := config.Parse(bytes.NewBufferString(`{
-		systems: {
+		bundles: {
 			sys1: {
 				requirements: [{library: lib1}],
 				git: {credentials: sec1},

@@ -21,8 +21,8 @@ func NewSQLLibraryDataSynchronizer(path string, db *database.Database, id string
 	return &SQLDataSynchronizer{path: path, query: db.QueryLibraryData, id: id}
 }
 
-func NewSQLSystemDataSynchronizer(path string, db *database.Database, id string) *SQLDataSynchronizer {
-	return &SQLDataSynchronizer{path: path, query: db.QuerySystemData, id: id}
+func NewSQLBundleDataSynchronizer(path string, db *database.Database, id string) *SQLDataSynchronizer {
+	return &SQLDataSynchronizer{path: path, query: db.QueryBundleData, id: id}
 }
 
 func (s *SQLDataSynchronizer) Execute(ctx context.Context) error {

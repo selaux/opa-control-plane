@@ -28,7 +28,7 @@ type Metadata struct {
 // Root is the top-level configuration structure used by Lighthouse.
 type Root struct {
 	Metadata  Metadata            `json:"metadata" yaml:"metadata"`
-	Systems   map[string]*System  `json:"systems,omitempty" yaml:"systems,omitempty"`
+	Bundles   map[string]*Bundle  `json:"bundles,omitempty" yaml:"bundles,omitempty"`
 	Stacks    map[string]*Stack   `json:"stacks,omitempty" yaml:"stacks,omitempty"`
 	Libraries map[string]*Library `json:"libraries,omitempty" yaml:"libraries,omitempty"`
 	Secrets   map[string]*Secret  `json:"secrets,omitempty" yaml:"secrets,omitempty"` // Schema validation overrides Secret to object type.
@@ -69,19 +69,19 @@ func (r *Root) unmarshal(raw *Root) error {
 		secret.Name = name
 	}
 
-	for name, system := range raw.Systems {
-		system.Name = name
-		if system.Git.Credentials != nil {
-			system.Git.Credentials.value = raw.Secrets[system.Git.Credentials.Name]
+	for name, bundle := range raw.Bundles {
+		bundle.Name = name
+		if bundle.Git.Credentials != nil {
+			bundle.Git.Credentials.value = raw.Secrets[bundle.Git.Credentials.Name]
 		}
-		if system.ObjectStorage.AmazonS3 != nil && system.ObjectStorage.AmazonS3.Credentials != nil {
-			system.ObjectStorage.AmazonS3.Credentials.value = raw.Secrets[system.ObjectStorage.AmazonS3.Credentials.Name]
+		if bundle.ObjectStorage.AmazonS3 != nil && bundle.ObjectStorage.AmazonS3.Credentials != nil {
+			bundle.ObjectStorage.AmazonS3.Credentials.value = raw.Secrets[bundle.ObjectStorage.AmazonS3.Credentials.Name]
 		}
-		if system.ObjectStorage.AzureBlobStorage != nil && system.ObjectStorage.AzureBlobStorage.Credentials != nil {
-			system.ObjectStorage.AzureBlobStorage.Credentials.value = raw.Secrets[system.ObjectStorage.AzureBlobStorage.Credentials.Name]
+		if bundle.ObjectStorage.AzureBlobStorage != nil && bundle.ObjectStorage.AzureBlobStorage.Credentials != nil {
+			bundle.ObjectStorage.AzureBlobStorage.Credentials.value = raw.Secrets[bundle.ObjectStorage.AzureBlobStorage.Credentials.Name]
 		}
-		if system.ObjectStorage.GCPCloudStorage != nil && system.ObjectStorage.GCPCloudStorage.Credentials != nil {
-			system.ObjectStorage.GCPCloudStorage.Credentials.value = raw.Secrets[system.ObjectStorage.GCPCloudStorage.Credentials.Name]
+		if bundle.ObjectStorage.GCPCloudStorage != nil && bundle.ObjectStorage.GCPCloudStorage.Credentials != nil {
+			bundle.ObjectStorage.GCPCloudStorage.Credentials.value = raw.Secrets[bundle.ObjectStorage.GCPCloudStorage.Credentials.Name]
 		}
 	}
 
@@ -113,8 +113,8 @@ func (r *Root) Validate() error {
 	return rootSchema.Validate(config)
 }
 
-// System defines the configuration for a Lighthouse System.
-type System struct {
+// Bundle defines the configuration for a Lighthouse Bundle.
+type Bundle struct {
 	Name          string        `json:"-" yaml:"-"`
 	Labels        Labels        `json:"labels,omitempty" yaml:"labels,omitempty"`
 	Git           Git           `json:"git,omitempty" yaml:"git,omitempty"`
@@ -196,51 +196,51 @@ func (f *Files) unmarshal(raw map[string]string) error {
 	return nil
 }
 
-func (s *System) Files() map[string]string {
+func (s *Bundle) Files() map[string]string {
 	return s.EmbeddedFiles
 }
 
-func (s *System) SetEmbeddedFile(path string, content string) {
+func (s *Bundle) SetEmbeddedFile(path string, content string) {
 	if s.EmbeddedFiles == nil {
 		s.EmbeddedFiles = make(Files)
 	}
 	s.EmbeddedFiles[path] = content
 }
 
-func (s *System) SetEmbeddedFiles(files map[string]string) {
+func (s *Bundle) SetEmbeddedFiles(files map[string]string) {
 	s.EmbeddedFiles = nil
 	for path, content := range files {
 		s.SetEmbeddedFile(path, content)
 	}
 }
 
-// MarshalYAML implements the yaml.Marshaler interface for the System struct. This
+// MarshalYAML implements the yaml.Marshaler interface for the Bundle struct. This
 
-func (s *System) UnmarshalJSON(bs []byte) error {
-	type rawSystem System // avoid recursive calls to UnmarshalJSON by type aliasing
-	var raw rawSystem
+func (s *Bundle) UnmarshalJSON(bs []byte) error {
+	type rawBundle Bundle // avoid recursive calls to UnmarshalJSON by type aliasing
+	var raw rawBundle
 
 	if err := json.Unmarshal(bs, &raw); err != nil {
-		return fmt.Errorf("failed to decode System: %w", err)
+		return fmt.Errorf("failed to decode bundle: %w", err)
 	}
 
-	*s = System(raw)
+	*s = Bundle(raw)
 	return s.validate()
 }
 
-func (s *System) UnmarshalYAML(node *yaml.Node) error {
-	type rawSystem System // avoid recursive calls to UnmarshalJSON by type aliasing
-	var raw rawSystem
+func (s *Bundle) UnmarshalYAML(node *yaml.Node) error {
+	type rawBundle Bundle // avoid recursive calls to UnmarshalJSON by type aliasing
+	var raw rawBundle
 
 	if err := node.Decode(&raw); err != nil {
-		return fmt.Errorf("failed to decode System: %w", err)
+		return fmt.Errorf("failed to decode bundle: %w", err)
 	}
 
-	*s = System(raw)
+	*s = Bundle(raw)
 	return s.validate()
 }
 
-func (s *System) validate() error {
+func (s *Bundle) validate() error {
 	for _, pattern := range s.ExcludedFiles {
 		if _, err := glob.Compile(pattern); err != nil {
 			return fmt.Errorf("failed to compile excluded file pattern %q: %w", pattern, err)
@@ -250,7 +250,7 @@ func (s *System) validate() error {
 	return nil
 }
 
-func (s *System) Equal(other *System) bool {
+func (s *Bundle) Equal(other *Bundle) bool {
 	if s == other {
 		return true
 	}
@@ -498,7 +498,7 @@ func equalStringSets(a, b []string) bool {
 }
 
 // Git defines the Git synchronization configuration used by Lighthouse
-// resources like Systems, Stacks, and Libraries.
+// resources like Bundles, Stacks, and Libraries.
 type Git struct {
 	Repo          string     `json:"repo" yaml:"repo"`
 	Reference     *string    `json:"reference,omitempty" yaml:"reference,omitempty"`

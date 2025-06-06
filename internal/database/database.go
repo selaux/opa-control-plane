@@ -75,7 +75,7 @@ func (d *Database) InitDB(ctx context.Context, persistenceDir string) error {
 	}
 
 	stmts := []string{
-		`CREATE TABLE IF NOT EXISTS systems (
+		`CREATE TABLE IF NOT EXISTS bundles (
 			id TEXT PRIMARY KEY,
 			labels TEXT,
 			repo TEXT NOT NULL,
@@ -106,35 +106,35 @@ func (d *Database) InitDB(ctx context.Context, persistenceDir string) error {
 			id TEXT PRIMARY KEY,
 			value TEXT
 		);`,
-		`CREATE TABLE IF NOT EXISTS systems_secrets (
-			system_id TEXT NOT NULL,
+		`CREATE TABLE IF NOT EXISTS bundles_secrets (
+			bundle_id TEXT NOT NULL,
 			secret_id TEXT NOT NULL,
 			ref_type TEXT NOT NULL,
-			PRIMARY KEY (system_id, secret_id),
-			FOREIGN KEY (system_id) REFERENCES systems(id),
+			PRIMARY KEY (bundle_id, secret_id),
+			FOREIGN KEY (bundle_id) REFERENCES bundles(id),
 			FOREIGN KEY (secret_id) REFERENCES secrets(id)
 		);`,
-		`CREATE TABLE IF NOT EXISTS systems_data (
-			system_id TEXT NOT NULL,
+		`CREATE TABLE IF NOT EXISTS bundles_data (
+			bundle_id TEXT NOT NULL,
 			path TEXT NOT NULL,
 			data BLOB NOT NULL,
-			PRIMARY KEY (system_id, path),
-			FOREIGN KEY (system_id) REFERENCES systems(id)
+			PRIMARY KEY (bundle_id, path),
+			FOREIGN KEY (bundle_id) REFERENCES bundles(id)
 		);`,
-		`CREATE TABLE IF NOT EXISTS systems_datasources (
+		`CREATE TABLE IF NOT EXISTS bundles_datasources (
 			name TEXT NOT NULL,
-			system_id TEXT NOT NULL,
+			bundle_id TEXT NOT NULL,
 			type TEXT NOT NULL,
 			path TEXT NOT NULL,
 			config TEXT NOT NULL,
-			PRIMARY KEY (system_id, name),
-			FOREIGN KEY (system_id) REFERENCES systems(id)
+			PRIMARY KEY (bundle_id, name),
+			FOREIGN KEY (bundle_id) REFERENCES bundles(id)
 		);`,
-		`CREATE TABLE IF NOT EXISTS systems_requirements (
-			system_id TEXT NOT NULL,
+		`CREATE TABLE IF NOT EXISTS bundles_requirements (
+			bundle_id TEXT NOT NULL,
 			library_id TEXT NOT NULL,
-			PRIMARY KEY (system_id, library_id),
-			FOREIGN KEY (system_id) REFERENCES systems(id),
+			PRIMARY KEY (bundle_id, library_id),
+			FOREIGN KEY (bundle_id) REFERENCES bundles(id),
 			FOREIGN KEY (library_id) REFERENCES libraries(id)
 		);`,
 		`CREATE TABLE IF NOT EXISTS stacks_requirements (
@@ -191,12 +191,12 @@ func (d *Database) CloseDB() {
 	d.db.Close()
 }
 
-func (d *Database) SystemsDataGet(ctx context.Context, systemId, path string) (interface{}, bool, error) {
+func (d *Database) BundlesDataGet(ctx context.Context, bundleId, path string) (interface{}, bool, error) {
 	rows, err := d.db.Query(`SELECT
 	data
 FROM
-	systems_data
-WHERE system_id = ? AND path = ?`, systemId, path)
+	bundles_data
+WHERE bundle_id = ? AND path = ?`, bundleId, path)
 	if err != nil {
 		return nil, false, err
 	}
@@ -219,17 +219,17 @@ WHERE system_id = ? AND path = ?`, systemId, path)
 	return data, true, nil
 }
 
-func (d *Database) SystemsDataPut(ctx context.Context, systemId, path string, data interface{}) error {
+func (d *Database) BundlesDataPut(ctx context.Context, bundleId, path string, data interface{}) error {
 	bs, err := json.Marshal(data)
 	if err != nil {
 		return err
 	}
-	_, err = d.db.Exec(`INSERT OR REPLACE INTO systems_data (system_id, path, data) VALUES (?, ?, ?)`, systemId, path, bs)
+	_, err = d.db.Exec(`INSERT OR REPLACE INTO bundles_data (bundle_id, path, data) VALUES (?, ?, ?)`, bundleId, path, bs)
 	return err
 }
 
-func (d *Database) SystemsDataDelete(ctx context.Context, systemId, path string) error {
-	_, err := d.db.Exec(`DELETE FROM systems_data WHERE system_id = ? AND path = ?`, systemId, path)
+func (d *Database) BundlesDataDelete(ctx context.Context, bundleId, path string) error {
+	_, err := d.db.Exec(`DELETE FROM bundles_data WHERE bundle_id = ? AND path = ?`, bundleId, path)
 	return err
 }
 
@@ -245,7 +245,7 @@ func (d *Database) LoadConfig(_ context.Context, bs []byte) error {
 		return err
 	}
 
-	if err := d.loadSystems(root); err != nil {
+	if err := d.loadBundles(root); err != nil {
 		return err
 	}
 
@@ -260,7 +260,7 @@ func (d *Database) LoadConfig(_ context.Context, bs []byte) error {
 	return nil
 }
 
-func (d *Database) ListSystemsWithGitCredentials() ([]*config.System, error) {
+func (d *Database) ListBundlesWithGitCredentials() ([]*config.Bundle, error) {
 	txn, err := d.db.Begin()
 	if err != nil {
 		return nil, err
@@ -268,98 +268,98 @@ func (d *Database) ListSystemsWithGitCredentials() ([]*config.System, error) {
 	defer txn.Commit()
 
 	rows, err := txn.Query(`SELECT
-        systems.id AS system_id,
-		systems.labels,
-        systems.repo,
-        systems.ref,
-        systems.gitcommit,
-        systems.path,
-		systems.git_included_files,
-		systems.s3url,
-		systems.s3region,
-		systems.s3bucket,
-		systems.s3key,
-		systems.excluded,
+        bundles.id AS bundle_id,
+		bundles.labels,
+        bundles.repo,
+        bundles.ref,
+        bundles.gitcommit,
+        bundles.path,
+		bundles.git_included_files,
+		bundles.s3url,
+		bundles.s3region,
+		bundles.s3bucket,
+		bundles.s3key,
+		bundles.excluded,
         secrets.id AS secret_id,
-		systems_secrets.ref_type AS secret_ref_type,
+		bundles_secrets.ref_type AS secret_ref_type,
         secrets.value AS secret_value,
-		systems_requirements.library_id AS req_lib
+		bundles_requirements.library_id AS req_lib
     FROM
-        systems
+        bundles
     LEFT JOIN
-        systems_secrets ON systems.id = systems_secrets.system_id
+        bundles_secrets ON bundles.id = bundles_secrets.bundle_id
     LEFT JOIN
-        secrets ON systems_secrets.secret_id = secrets.id
+        secrets ON bundles_secrets.secret_id = secrets.id
 	LEFT JOIN
-		systems_requirements ON systems.id = systems_requirements.system_id
-	WHERE (systems.s3bucket IS NOT NULL) AND
-		((systems_secrets.ref_type = 'git_credentials' AND secrets.value IS NOT NULL) OR systems_secrets.ref_type IS NULL) OR
-		systems_secrets.ref_type = 'aws'`)
+		bundles_requirements ON bundles.id = bundles_requirements.bundle_id
+	WHERE (bundles.s3bucket IS NOT NULL) AND
+		((bundles_secrets.ref_type = 'git_credentials' AND secrets.value IS NOT NULL) OR bundles_secrets.ref_type IS NULL) OR
+		bundles_secrets.ref_type = 'aws'`)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 
-	systemMap := make(map[string]*config.System)
+	bundleMap := make(map[string]*config.Bundle)
 
 	for rows.Next() {
-		var systemId, repo string
+		var bundleId, repo string
 		var labels *string
 		var secretId, secretRefType, secretValue *string
 		var ref, gitCommit, path, includePaths *string
 		var s3url, s3region, s3bucket, s3key *string
 		var excluded *string
 		var reqLib *string
-		if err := rows.Scan(&systemId, &labels, &repo, &ref, &gitCommit, &path, &includePaths, &s3url, &s3region, &s3bucket, &s3key, &excluded, &secretId, &secretRefType, &secretValue, &reqLib); err != nil {
+		if err := rows.Scan(&bundleId, &labels, &repo, &ref, &gitCommit, &path, &includePaths, &s3url, &s3region, &s3bucket, &s3key, &excluded, &secretId, &secretRefType, &secretValue, &reqLib); err != nil {
 			return nil, err
 		}
 
-		system, exists := systemMap[systemId]
+		bundle, exists := bundleMap[bundleId]
 		if !exists {
-			system = &config.System{
-				Name: systemId,
+			bundle = &config.Bundle{
+				Name: bundleId,
 				Git: config.Git{
 					Repo: repo,
 				},
 			}
 
 			if labels != nil {
-				if err := json.Unmarshal([]byte(*labels), &system.Labels); err != nil {
-					return nil, fmt.Errorf("failed to unmarshal labels for %q: %w", system.Name, err)
+				if err := json.Unmarshal([]byte(*labels), &bundle.Labels); err != nil {
+					return nil, fmt.Errorf("failed to unmarshal labels for %q: %w", bundle.Name, err)
 				}
 			}
 
-			systemMap[systemId] = system
+			bundleMap[bundleId] = bundle
 
 			if ref != nil {
-				system.Git.Reference = ref
+				bundle.Git.Reference = ref
 			}
 			if gitCommit != nil {
-				system.Git.Commit = gitCommit
+				bundle.Git.Commit = gitCommit
 			}
 			if path != nil {
-				system.Git.Path = path
+				bundle.Git.Path = path
 			}
 			if includePaths != nil {
-				if err := json.Unmarshal([]byte(*includePaths), &system.Git.IncludedFiles); err != nil {
-					return nil, fmt.Errorf("failed to unmarshal include paths for %q: %w", system.Name, err)
+				if err := json.Unmarshal([]byte(*includePaths), &bundle.Git.IncludedFiles); err != nil {
+					return nil, fmt.Errorf("failed to unmarshal include paths for %q: %w", bundle.Name, err)
 				}
 			}
 
 			if s3region != nil && s3bucket != nil && s3key != nil {
-				system.ObjectStorage.AmazonS3 = &config.AmazonS3{
+				bundle.ObjectStorage.AmazonS3 = &config.AmazonS3{
 					Region: *s3region,
 					Bucket: *s3bucket,
 					Key:    *s3key,
 				}
 				if s3url != nil {
-					system.ObjectStorage.AmazonS3.URL = *s3url
+					bundle.ObjectStorage.AmazonS3.URL = *s3url
 				}
 			}
 
 			if excluded != nil {
-				if err := json.Unmarshal([]byte(*excluded), &system.ExcludedFiles); err != nil {
-					return nil, fmt.Errorf("failed to unmarshal excluded files for %q: %w", system.Name, err)
+				if err := json.Unmarshal([]byte(*excluded), &bundle.ExcludedFiles); err != nil {
+					return nil, fmt.Errorf("failed to unmarshal excluded files for %q: %w", bundle.Name, err)
 				}
 			}
 		}
@@ -372,29 +372,29 @@ func (d *Database) ListSystemsWithGitCredentials() ([]*config.System, error) {
 
 			switch *secretRefType {
 			case "git_credentials":
-				system.Git.Credentials = s.Ref()
+				bundle.Git.Credentials = s.Ref()
 			case "aws":
-				if system.ObjectStorage.AmazonS3 != nil {
-					system.ObjectStorage.AmazonS3.Credentials = s.Ref()
+				if bundle.ObjectStorage.AmazonS3 != nil {
+					bundle.ObjectStorage.AmazonS3.Credentials = s.Ref()
 				}
 			}
 		}
 
 		if reqLib != nil {
-			system.Requirements = append(system.Requirements, config.Requirement{Library: reqLib})
+			bundle.Requirements = append(bundle.Requirements, config.Requirement{Library: reqLib})
 		}
 	}
 
-	// Load datasources for each system.
+	// Load datasources for each bundle.
 
 	rows2, err := txn.Query(`SELECT
-	systems_datasources.name,
-	systems_datasources.system_id,
-	systems_datasources.path,
-	systems_datasources.type,
-	systems_datasources.config
+	bundles_datasources.name,
+	bundles_datasources.bundle_id,
+	bundles_datasources.path,
+	bundles_datasources.type,
+	bundles_datasources.config
 FROM
-	systems_datasources
+	bundles_datasources
 `)
 	if err != nil {
 		return nil, err
@@ -403,8 +403,8 @@ FROM
 	defer rows2.Close()
 
 	for rows2.Next() {
-		var name, system_id, path, type_, configuration string
-		if err := rows2.Scan(&name, &system_id, &path, &type_, &configuration); err != nil {
+		var name, bundle_id, path, type_, configuration string
+		if err := rows2.Scan(&name, &bundle_id, &path, &type_, &configuration); err != nil {
 			return nil, err
 		}
 
@@ -418,18 +418,18 @@ FROM
 			return nil, err
 		}
 
-		system, ok := systemMap[system_id]
+		b, ok := bundleMap[bundle_id]
 		if ok {
-			system.Datasources = append(system.Datasources, datasource)
+			b.Datasources = append(b.Datasources, datasource)
 		}
 	}
 
-	var systems []*config.System
-	for _, system := range systemMap {
-		systems = append(systems, system)
+	var bundles []*config.Bundle
+	for _, b := range bundleMap {
+		bundles = append(bundles, b)
 	}
 
-	return systems, nil
+	return bundles, nil
 }
 
 func (d *Database) ListLibrariesWithGitCredentials() ([]*config.Library, error) {
@@ -626,8 +626,8 @@ func (d *Database) QueryLibraryData(id string) (*DataCursor, error) {
 	return d.queryData("libraries_data", "library_id", id)
 }
 
-func (d *Database) QuerySystemData(id string) (*DataCursor, error) {
-	return d.queryData("systems_data", "system_id", id)
+func (d *Database) QueryBundleData(id string) (*DataCursor, error) {
+	return d.queryData("bundles_data", "bundle_id", id)
 }
 
 func (d *Database) queryData(table, pk, id string) (*DataCursor, error) {
@@ -666,76 +666,76 @@ func (c *DataCursor) Value() (Data, error) {
 	return Data{Path: path, Data: data}, nil
 }
 
-func (d *Database) loadSystems(root *config.Root) error {
+func (d *Database) loadBundles(root *config.Root) error {
 
 	var names []string
-	for _, system := range root.Systems {
-		names = append(names, system.Name)
+	for _, b := range root.Bundles {
+		names = append(names, b.Name)
 	}
 
 	sort.Strings(names)
 
 	for _, name := range names {
-		system := root.Systems[name]
+		b := root.Bundles[name]
 		var s3url, s3region, s3bucket, s3key *string
-		if system.ObjectStorage.AmazonS3 != nil {
-			s3url = &system.ObjectStorage.AmazonS3.URL
-			s3region = &system.ObjectStorage.AmazonS3.Region
-			s3bucket = &system.ObjectStorage.AmazonS3.Bucket
-			s3key = &system.ObjectStorage.AmazonS3.Key
+		if b.ObjectStorage.AmazonS3 != nil {
+			s3url = &b.ObjectStorage.AmazonS3.URL
+			s3region = &b.ObjectStorage.AmazonS3.Region
+			s3bucket = &b.ObjectStorage.AmazonS3.Bucket
+			s3key = &b.ObjectStorage.AmazonS3.Key
 		}
 
-		labels, err := json.Marshal(system.Labels)
+		labels, err := json.Marshal(b.Labels)
 		if err != nil {
 			return err
 		}
 
-		excluded, err := json.Marshal(system.ExcludedFiles)
+		excluded, err := json.Marshal(b.ExcludedFiles)
 		if err != nil {
 			return err
 		}
 
-		includedFiles, err := json.Marshal(system.Git.IncludedFiles)
+		includedFiles, err := json.Marshal(b.Git.IncludedFiles)
 		if err != nil {
 			return err
 		}
 
-		if _, err := d.db.Exec(`INSERT OR REPLACE INTO systems (id, labels, repo, ref, gitcommit, path, git_included_files, s3url, s3region, s3bucket, s3key, excluded) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-			system.Name, string(labels), system.Git.Repo, system.Git.Reference, system.Git.Commit, system.Git.Path, string(includedFiles), s3url, s3region, s3bucket, s3key, string(excluded)); err != nil {
+		if _, err := d.db.Exec(`INSERT OR REPLACE INTO bundles (id, labels, repo, ref, gitcommit, path, git_included_files, s3url, s3region, s3bucket, s3key, excluded) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			b.Name, string(labels), b.Git.Repo, b.Git.Reference, b.Git.Commit, b.Git.Path, string(includedFiles), s3url, s3region, s3bucket, s3key, string(excluded)); err != nil {
 			return err
 		}
 
-		if system.Git.Credentials != nil {
-			d.db.Exec(`INSERT OR REPLACE INTO systems_secrets (system_id, secret_id, ref_type) VALUES (?, ?, ?)`, system.Name, system.Git.Credentials.Name, "git_credentials")
+		if b.Git.Credentials != nil {
+			d.db.Exec(`INSERT OR REPLACE INTO bundles_secrets (bundle_id, secret_id, ref_type) VALUES (?, ?, ?)`, b.Name, b.Git.Credentials.Name, "git_credentials")
 		}
 
-		if system.ObjectStorage.AmazonS3 != nil {
-			if system.ObjectStorage.AmazonS3.Credentials != nil {
-				d.db.Exec(`INSERT OR REPLACE INTO systems_secrets (system_id, secret_id, ref_type) VALUES (?, ?, ?)`, system.Name, system.ObjectStorage.AmazonS3.Credentials.Name, "aws")
+		if b.ObjectStorage.AmazonS3 != nil {
+			if b.ObjectStorage.AmazonS3.Credentials != nil {
+				d.db.Exec(`INSERT OR REPLACE INTO bundles_secrets (bundle_id, secret_id, ref_type) VALUES (?, ?, ?)`, b.Name, b.ObjectStorage.AmazonS3.Credentials.Name, "aws")
 			}
 		}
 
-		for _, datasource := range system.Datasources {
+		for _, datasource := range b.Datasources {
 			bs, err := json.Marshal(datasource.Config)
 			if err != nil {
 				return err
 			}
-			if _, err := d.db.Exec(`INSERT OR REPLACE INTO systems_datasources (name, system_id, type, path, config) VALUES (?, ?, ?, ?, ?)`,
-				datasource.Name, system.Name, datasource.Type, datasource.Path, string(bs)); err != nil {
+			if _, err := d.db.Exec(`INSERT OR REPLACE INTO bundles_datasources (name, bundle_id, type, path, config) VALUES (?, ?, ?, ?, ?)`,
+				datasource.Name, b.Name, datasource.Type, datasource.Path, string(bs)); err != nil {
 				return err
 			}
 		}
 
-		for path, data := range system.Files() {
-			if _, err := d.db.Exec(`INSERT OR REPLACE INTO systems_data (system_id, path, data) VALUES (?, ?, ?)`, name, path, data); err != nil {
+		for path, data := range b.Files() {
+			if _, err := d.db.Exec(`INSERT OR REPLACE INTO bundles_data (bundle_id, path, data) VALUES (?, ?, ?)`, name, path, data); err != nil {
 				return err
 			}
 		}
 
-		for _, src := range system.Requirements {
+		for _, src := range b.Requirements {
 			if src.Library != nil {
 				// TODO: add support for mounts on requirements; currently that is only used internally for stacks.
-				if _, err := d.db.Exec(`INSERT OR REPLACE INTO systems_requirements (system_id, library_id) VALUES (?, ?)`, name, src.Library); err != nil {
+				if _, err := d.db.Exec(`INSERT OR REPLACE INTO bundles_requirements (bundle_id, library_id) VALUES (?, ?)`, name, src.Library); err != nil {
 					return err
 				}
 			}

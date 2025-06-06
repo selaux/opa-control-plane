@@ -133,13 +133,13 @@ func doCompare(params compareParams) error {
 		return errors.New("please provide Styra URL with -u/--url")
 	}
 
-	var sortedSystems []*config.System
-	for _, system := range cfg.Systems {
-		sortedSystems = append(sortedSystems, system)
+	var sortedBundles []*config.Bundle
+	for _, b := range cfg.Bundles {
+		sortedBundles = append(sortedBundles, b)
 	}
 
-	sort.Slice(sortedSystems, func(i, j int) bool {
-		return sortedSystems[i].Name < sortedSystems[j].Name
+	sort.Slice(sortedBundles, func(i, j int) bool {
+		return sortedBundles[i].Name < sortedBundles[j].Name
 	})
 
 	styra := das.Client{
@@ -169,25 +169,25 @@ func doCompare(params compareParams) error {
 	}
 
 	for name := range v1SystemsByName {
-		if _, ok := cfg.Systems[name]; !ok {
+		if _, ok := cfg.Bundles[name]; !ok {
 			result.MissingSystems = append(result.MissingSystems, name)
 		}
 	}
 
 	ctx := context.Background()
 
-	for _, system := range sortedSystems {
-		v1, ok := v1SystemsByName[system.Name]
+	for _, b := range sortedBundles {
+		v1, ok := v1SystemsByName[b.Name]
 		if !ok {
-			result.ExtraSystems = append(result.ExtraSystems, system.Name)
+			result.ExtraSystems = append(result.ExtraSystems, b.Name)
 			continue
 		}
-		report, err := compareSystem(ctx, &styra, v1, system)
+		report, err := compareSystem(ctx, &styra, v1, b)
 		if err != nil {
 			msg := err.Error()
 			report = &compareSystemReport{Error: &msg}
 		}
-		result.Systems[system.Name] = *report
+		result.Systems[b.Name] = *report
 	}
 
 	bs, err = json.MarshalIndent(result, "", "  ")
@@ -200,7 +200,7 @@ func doCompare(params compareParams) error {
 	return nil
 }
 
-func compareSystem(ctx context.Context, client *das.Client, v1 *das.V1System, system *config.System) (*compareSystemReport, error) {
+func compareSystem(ctx context.Context, client *das.Client, v1 *das.V1System, system *config.Bundle) (*compareSystemReport, error) {
 
 	log.Infof("Checking system %q...", system.Name)
 

@@ -2,7 +2,7 @@ cases:
 - note: config with git include paths
   config: |
         {
-          systems: {
+          bundles: {
             TestSystem: {
               git: {
                 repo: {{ .git_url }},

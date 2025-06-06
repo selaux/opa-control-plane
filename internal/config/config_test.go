@@ -13,7 +13,7 @@ import (
 func TestParseSecretResolve(t *testing.T) {
 
 	result, err := config.Parse(bytes.NewReader([]byte(`{
-		systems: {
+		bundles: {
 			foo: {
 				git: {
 					repo: https://example.com/repo.git,
@@ -35,7 +35,7 @@ func TestParseSecretResolve(t *testing.T) {
 
 	t.Setenv("LIGHTHOUSE_PASSWORD", "passw0rd")
 
-	secret, err := result.Systems["foo"].Git.Credentials.Resolve()
+	secret, err := result.Bundles["foo"].Git.Credentials.Resolve()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -56,7 +56,7 @@ func TestParseSecretResolve(t *testing.T) {
 func TestFilesMarshallingRoundtrip(t *testing.T) {
 
 	cfg, err := config.Parse(bytes.NewBufferString(`{
-		systems: {
+		bundles: {
 			foo: {
 				files: {
 					"foo.rego": "cGFja2FnZSBmb28=",
@@ -77,8 +77,8 @@ func TestFilesMarshallingRoundtrip(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if cfg.Systems["foo"].Files()["foo.rego"] != "package foo" {
-		t.Fatalf("expected file to be 'package foo' but got:\n%v", cfg.Systems["foo"].Files()["foo.rego"])
+	if cfg.Bundles["foo"].Files()["foo.rego"] != "package foo" {
+		t.Fatalf("expected file to be 'package foo' but got:\n%v", cfg.Bundles["foo"].Files()["foo.rego"])
 	}
 
 	bs, err := yaml.Marshal(cfg)
@@ -91,8 +91,8 @@ func TestFilesMarshallingRoundtrip(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if !cfg.Systems["foo"].Equal(cfg2.Systems["foo"]) {
-		t.Fatal("expected systems to be equal")
+	if !cfg.Bundles["foo"].Equal(cfg2.Bundles["foo"]) {
+		t.Fatal("expected bundles to be equal")
 	}
 
 	if !cfg.Stacks["bar"].Equal(cfg2.Stacks["bar"]) {

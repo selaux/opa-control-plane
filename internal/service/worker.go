@@ -16,14 +16,14 @@ var (
 	successDelay = 1 * time.Minute
 )
 
-// Each SystemWorker is responsible for synchronizing a system's git repository,
-// constructing a bundle from the system and its libraries, and uploading the
+// Each BundleWorker is responsible for synchronizing a bundle's git repository,
+// constructing a bundle from the bundle and its libraries, and uploading the
 // bundle to an object storage service. It uses a git synchronizer to pull the
-// latest changes from the system's repository, constructs a bundle using the
+// latest changes from the bundle's repository, constructs a bundle using the
 // builder package, and uploads the resulting bundle to an S3-compatible object
 // storage service.
-type SystemWorker struct {
-	systemConfig   *config.System
+type BundleWorker struct {
+	bundleConfig   *config.Bundle
 	libraryConfigs []*config.Library
 	stackConfigs   []*config.Stack
 	synchronizers  []Synchronizer
@@ -39,9 +39,9 @@ type Synchronizer interface {
 	Execute(ctx context.Context) error
 }
 
-func NewSystemWorker(system *config.System, libraries []*config.Library, stacks []*config.Stack, logger *logging.Logger) *SystemWorker {
-	return &SystemWorker{
-		systemConfig:   system,
+func NewBundleWorker(b *config.Bundle, libraries []*config.Library, stacks []*config.Stack, logger *logging.Logger) *BundleWorker {
+	return &BundleWorker{
+		bundleConfig:   b,
 		libraryConfigs: libraries,
 		stackConfigs:   stacks,
 		log:            logger,
@@ -49,27 +49,27 @@ func NewSystemWorker(system *config.System, libraries []*config.Library, stacks 
 	}
 }
 
-func (worker *SystemWorker) WithSynchronizers(synchronizers []Synchronizer) *SystemWorker {
+func (worker *BundleWorker) WithSynchronizers(synchronizers []Synchronizer) *BundleWorker {
 	worker.synchronizers = synchronizers
 	return worker
 }
 
-func (worker *SystemWorker) WithSources(sources []*builder.Source) *SystemWorker {
+func (worker *BundleWorker) WithSources(sources []*builder.Source) *BundleWorker {
 	worker.sources = sources
 	return worker
 }
 
-func (worker *SystemWorker) WithStorage(storage s3.ObjectStorage) *SystemWorker {
+func (worker *BundleWorker) WithStorage(storage s3.ObjectStorage) *BundleWorker {
 	worker.storage = storage
 	return worker
 }
 
-func (worker *SystemWorker) WithSingleShot(singleShot bool) *SystemWorker {
+func (worker *BundleWorker) WithSingleShot(singleShot bool) *BundleWorker {
 	worker.singleShot = singleShot
 	return worker
 }
 
-func (worker *SystemWorker) Done() bool {
+func (worker *BundleWorker) Done() bool {
 	select {
 	case <-worker.done:
 		return true
@@ -78,32 +78,32 @@ func (worker *SystemWorker) Done() bool {
 	}
 }
 
-func (worker *SystemWorker) UpdateConfig(system *config.System, libraries []*config.Library, stacks []*config.Stack) {
-	if system == nil || !worker.systemConfig.Equal(system) || !config.EqualLibraries(worker.libraryConfigs, libraries) || !config.EqualStacks(worker.stackConfigs, stacks) {
+func (worker *BundleWorker) UpdateConfig(b *config.Bundle, libraries []*config.Library, stacks []*config.Stack) {
+	if b == nil || !worker.bundleConfig.Equal(b) || !config.EqualLibraries(worker.libraryConfigs, libraries) || !config.EqualStacks(worker.stackConfigs, stacks) {
 		worker.changeConfiguration()
 	}
 }
 
-// Execute runs a system synchronization iteration: git sync, bundle construct
+// Execute runs a bundle synchronization iteration: git sync, bundle construct
 // and then push bundles to object storage.
-func (w *SystemWorker) Execute(ctx context.Context) time.Time {
+func (w *BundleWorker) Execute(ctx context.Context) time.Time {
 	// If a configuration change was requested, request the worker to be removed from the pool and signal this worker being done.
 
 	if w.configurationChanged() {
 		return w.die()
 	}
 
-	// Wipe any old files synchronized during the previous run to avoid deleted files in database/http from reappearing to system bundles.
+	// Wipe any old files synchronized during the previous run to avoid deleted files in database/http from reappearing to bundle bundles.
 	for _, src := range w.sources {
 		if err := src.Wipe(); err != nil {
-			return w.warn("failed to remove a directory for system %q: %v", w.systemConfig.Name, err)
+			return w.warn("failed to remove a directory for bundle %q: %v", w.bundleConfig.Name, err)
 		}
 	}
 
 	for _, synchronizer := range w.synchronizers {
 		err := synchronizer.Execute(ctx)
 		if err != nil {
-			return w.warn("failed to synchronize system %q: %v", w.systemConfig.Name, err)
+			return w.warn("failed to synchronize bundle %q: %v", w.bundleConfig.Name, err)
 		}
 	}
 
@@ -111,26 +111,26 @@ func (w *SystemWorker) Execute(ctx context.Context) time.Time {
 
 	b := builder.New().
 		WithSources(w.sources).
-		WithExcluded(w.systemConfig.ExcludedFiles).
+		WithExcluded(w.bundleConfig.ExcludedFiles).
 		WithOutput(buffer)
 
 	err := b.Build(ctx)
 	if err != nil {
-		return w.warn("failed to build a system bundle %q: %v", w.systemConfig.Name, err)
+		return w.warn("failed to build a bundle %q: %v", w.bundleConfig.Name, err)
 	}
 
 	if w.storage != nil {
 		if err := w.storage.Upload(ctx, bytes.NewReader(buffer.Bytes())); err != nil {
-			return w.warn("failed to upload system bundle %q: %v", w.systemConfig.Name, err)
+			return w.warn("failed to upload bundle %q: %v", w.bundleConfig.Name, err)
 		}
 
-		return w.success("System %q bundle built and uploaded.", w.systemConfig.Name)
+		return w.success("Bundle %q built and uploaded.", w.bundleConfig.Name)
 	}
 
-	return w.success("System %q bundle built.", w.systemConfig.Name)
+	return w.success("Bundle %q built.", w.bundleConfig.Name)
 }
 
-func (w *SystemWorker) success(msg string, args ...interface{}) time.Time {
+func (w *BundleWorker) success(msg string, args ...interface{}) time.Time {
 	w.log.Debugf(msg, args...)
 
 	if w.singleShot {
@@ -140,7 +140,7 @@ func (w *SystemWorker) success(msg string, args ...interface{}) time.Time {
 	return time.Now().Add(successDelay)
 }
 
-func (w *SystemWorker) warn(msg string, args ...interface{}) time.Time {
+func (w *BundleWorker) warn(msg string, args ...interface{}) time.Time {
 	w.log.Warnf(msg, args...)
 
 	if w.singleShot {
@@ -150,7 +150,7 @@ func (w *SystemWorker) warn(msg string, args ...interface{}) time.Time {
 	return time.Now().Add(errorDelay)
 }
 
-func (w *SystemWorker) changeConfiguration() {
+func (w *BundleWorker) changeConfiguration() {
 	select {
 	case <-w.changed:
 	default:
@@ -158,7 +158,7 @@ func (w *SystemWorker) changeConfiguration() {
 	}
 }
 
-func (w *SystemWorker) configurationChanged() bool {
+func (w *BundleWorker) configurationChanged() bool {
 	select {
 	case <-w.changed:
 		return true
@@ -167,7 +167,7 @@ func (w *SystemWorker) configurationChanged() bool {
 	}
 }
 
-func (w *SystemWorker) die() time.Time {
+func (w *BundleWorker) die() time.Time {
 	close(w.done)
 
 	var zero time.Time

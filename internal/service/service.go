@@ -27,7 +27,7 @@ type Service struct {
 	config         []byte
 	persistenceDir string
 	pool           *pool.Pool
-	workers        map[string]*SystemWorker
+	workers        map[string]*BundleWorker
 	database       database.Database
 	builtinFS      fs.FS
 	singleShot     bool
@@ -37,7 +37,7 @@ type Service struct {
 func New() *Service {
 	return &Service{
 		pool:    pool.New(10),
-		workers: make(map[string]*SystemWorker),
+		workers: make(map[string]*BundleWorker),
 	}
 }
 
@@ -80,7 +80,7 @@ func (s *Service) Run(ctx context.Context) error {
 		return err
 	}
 
-	// Launch new workers for new systems and systems with updated configuration until it is time to shutdown.
+	// Launch new workers for new bundles and bundles with updated configuration until it is time to shutdown.
 
 shutdown:
 	for {
@@ -106,9 +106,9 @@ shutdown:
 
 func (s *Service) launchWorkers(ctx context.Context) {
 
-	systems, err := s.database.ListSystemsWithGitCredentials()
+	bundles, err := s.database.ListBundlesWithGitCredentials()
 	if err != nil {
-		s.log.Errorf("error listing systems: %s", err.Error())
+		s.log.Errorf("error listing bundles: %s", err.Error())
 		return
 	}
 
@@ -124,34 +124,34 @@ func (s *Service) launchWorkers(ctx context.Context) {
 		return
 	}
 
-	activeSystems := make(map[string]struct{})
-	for _, system := range systems {
-		activeSystems[system.Name] = struct{}{}
+	activeBundles := make(map[string]struct{})
+	for _, b := range bundles {
+		activeBundles[b.Name] = struct{}{}
 	}
 
-	// Remove any worker already shutdown from bookkeeping, as well as initiate shutdown for any system (worker) not in the current configuration.
+	// Remove any worker already shutdown from bookkeeping, as well as initiate shutdown for any bundle (worker) not in the current configuration.
 	for id, w := range s.workers {
 		if w.Done() {
 			delete(s.workers, id)
 			continue
 		}
 
-		if _, ok := activeSystems[id]; !ok {
+		if _, ok := activeBundles[id]; !ok {
 			w.UpdateConfig(nil, nil, nil)
 		}
 	}
 
-	// Start any new workers for systems that are in the current configuration but not yet running. Inform any existing
+	// Start any new workers for bundles that are in the current configuration but not yet running. Inform any existing
 	// workers of the current configuration, which will cause them to shutdown if configuration has changed.
 	//
-	// For each system, create the following directory structure under persistencyDir for the builder to use
+	// For each bundle, create the following directory structure under persistencyDir for the builder to use
 	// when constructing bundles:
 	//
 	// persistenceDir/
-	// └── {md5(system.Name)}/
-	//     ├── database/                  # System-specific files from SQL database
-	//     ├── datasources/               # System-specific HTTP datasources
-	//     ├── repo/                      # System git repository
+	// └── {md5(bundle.Name)}/
+	//     ├── database/                  # bundle-specific files from SQL database
+	//     ├── datasources/               # bundle-specific HTTP datasources
+	//     ├── repo/                      # bundle git repository
 	//     └── libraries/
 	//         └── {library.Name}/
 	//             ├── builtin/           # Built-in library specific files
@@ -159,27 +159,27 @@ func (s *Service) launchWorkers(ctx context.Context) {
 	//             ├── datasources/       # Library-specific HTTP datasources
 	//             └── repo/              # Library git repository
 
-	for _, system := range systems {
-		if w, ok := s.workers[system.Name]; ok {
-			w.UpdateConfig(system, libraries, stacks)
+	for _, b := range bundles {
+		if w, ok := s.workers[b.Name]; ok {
+			w.UpdateConfig(b, libraries, stacks)
 			continue
 		}
 
-		s.log.Debugf("(re)starting worker for system: %s", system.Name)
+		s.log.Debugf("(re)starting worker for bundle: %s", b.Name)
 
 		syncs := []Synchronizer{}
 		sources := []*builder.Source{}
 
-		systemDir := path.Join(s.persistenceDir, md5sum(system.Name))
+		bundleDir := path.Join(s.persistenceDir, md5sum(b.Name))
 
-		src := newSource(system.Name).
-			SyncSystemSQL(&syncs, system.Name, &s.database, path.Join(systemDir, "database")).
-			SyncDatasources(&syncs, system.Datasources, path.Join(systemDir, "datasources")).
-			SyncGit(&syncs, system.Git, path.Join(systemDir, "repo")).
-			AddRequirements(system.Requirements)
+		src := newSource(b.Name).
+			SyncBundleSQL(&syncs, b.Name, &s.database, path.Join(bundleDir, "database")).
+			SyncDatasources(&syncs, b.Datasources, path.Join(bundleDir, "datasources")).
+			SyncGit(&syncs, b.Git, path.Join(bundleDir, "repo")).
+			AddRequirements(b.Requirements)
 
 		for _, stack := range stacks {
-			if stack.Selector.Matches(system.Labels) {
+			if stack.Selector.Matches(b.Labels) {
 				src = src.AddRequirements(stack.Requirements)
 			}
 		}
@@ -187,7 +187,7 @@ func (s *Service) launchWorkers(ctx context.Context) {
 		sources = append(sources, &src.Source)
 
 		for _, l := range libraries {
-			libraryDir := path.Join(systemDir, "libraries", l.Name)
+			libraryDir := path.Join(bundleDir, "libraries", l.Name)
 
 			src := newSource(l.Name).
 				SyncBuiltin(&syncs, l.Builtin, s.builtinFS, path.Join(libraryDir, "builtin")).
@@ -199,20 +199,20 @@ func (s *Service) launchWorkers(ctx context.Context) {
 			sources = append(sources, &src.Source)
 		}
 
-		storage, err := s3.New(ctx, system.ObjectStorage)
+		storage, err := s3.New(ctx, b.ObjectStorage)
 		if err != nil {
 			s.log.Errorf("error creating object storage client: %s", err.Error())
 			continue
 		}
 
-		w := NewSystemWorker(system, libraries, stacks, s.log).
+		w := NewBundleWorker(b, libraries, stacks, s.log).
 			WithSources(sources).
 			WithSynchronizers(syncs).
 			WithStorage(storage).
 			WithSingleShot(s.singleShot)
 		s.pool.Add(w.Execute)
 
-		s.workers[system.Name] = w
+		s.workers[b.Name] = w
 	}
 }
 
@@ -279,8 +279,8 @@ func (src *source) SyncDatasources(syncs *[]Synchronizer, datasources []config.D
 	return src
 }
 
-func (src *source) SyncSystemSQL(syncs *[]Synchronizer, name string, database *database.Database, dir string) *source {
-	*syncs = append(*syncs, sqlsync.NewSQLSystemDataSynchronizer(dir, database, name))
+func (src *source) SyncBundleSQL(syncs *[]Synchronizer, name string, database *database.Database, dir string) *source {
+	*syncs = append(*syncs, sqlsync.NewSQLBundleDataSynchronizer(dir, database, name))
 	src.addDir(dir, true, nil)
 	return src
 }

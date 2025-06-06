@@ -2,7 +2,7 @@ cases:
 - note: config with requirements
   config: |
         {
-          systems: {
+          bundles: {
             TestSystem: {
               object_storage: {
                 aws: {

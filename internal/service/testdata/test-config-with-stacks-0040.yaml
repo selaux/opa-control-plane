@@ -2,7 +2,7 @@ cases:
 - note: config with stacks
   config: |
         {
-          systems: {
+          bundles: {
             TestSystem: {
               labels: {
                 app: payments,
