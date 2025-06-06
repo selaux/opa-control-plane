@@ -364,21 +364,25 @@ var baseLibPackageIndex = func() map[string]*libraryPackageIndex {
 }()
 
 type Options struct {
-	Token       string
-	URL         string
-	SystemId    string
-	Prune       bool
-	Datasources bool
-	FilesPath   string
-	EmbedFiles  bool
-	Logging     logging.Config
-	Output      io.Writer
+	Token          string
+	URL            string
+	SystemId       string
+	Prune          bool
+	Datasources    bool
+	FilesPath      string
+	EmbedFiles     bool
+	Logging        logging.Config
+	Output         io.Writer
+	OutputDir      string
+	S3BucketName   string
+	S3BucketRegion string
 }
 
 func init() {
 
 	var params Options
 
+	var stdout bool
 	params.Token = os.Getenv("STYRA_TOKEN")
 
 	migrate := &cobra.Command{
@@ -388,9 +392,17 @@ func init() {
 			if !cmd.Flags().Changed("prune") && params.SystemId != "" {
 				params.Prune = true
 			}
+			if !cmd.Flags().Changed("output-dir") {
+				params.OutputDir = "config.d"
+				if params.SystemId != "" {
+					params.OutputDir = filepath.Join(params.OutputDir, params.SystemId)
+				}
+			}
 		},
 		Run: func(cmd *cobra.Command, args []string) {
-			params.Output = os.Stdout
+			if stdout {
+				params.Output = os.Stdout
+			}
 			if err := Run(params); err != nil {
 				log.Fatal(err.Error())
 			}
@@ -401,8 +413,12 @@ func init() {
 	migrate.Flags().StringVarP(&params.SystemId, "system-id", "", "", "Scope migraton to a specific system (id)")
 	migrate.Flags().BoolVarP(&params.Prune, "prune", "", false, "Prune unused resources")
 	migrate.Flags().BoolVarP(&params.Datasources, "datasources", "", false, "Copy datasource content")
-	migrate.Flags().StringVarP(&params.FilesPath, "files", "", "files", "Path to write the non-git stored files to (default: files/)")
+	migrate.Flags().StringVarP(&params.FilesPath, "files", "", "files", "Path to write the non-git stored files to")
 	migrate.Flags().BoolVarP(&params.EmbedFiles, "embed-files", "", false, "Embed non-git stored files into output configuration")
+	migrate.Flags().BoolVarP(&stdout, "stdout", "", false, "Write configuration to stdout")
+	migrate.Flags().StringVarP(&params.OutputDir, "output-dir", "o", "", "Directory to output configuration files to (default \"config.d[/<system-id>]\")")
+	migrate.Flags().StringVarP(&params.S3BucketName, "s3-bucket-name", "", "BUCKET_NAME", "Set placeholder AWS S3 bucket name for object storage")
+	migrate.Flags().StringVarP(&params.S3BucketRegion, "s3-bucket-region", "", "BUCKET_REGION", "Set placeholder AWS S3 bucket region for object storage")
 	logging.VarP(migrate, &params.Logging)
 
 	cmd.RootCommand.AddCommand(
@@ -546,7 +562,7 @@ func Run(params Options) error {
 			return err
 		}
 
-		log.Infof("Found %d files for systems and libraries. Writing them to disk under %s.", len(files), rootAbs)
+		log.Infof("Found %d files for systems and libraries. Writing them to disk under %s", len(files), rootAbs)
 
 		for path, content := range files {
 			if err := os.MkdirAll(filepath.Join(root, filepath.Dir(path)), 0755); err != nil {
@@ -559,14 +575,60 @@ func Run(params Options) error {
 		}
 	}
 
-	log.Info("Finished downloading resources from DAS. Printing migration configuration.")
-
-	bs, err := yaml.Marshal(output)
-	if err != nil {
-		return err
+	if len(params.S3BucketName) > 0 {
+		for name := range output.Systems {
+			output.Systems[name].ObjectStorage = config.ObjectStorage{
+				AmazonS3: &config.AmazonS3{
+					Bucket:      params.S3BucketName,
+					Region:      params.S3BucketRegion,
+					Key:         "bundles/" + strings.Replace(name, " ", "_", -1) + "/bundle.tar.gz",
+					Credentials: &config.SecretRef{Name: "storage-creds"},
+				},
+			}
+		}
+		if len(output.Systems) > 0 {
+			output.Secrets["storage-creds"] = &config.Secret{
+				Name: "storage-creds",
+				Value: map[string]interface{}{
+					"type":              "aws_auth",
+					"access_key_id":     "$AWS_ACCESS_KEY_ID",
+					"secret_access_key": "$AWS_SECRET_ACCESS_KEY",
+					"session_token":     "$AWS_SESSION_TOKEN",
+				},
+			}
+		}
 	}
 
-	fmt.Fprintln(params.Output, string(bs))
+	if params.Output != nil {
+
+		log.Info("Finished downloading resources from DAS. Writing configuration to stdout")
+		bs, err := yaml.Marshal(output)
+		if err != nil {
+			return err
+		}
+
+		fmt.Fprintln(params.Output, string(bs))
+	} else {
+		rootAbs, err := filepath.Abs(params.OutputDir)
+		if err != nil {
+			return err
+		}
+
+		if err := os.MkdirAll(rootAbs, 0755); err != nil {
+			return err
+		}
+
+		log.Infof("Finished downloading resources from DAS. Writing configuration files under %v", rootAbs)
+		files, err := splitConfig(rootAbs, output)
+		if err != nil {
+			return err
+		}
+		for name, content := range files {
+			if err := os.WriteFile(name, content, 0644); err != nil {
+				return err
+			}
+		}
+	}
 
 	v1SystemsByName := map[string]*das.V1System{}
 	for _, system := range state.SystemsById {
@@ -595,6 +657,71 @@ func Run(params Options) error {
 	}
 
 	return nil
+}
+
+func splitConfig(outputDir string, output config.Root) (map[string][]byte, error) {
+
+	systemsStorage := make(map[string]*config.System)
+	for name, original := range output.Systems {
+		if original.ObjectStorage.AmazonS3 != nil {
+			systemsStorage[name] = &config.System{ObjectStorage: original.ObjectStorage}
+			original.ObjectStorage.AmazonS3 = nil
+		}
+	}
+
+	configs := make(map[string]config.Root)
+
+	if len(output.Systems) > 0 {
+		configs["config-systems.yaml"] = config.Root{Systems: output.Systems}
+	}
+	if len(output.Stacks) > 0 {
+		configs["config-stacks.yaml"] = config.Root{Stacks: output.Stacks}
+	}
+	if len(output.Libraries) > 0 {
+		configs["config-libraries.yaml"] = config.Root{Libraries: output.Libraries}
+	}
+	if len(output.Secrets) > 0 {
+		configs["config-secrets.yaml"] = config.Root{Secrets: output.Secrets}
+	}
+	if len(systemsStorage) > 0 {
+		configs["config-storage.yaml"] = config.Root{Systems: systemsStorage}
+	}
+
+	testSystemsFiles := make(map[string]*config.System)
+	for name, original := range output.Systems {
+		if len(original.Files()) > 0 {
+			cpy := &config.System{Name: name}
+			cpy.SetEmbeddedFiles(original.Files())
+			testSystemsFiles[name] = cpy
+			original.SetEmbeddedFiles(nil)
+		}
+	}
+
+	testLibrariesFiles := make(map[string]*config.Library)
+	for name, original := range output.Libraries {
+		if len(original.Files()) > 0 {
+			cpy := &config.Library{Name: name}
+			cpy.SetEmbeddedFiles(original.Files())
+			testLibrariesFiles[name] = cpy
+			original.SetEmbeddedFiles(nil)
+		}
+	}
+
+	if len(testSystemsFiles)+len(testLibrariesFiles) > 0 {
+		configs["test-config-files.yaml"] = config.Root{Systems: testSystemsFiles, Libraries: testLibrariesFiles}
+	}
+
+	result := make(map[string][]byte)
+	for name, root := range configs {
+		root.Metadata = output.Metadata
+		bs, err := yaml.Marshal(root)
+		if err != nil {
+			return nil, err
+		}
+		result[filepath.Join(outputDir, name)] = bs
+	}
+
+	return result, nil
 }
 
 func migrateV1Library(client *das.Client, state *dasState, v1 *das.V1Library, migrateDSContent bool) (*config.Library, []*config.Secret, error) {
