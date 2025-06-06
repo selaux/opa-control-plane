@@ -884,7 +884,7 @@ func migrateV1Datasources(client *das.Client, nsPrefix string, v1 []das.V1Dataso
 			}
 			dss = append(dss, ds)
 		} else {
-			return nil, nil, nil, fmt.Errorf("datasource config migration not supported for %v/%v", ds.Category, ds.Type)
+			log.Warnf("%v/%v datasource configuration migration not supported yet", ds.Category, ds.Type)
 		}
 
 		if migrateDSContent {
