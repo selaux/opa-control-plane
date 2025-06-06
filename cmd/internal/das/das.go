@@ -17,16 +17,19 @@ type V1System struct {
 	SourceControl *struct {
 		Origin V1GitRepoConfig `json:"origin"`
 	} `json:"source_control"`
-	MatchingStacks []string `json:"matching_stacks"`
-	Datasources    []struct {
-		Id string `json:"id"`
-	}
+	MatchingStacks []string          `json:"matching_stacks"`
+	Datasources    []V1DatasourceRef `json:"datasources"`
+}
+
+type V1DatasourceRef struct {
+	Id string `json:"id"`
 }
 
 type V1Library struct {
 	Id            string                  `json:"id"`
 	Policies      []V1PoliciesRef         `json:"policies"`
 	SourceControl *V1LibrarySourceControl `json:"source_control"`
+	Datasources   []V1DatasourceRef       `json:"datasources"`
 }
 
 type V1LibrarySourceControl struct {
@@ -45,7 +48,8 @@ type V1Stack struct {
 		Origin               V1GitRepoConfig `json:"origin"`
 		StackOrigin          V1GitRepoConfig `json:"stack_origin"`
 	} `json:"source_control"`
-	MatchingSystems []string `json:"matching_systems"`
+	Datasources     []V1DatasourceRef `json:"datasources"`
+	MatchingSystems []string          `json:"matching_systems"`
 }
 
 type V1Datasource struct {

@@ -26,23 +26,15 @@ import (
 )
 
 func TestMigration(t *testing.T) {
-	var styraURL = os.Getenv("STYRA_URL")
-	if styraURL == "" {
-		t.Fatal("STYRA_URL environment variable is not set")
-	}
-
-	var styraToken = os.Getenv("STYRA_TOKEN")
-	if styraToken == "" {
-		t.Fatal("STYRA_TOKEN environment variable is not set")
-	}
-
 	cases := []struct {
-		name            string
-		systemName      string
-		systemIdEnvName string
-		extraConfigs    map[string]string
-		policyType      string // used to filter decisions for backtest
-		datasources     bool   // indicates whether to include datasource content in migration
+		name              string
+		styraURLEnvName   string // default STYRA_URL
+		styraTokenEnvName string // default STYRA_TOKEN
+		systemName        string
+		systemIdEnvName   string
+		extraConfigs      map[string]string
+		policyType        string // used to filter decisions for backtest
+		datasources       bool   // indicates whether to include datasource content in migration
 	}{
 		{
 			name:            "envoy21",
@@ -260,6 +252,29 @@ func TestMigration(t *testing.T) {
 			},
 			datasources: true,
 		},
+		{
+			name:              "http pull datasources",
+			styraURLEnvName:   "STYRA_URL_2",
+			styraTokenEnvName: "STYRA_TOKEN_2",
+			systemName:        "torin-pull-test-2",
+			systemIdEnvName:   "STYRA_PULL_TEST_SYSTEM_ID",
+			extraConfigs: map[string]string{
+				"config.d/2-storage.yaml": `{
+					systems: {
+						"torin-pull-test-2": {
+							object_storage: {
+								aws: {
+									url: {{ .URL }},
+									bucket: test,
+									region: mock-region,
+									key: bundle.tar.gz,
+								},
+							},
+						},
+					},
+				}`,
+			},
+		},
 	}
 
 	type templateParams struct {
@@ -267,7 +282,27 @@ func TestMigration(t *testing.T) {
 	}
 
 	for _, tc := range cases {
+
 		t.Run(tc.name, func(t *testing.T) {
+
+			if tc.styraURLEnvName == "" {
+				tc.styraURLEnvName = "STYRA_URL"
+			}
+
+			if tc.styraTokenEnvName == "" {
+				tc.styraTokenEnvName = "STYRA_TOKEN"
+			}
+
+			styraURL := os.Getenv(tc.styraURLEnvName)
+			if styraURL == "" {
+				t.Fatalf("%v environment variable is not set", tc.styraURLEnvName)
+			}
+
+			styraToken := os.Getenv(tc.styraTokenEnvName)
+			if styraToken == "" {
+				t.Fatalf("%v environment variable is not set", tc.styraTokenEnvName)
+			}
+
 			systemId := os.Getenv(tc.systemIdEnvName)
 			if systemId == "" {
 				t.Fatalf("%v environment variable is not set", tc.systemIdEnvName)
@@ -367,7 +402,8 @@ func TestMigration(t *testing.T) {
 				}
 
 				if r.Systems[tc.systemName].Status != "passed" {
-					t.Fatalf("expected %q system to be successful, got: %s", tc.systemName, r.Systems[tc.systemName].Status)
+					t.Logf("Dumping output:\n%v", string(buf.Bytes()))
+					t.Fatalf("expected %q system to be successful", tc.systemName)
 				}
 
 			})

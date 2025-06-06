@@ -443,14 +443,14 @@ func Run(params Options) error {
 	}
 
 	for _, library := range state.LibrariesById {
-		lc, secret, err := migrateV1Library(&c, state, library)
+		lc, secrets, err := migrateV1Library(&c, state, library, params.Datasources)
 		if err != nil {
 			return err
 		}
 
 		output.Libraries[lc.Name] = lc
-		if secret != nil {
-			output.Secrets[secret.Name] = secret
+		for _, s := range secrets {
+			output.Secrets[s.Name] = s
 		}
 	}
 
@@ -479,7 +479,7 @@ func Run(params Options) error {
 	}
 
 	for _, stack := range state.StacksById {
-		sc, lc, secret, err := migrateV1Stack(&c, state, stack)
+		sc, lc, secrets, err := migrateV1Stack(&c, state, stack, params.Datasources)
 		if err != nil {
 			return err
 		}
@@ -487,8 +487,8 @@ func Run(params Options) error {
 		output.Stacks[sc.Name] = sc
 		output.Libraries[lc.Name] = lc
 
-		if secret != nil {
-			output.Secrets[secret.Name] = secret
+		for _, s := range secrets {
+			output.Secrets[s.Name] = s
 		}
 	}
 
@@ -597,9 +597,9 @@ func Run(params Options) error {
 	return nil
 }
 
-func migrateV1Library(_ *das.Client, state *dasState, v1 *das.V1Library) (*config.Library, *config.Secret, error) {
+func migrateV1Library(client *das.Client, state *dasState, v1 *das.V1Library, migrateDSContent bool) (*config.Library, []*config.Secret, error) {
 
-	library, secret, err := mapV1LibraryToLibraryAndSecretConfig(v1)
+	library, secrets, err := mapV1LibraryToLibraryAndSecretConfig(client, v1, migrateDSContent)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -608,7 +608,7 @@ func migrateV1Library(_ *das.Client, state *dasState, v1 *das.V1Library) (*confi
 	// files in libraries like we do for systems right now; if git config exists
 	// then stop
 	if library.Git.Repo != "" {
-		return library, secret, nil
+		return library, secrets, nil
 	}
 
 	policies := state.LibraryPolicies[v1.Id]
@@ -619,21 +619,43 @@ func migrateV1Library(_ *das.Client, state *dasState, v1 *das.V1Library) (*confi
 		}
 	}
 
-	return library, secret, nil
+	return library, secrets, nil
 }
 
-func mapV1LibraryToLibraryAndSecretConfig(v1 *das.V1Library) (*config.Library, *config.Secret, error) {
+func mapV1LibraryToLibraryAndSecretConfig(client *das.Client, v1 *das.V1Library, datasources bool) (*config.Library, []*config.Secret, error) {
 
 	library := &config.Library{Name: v1.Id}
+	var secrets []*config.Secret
 
 	workspace, origin := getLibraryGitOrigin(v1)
 	secret := migrateV1GitConfig(origin, library)
+	if secret != nil {
+		secrets = append(secrets, secret)
+	}
 
 	if workspace {
 		library.Git.IncludedFiles = []string{"libraries/" + v1.Id + "/*"}
 	}
 
-	return library, secret, nil
+	if len(v1.Datasources) > 0 {
+		log.Infof("Fetching datasources for library %q", v1.Id)
+
+		ds, files, dsSecrets, err := migrateV1Datasources(client, "", v1.Datasources, datasources)
+		if err != nil {
+			return nil, nil, err
+		}
+
+		secrets = append(secrets, dsSecrets...)
+		library.Datasources = ds
+
+		for _, fs := range files {
+			for file, content := range fs {
+				library.SetEmbeddedFile(file, content)
+			}
+		}
+	}
+
+	return library, secrets, nil
 }
 
 func getLibraryGitOrigin(v1 *das.V1Library) (bool, *das.V1GitRepoConfig) {
@@ -646,7 +668,7 @@ func getLibraryGitOrigin(v1 *das.V1Library) (bool, *das.V1GitRepoConfig) {
 	return false, &v1.SourceControl.LibraryOrigin
 }
 
-func migrateV1System(client *das.Client, state *dasState, v1 *das.V1System, datasources bool) (*config.System, []*config.Secret, error) {
+func migrateV1System(client *das.Client, state *dasState, v1 *das.V1System, migrateDSContent bool) (*config.System, []*config.Secret, error) {
 
 	var secrets []*config.Secret
 	system, secret, err := mapV1SystemToSystemAndSecretConfig(client, v1)
@@ -685,49 +707,73 @@ func migrateV1System(client *das.Client, state *dasState, v1 *das.V1System, data
 		system.Labels["system-type"] = v1.Type // TODO(tsandall): remove template. prefix?
 	}
 
-	log.Infof("Fetching datasources for system %q", v1.Name)
-	for _, ref := range v1.Datasources {
-		resp, err := client.JSON("v1/datasources/" + ref.Id)
+	if len(v1.Datasources) > 0 {
+		log.Infof("Fetching datasources for system %q", v1.Name)
+
+		ds, files, dsSecrets, err := migrateV1Datasources(client, "systems/"+v1.Id+"/", v1.Datasources, migrateDSContent)
 		if err != nil {
 			return nil, nil, err
 		}
 
+		for _, fs := range files {
+			for file, content := range fs {
+				system.SetEmbeddedFile(file, content)
+			}
+		}
+
+		system.Datasources = ds
+		secrets = append(secrets, dsSecrets...)
+	}
+
+	return system, secrets, nil
+}
+
+func migrateV1Datasources(client *das.Client, nsPrefix string, v1 []das.V1DatasourceRef, migrateDSContent bool) ([]config.Datasource, []config.Files, []*config.Secret, error) {
+
+	var secrets []*config.Secret
+	var dss []config.Datasource
+	var files []config.Files
+
+	for _, ref := range v1 {
+		resp, err := client.JSON("v1/datasources/" + ref.Id)
+		if err != nil {
+			return nil, nil, nil, err
+		}
+
 		var ds das.V1Datasource
 		if err := resp.Decode(&ds); err != nil {
-			return nil, nil, err
+			return nil, nil, nil, err
 		}
 
 		if ds.Category == "rest" && ds.Type == "push" {
 			// ignore
 		} else if ds.Category == "http" && ds.Type == "pull" {
-			ds, secret, err := migrateV1HTTPPullDatasource("systems/"+v1.Id+"/", &ds)
+			ds, secret, err := migrateV1HTTPPullDatasource(nsPrefix, &ds)
 			if err != nil {
-				return nil, nil, err
+				return nil, nil, nil, err
 			}
 			if secret != nil {
 				secrets = append(secrets, secret)
 			}
-			system.Datasources = append(system.Datasources, ds)
+			dss = append(dss, ds)
 		} else {
-			log.Warnf("Unsupported datasource category type on system %q: %v/%v (configuration migration not supported)", v1.Name, ds.Category, ds.Type)
+			return nil, nil, nil, fmt.Errorf("datasource config migration not supported for %v/%v", ds.Category, ds.Type)
 		}
 
-		if datasources {
+		if migrateDSContent {
 			if ds.Category == "rest" && ds.Type == "push" {
-				files, err := migrateV1PushDatasource(client, "systems/"+v1.Id+"/", ds.Id)
+				fs, err := migrateV1PushDatasource(client, nsPrefix, ds.Id)
 				if err != nil {
-					return nil, nil, err
+					return nil, nil, nil, err
 				}
-				for path, content := range files {
-					system.SetEmbeddedFile(path, content)
-				}
+				files = append(files, fs)
 			} else {
-				log.Warnf("Unsupported datasource category/type on system %q: %v/%v (content migration not supported)", v1.Name, ds.Category, ds.Type)
+				return nil, nil, nil, fmt.Errorf("datasource content migration not supported for %v/%v", ds.Category, ds.Type)
 			}
 		}
 	}
 
-	return system, secrets, nil
+	return dss, files, secrets, nil
 }
 
 func migrateV1HTTPPullDatasource(nsPrefix string, v1 *das.V1Datasource) (config.Datasource, *config.Secret, error) {
@@ -864,12 +910,12 @@ func migrateV1PushDatasource(c *das.Client, nsPrefix string, id string) (config.
 	return result, nil
 }
 
-func migrateV1Stack(c *das.Client, state *dasState, v1 *das.V1Stack) (*config.Stack, *config.Library, *config.Secret, error) {
+func migrateV1Stack(c *das.Client, state *dasState, v1 *das.V1Stack, migrateDSContent bool) (*config.Stack, *config.Library, []*config.Secret, error) {
 
 	var stack config.Stack
 	stack.Name = v1.Name
 
-	library, secret, err := mapV1StackToLibraryAndSecretConfig(v1)
+	library, secrets, err := mapV1StackToLibraryAndSecretConfig(c, v1, migrateDSContent)
 	if err != nil {
 		return nil, nil, nil, err
 	}
@@ -911,28 +957,50 @@ func migrateV1Stack(c *das.Client, state *dasState, v1 *das.V1Stack) (*config.St
 				return nil, nil, nil, fmt.Errorf("failed to set system-type label for %q: %w", v1.Name, err)
 			}
 
-			return &stack, library, secret, err
+			return &stack, library, secrets, err
 		}
 	}
 
 	return nil, nil, nil, fmt.Errorf("misisng selector policy for %q", v1.Name)
 }
 
-func mapV1StackToLibraryAndSecretConfig(v1 *das.V1Stack) (*config.Library, *config.Secret, error) {
+func mapV1StackToLibraryAndSecretConfig(client *das.Client, v1 *das.V1Stack, migrateDSContent bool) (*config.Library, []*config.Secret, error) {
 
 	library := &config.Library{Name: v1.Name}
+	var secrets []*config.Secret
+
+	if len(v1.Datasources) > 0 {
+		log.Infof("Fetching datasources for stack %q", v1.Id)
+
+		ds, files, dsSecrets, err := migrateV1Datasources(client, "", v1.Datasources, migrateDSContent)
+		if err != nil {
+			return nil, nil, err
+		}
+
+		secrets = append(secrets, dsSecrets...)
+		library.Datasources = ds
+
+		for _, fs := range files {
+			for file, content := range fs {
+				library.SetEmbeddedFile(file, content)
+			}
+		}
+	}
 
 	workspace, origin := getStackGitOrigin(v1)
 	if origin == nil {
-		return library, nil, nil
+		return library, secrets, nil
 	}
 
-	secret := migrateV1GitConfig(origin, library)
+	if secret := migrateV1GitConfig(origin, library); secret != nil {
+		secrets = append(secrets, secret)
+	}
+
 	if workspace {
 		library.Git.IncludedFiles = []string{"stacks/" + v1.Id + "/*"}
 	}
 
-	return library, secret, nil
+	return library, secrets, nil
 }
 
 func getStackGitOrigin(v1 *das.V1Stack) (bool, *das.V1GitRepoConfig) {
