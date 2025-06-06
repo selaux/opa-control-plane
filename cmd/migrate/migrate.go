@@ -467,14 +467,14 @@ func Run(params Options) error {
 	}
 
 	for _, system := range state.SystemsById {
-		sc, secret, err := migrateV1System(&c, state, system, params.Datasources)
+		sc, secrets, err := migrateV1System(&c, state, system, params.Datasources)
 		if err != nil {
 			return err
 		}
 
 		output.Systems[sc.Name] = sc
-		if secret != nil {
-			output.Secrets[secret.Name] = secret
+		for _, s := range secrets {
+			output.Secrets[s.Name] = s
 		}
 	}
 
@@ -646,11 +646,16 @@ func getLibraryGitOrigin(v1 *das.V1Library) (bool, *das.V1GitRepoConfig) {
 	return false, &v1.SourceControl.LibraryOrigin
 }
 
-func migrateV1System(client *das.Client, state *dasState, v1 *das.V1System, datasources bool) (*config.System, *config.Secret, error) {
+func migrateV1System(client *das.Client, state *dasState, v1 *das.V1System, datasources bool) (*config.System, []*config.Secret, error) {
 
+	var secrets []*config.Secret
 	system, secret, err := mapV1SystemToSystemAndSecretConfig(client, v1)
 	if err != nil {
 		return nil, nil, err
+	}
+
+	if secret != nil {
+		secrets = append(secrets, secret)
 	}
 
 	gitRoots, err := getSystemGitRoots(client, state.FeatureFlags.SBOM, v1)
@@ -680,19 +685,34 @@ func migrateV1System(client *das.Client, state *dasState, v1 *das.V1System, data
 		system.Labels["system-type"] = v1.Type // TODO(tsandall): remove template. prefix?
 	}
 
-	if datasources {
-		log.Infof("Fetching datasources for system %q", v1.Name)
-		for _, ref := range v1.Datasources {
-			resp, err := client.JSON("v1/datasources/" + ref.Id)
+	log.Infof("Fetching datasources for system %q", v1.Name)
+	for _, ref := range v1.Datasources {
+		resp, err := client.JSON("v1/datasources/" + ref.Id)
+		if err != nil {
+			return nil, nil, err
+		}
+
+		var ds das.V1Datasource
+		if err := resp.Decode(&ds); err != nil {
+			return nil, nil, err
+		}
+
+		if ds.Category == "rest" && ds.Type == "push" {
+			// ignore
+		} else if ds.Category == "http" && ds.Type == "pull" {
+			ds, secret, err := migrateV1HTTPPullDatasource("systems/"+v1.Id+"/", &ds)
 			if err != nil {
 				return nil, nil, err
 			}
-
-			var ds das.V1Datasource
-			if err := resp.Decode(&ds); err != nil {
-				return nil, nil, err
+			if secret != nil {
+				secrets = append(secrets, secret)
 			}
+			system.Datasources = append(system.Datasources, ds)
+		} else {
+			log.Warnf("Unsupported datasource category type on system %q: %v/%v (configuration migration not supported)", v1.Name, ds.Category, ds.Type)
+		}
 
+		if datasources {
 			if ds.Category == "rest" && ds.Type == "push" {
 				files, err := migrateV1PushDatasource(client, "systems/"+v1.Id+"/", ds.Id)
 				if err != nil {
@@ -702,12 +722,26 @@ func migrateV1System(client *das.Client, state *dasState, v1 *das.V1System, data
 					system.SetEmbeddedFile(path, content)
 				}
 			} else {
-				log.Infof("Unsupported datasource category/type: %v/%v", ds.Category, ds.Type)
+				log.Warnf("Unsupported datasource category/type on system %q: %v/%v (content migration not supported)", v1.Name, ds.Category, ds.Type)
 			}
 		}
 	}
 
-	return system, secret, nil
+	return system, secrets, nil
+}
+
+func migrateV1HTTPPullDatasource(nsPrefix string, v1 *das.V1Datasource) (config.Datasource, *config.Secret, error) {
+
+	var ds config.Datasource
+	ds.Name = v1.Id
+	ds.Type = "http"
+	ds.Path = strings.TrimPrefix(v1.Id, nsPrefix)
+	ds.Config = make(map[string]interface{})
+	ds.Config["url"] = v1.URL
+
+	// TODO(tsandall): add header support (incl. secrets)
+
+	return ds, nil, nil
 }
 
 func mapV1SystemToSystemAndSecretConfig(_ *das.Client, v1 *das.V1System) (*config.System, *config.Secret, error) {

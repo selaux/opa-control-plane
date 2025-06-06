@@ -52,6 +52,12 @@ type V1Datasource struct {
 	Id       string `json:"id"`
 	Category string `json:"category"`
 	Type     string `json:"type"`
+	URL      string `json:"url"`
+	Headers  []struct {
+		Name     string  `json:"name"`
+		Value    *string `json:"value"` // either value or secret_id should be set
+		SecretId *string `json:"secret_id"`
+	} `json:"headers"`
 }
 
 type V1GitRepoConfig struct {
