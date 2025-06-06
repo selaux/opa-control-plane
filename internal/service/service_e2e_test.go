@@ -15,7 +15,6 @@ import (
 	"strings"
 	"testing"
 	"text/template"
-	"time"
 
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing/object"
@@ -27,7 +26,6 @@ import (
 	"github.com/tsandall/lighthouse/internal/test/libraries"
 	"github.com/tsandall/lighthouse/internal/test/tempfs"
 	"github.com/tsandall/lighthouse/internal/util"
-	"golang.org/x/sync/errgroup"
 	"gopkg.in/yaml.v3"
 )
 
@@ -89,22 +87,19 @@ func TestService(t *testing.T) {
 				writeFile(t, configPath, config)
 				writeGitRepo(t, remoteGitDir, test.GitFiles, test.ContentParameters)
 
-				// Run the service with the config file and persistence dir and poll for a bundle in S3.
+				// Run the service with the config file and persistence dir and expect bundle to have been written to S3
 
-				var g errgroup.Group
-				g.Go(func() error {
-					return service.New().WithConfig([]byte(config)).WithPersistenceDir(persistenceDir).WithBuiltinFS(util.NewEscapeFS(libraries.FS)).Run(ctx)
-				})
-
-				var obj *gofakes3.Object
-				var err error
-
-				for obj == nil && (err == nil || gofakes3.HasErrorCode(err, gofakes3.ErrNoSuchKey)) {
-					obj, err = mock.GetObject("test", "bundle.tar.gz", nil)
-					time.Sleep(time.Millisecond)
+				svc := service.New().
+					WithConfig([]byte(config)).
+					WithPersistenceDir(persistenceDir).
+					WithBuiltinFS(util.NewEscapeFS(libraries.FS)).
+					WithSingleShot(true)
+				if err := svc.Run(ctx); err != nil {
+					t.Fatal(err)
 				}
 
-				if err != nil {
+				obj, err := mock.GetObject("test", "bundle.tar.gz", nil)
+				if obj == nil || err != nil {
 					t.Fatal(err)
 				}
 
@@ -191,10 +186,6 @@ func TestService(t *testing.T) {
 				// Shutdown the service and wait for it to finish.
 
 				cancel()
-				err = g.Wait()
-				if err != nil {
-					t.Fatal(err)
-				}
 			})
 		})
 	}
