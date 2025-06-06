@@ -30,7 +30,7 @@ go-build: generate
 
 .PHONY: go-test
 go-test: generate
-	$(GO) test $(GO_TAGS) ./...
+	$(GO) test -timeout=5s $(GO_TAGS) ./...
 
 library-test:
 	$(GO) run github.com/open-policy-agent/opa test --v0-compatible libraries/entitlements-v1
