@@ -22,6 +22,7 @@ import (
 	"github.com/johannesboyne/gofakes3/backend/s3mem"
 	"github.com/open-policy-agent/opa/ast"
 	"github.com/open-policy-agent/opa/bundle"
+	"github.com/tsandall/lighthouse/internal/logging"
 	"github.com/tsandall/lighthouse/internal/service"
 	"github.com/tsandall/lighthouse/internal/test/libraries"
 	"github.com/tsandall/lighthouse/internal/test/tempfs"
@@ -89,11 +90,13 @@ func TestService(t *testing.T) {
 
 				// Run the service with the config file and persistence dir and expect bundle to have been written to S3
 
+				logger := logging.NewLogger(logging.Config{Level: logging.LevelDebug})
 				svc := service.New().
 					WithConfig([]byte(config)).
 					WithPersistenceDir(persistenceDir).
 					WithBuiltinFS(util.NewEscapeFS(libraries.FS)).
-					WithSingleShot(true)
+					WithSingleShot(true).
+					WithLogger(logger)
 				if err := svc.Run(ctx); err != nil {
 					t.Fatal(err)
 				}
