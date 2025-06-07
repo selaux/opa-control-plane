@@ -24,8 +24,8 @@ jobs:
 
       - name: Run Makefile target `go-e2e-migrate-test`
         env:
-          GITHUB_USERNAME: ${{ secrets.GITHUB_USERNAME }}
-          GITHUB_PASSWORD: ${{ secrets.GITHUB_PASSWORD }}
+          GITHUB_USERNAME: ${{ secrets.GH_USERNAME }}
+          GITHUB_PASSWORD: ${{ secrets.GH_PASSWORD }}
           STYRA_URL: ${{ secrets.STYRA_URL }}
           STYRA_TOKEN: ${{ secrets.STYRA_TOKEN }}
           STYRA_URL_2: ${{ secrets.STYRA_URL_2 }}
