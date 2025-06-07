@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strconv"
 	"testing"
 	"text/template"
 	"time"
@@ -392,13 +393,22 @@ func TestMigration(t *testing.T) {
 
 				buf := bytes.NewBuffer(nil)
 
+				maxEvalTimeInflation := 100
+				if v := os.Getenv("BACKTEST_MAX_EVAL_TIME_INFLATION"); v != "" {
+					n, err := strconv.Atoi(v)
+					if err != nil {
+						t.Fatal(err)
+					}
+					maxEvalTimeInflation = n
+				}
+
 				if err := backtest.Run(backtest.Options{
 					ConfigFile:           []string{filepath.Join(dir, "config.d")},
 					URL:                  styraURL,
 					Token:                styraToken,
 					NumDecisions:         100,
 					PolicyType:           tc.policyType,
-					MaxEvalTimeInflation: 100,
+					MaxEvalTimeInflation: maxEvalTimeInflation,
 					Output:               buf,
 				}); err != nil {
 					t.Fatal(err)

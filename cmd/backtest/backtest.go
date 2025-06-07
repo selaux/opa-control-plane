@@ -61,7 +61,7 @@ func init() {
 	backtest.Flags().StringVarP(&opts.URL, "url", "u", "", "Styra tenant URL (e.g., https://expo.styra.com)")
 	backtest.Flags().IntVarP(&opts.NumDecisions, "decisions", "n", 100, "Number of decisions to backtest")
 	backtest.Flags().StringVarP(&opts.PolicyType, "policy-type", "", "", "Specify policy type to backtest against (e.g., validating, mutating, etc.)")
-	backtest.Flags().IntVarP(&opts.MaxEvalTimeInflation, "max-eval-time-inflation", "", 100, "Maximum allowed increase in decision evaluation time (in percents)")
+	backtest.Flags().IntVarP(&opts.MaxEvalTimeInflation, "max-eval-time-inflation", "", 100, "Maximum allowed increase in decision evaluation time (in percents, <0 to disable)")
 	backtest.Flags().BoolVarP(&opts.MergeConflictFail, "merge-conflict-fail", "", false, "Fail on config merge conflicts")
 	logging.VarP(backtest, &opts.Logging)
 
@@ -413,8 +413,10 @@ func compareResults(d *das.V1Decision, r *interface{}, t time.Duration, maxEvalI
 		return errors.New(textdiff.Unified("Expected", "Found", string(bBytes), string(aBytes)))
 	}
 
-	if o := time.Duration(d.Metrics.TimerRegoQueryEvalNs); o*time.Duration(maxEvalInflation+100)/100 < t {
-		return fmt.Errorf("bundle decision took over %d%% longer than original decision to evaluate", maxEvalInflation)
+	if maxEvalInflation >= 0 {
+		if o := time.Duration(d.Metrics.TimerRegoQueryEvalNs); o*time.Duration(maxEvalInflation+100)/100 < t {
+			return fmt.Errorf("bundle decision took over %d%% longer than original decision to evaluate", maxEvalInflation)
+		}
 	}
 
 	return nil

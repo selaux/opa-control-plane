@@ -38,4 +38,5 @@ jobs:
           STYRA_KUMA_SYSTEM_ID: ${{ secrets.STYRA_KUMA_SYSTEM_ID }}
           STYRA_TERRAFORM_SYSTEM_ID: ${{ secrets.STYRA_TERRAFORM_SYSTEM_ID }}
           STYRA_PULL_TEST_SYSTEM_ID: ${{ secrets.STYRA_PULL_TEST_SYSTEM_ID }}
+          BACKTEST_MAX_EVAL_TIME_INFLATION: -1
         run: make go-e2e-migrate-test
