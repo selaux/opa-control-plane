@@ -32,6 +32,9 @@ go-build: generate
 go-test: generate
 	$(GO) test -timeout=5s $(GO_TAGS) ./...
 
+go-e2e-migrate-test: generate
+	$(GO) test -tags=migration_e2e ./e2e -v -run '^TestMigration/'
+
 library-test:
 	$(GO) run github.com/open-policy-agent/opa test --v0-compatible libraries/entitlements-v1
 	$(GO) run github.com/open-policy-agent/opa test --v0-compatible libraries/envoy-v2.0

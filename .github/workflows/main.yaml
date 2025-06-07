@@ -21,3 +21,21 @@ jobs:
 
       - name: Run Makefile target `go-test`
         run: make go-test
+
+      - name: Run Makefile target `go-e2e-migrate-test`
+        env:
+          GITHUB_USERNAME: ${{ secrets.GITHUB_USERNAME }}
+          GITHUB_PASSWORD: ${{ secrets.GITHUB_PASSWORD }}
+          STYRA_URL: ${{ secrets.STYRA_URL }}
+          STYRA_TOKEN: ${{ secrets.STYRA_TOKEN }}
+          STYRA_URL_2: ${{ secrets.STYRA_URL_2 }}
+          STYRA_TOKEN_2: ${{ secrets.STYRA_TOKEN_2 }}
+          STYRA_ENVOY_SYSTEM_ID: ${{ secrets.STYRA_ENVOY_SYSTEM_ID }}
+          STYRA_KUBERNETES_SYSTEM_ID: ${{ secrets.STYRA_KUBERNETES_SYSTEM_ID }}
+          STYRA_CUSTOM_SYSTEM_ID: ${{ secrets.STYRA_CUSTOM_SYSTEM_ID }}
+          STYRA_ISTIO_SYSTEM_ID: ${{ secrets.STYRA_ISTIO_SYSTEM_ID }}
+          STYRA_KONG_GATEWAY_SYSTEM_ID: ${{ secrets.STYRA_KONG_GATEWAY_SYSTEM_ID }}
+          STYRA_KUMA_SYSTEM_ID: ${{ secrets.STYRA_KUMA_SYSTEM_ID }}
+          STYRA_TERRAFORM_SYSTEM_ID: ${{ secrets.STYRA_TERRAFORM_SYSTEM_ID }}
+          STYRA_PULL_TEST_SYSTEM_ID: ${{ secrets.STYRA_PULL_TEST_SYSTEM_ID }}
+        run: make go-e2e-migrate-test
