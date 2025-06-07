@@ -94,14 +94,12 @@ func TestService(t *testing.T) {
 				writeGitRepo(t, remoteGitDir, test.GitFiles, test.ContentParameters)
 
 				// Run the service with the config file and persistence dir and expect bundle to have been written to S3
-
-				logger := logging.NewLogger(logging.Config{Level: logging.LevelDebug})
 				svc := service.New().
 					WithConfig([]byte(config)).
 					WithPersistenceDir(persistenceDir).
 					WithBuiltinFS(util.NewEscapeFS(libraries.FS)).
 					WithSingleShot(true).
-					WithLogger(logger)
+					WithLogger(logging.NewLogger(logging.Config{Level: logging.LevelDebug}))
 				if err := svc.Run(ctx); err != nil {
 					t.Fatal(err)
 				}

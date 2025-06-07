@@ -18,6 +18,7 @@ import (
 	"github.com/tsandall/lighthouse/cmd/backtest"
 	"github.com/tsandall/lighthouse/cmd/migrate"
 	"github.com/tsandall/lighthouse/internal/config"
+	"github.com/tsandall/lighthouse/internal/logging"
 	"github.com/tsandall/lighthouse/internal/service"
 	"github.com/tsandall/lighthouse/internal/test/tempfs"
 	"github.com/tsandall/lighthouse/internal/util"
@@ -26,6 +27,12 @@ import (
 )
 
 func TestMigration(t *testing.T) {
+
+	// Set mock AWS credentials to avoid IMDS errors.
+	os.Setenv("AWS_ACCESS_KEY_ID", "mock-access-key")
+	os.Setenv("AWS_SECRET_ACCESS_KEY", "mock-secret-key")
+	os.Setenv("AWS_REGION", "us-east-1")
+
 	cases := []struct {
 		name              string
 		styraURLEnvName   string // default STYRA_URL
@@ -358,7 +365,8 @@ func TestMigration(t *testing.T) {
 				svc := service.New().
 					WithBuiltinFS(util.NewEscapeFS(libraries.FS)).
 					WithConfig(merged).
-					WithPersistenceDir(filepath.Join(dir, "data"))
+					WithPersistenceDir(filepath.Join(dir, "data")).
+					WithLogger(logging.NewLogger(logging.Config{Level: logging.LevelDebug}))
 
 				var g errgroup.Group
 				ctx, cancel := context.WithCancel(context.Background())
