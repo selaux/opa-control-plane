@@ -7,7 +7,7 @@ on:
   pull_request:
 
 jobs:
-  go-test:
+  tests:
     runs-on: ubuntu-latest
 
     steps:
@@ -21,6 +21,9 @@ jobs:
 
       - name: Run Makefile target `go-test`
         run: make go-test
+
+      - name: Run Makefile target `library-test`
+        run: make library-tests
 
       - name: Run Makefile target `go-e2e-migrate-test`
         env:
