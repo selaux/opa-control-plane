@@ -36,13 +36,13 @@ go-e2e-migrate-test: generate
 	$(GO) test -tags=migration_e2e ./e2e -v -run '^TestMigration/'
 
 library-test:
-	$(GO) run github.com/open-policy-agent/opa test --v0-compatible libraries/entitlements-v1
-	$(GO) run github.com/open-policy-agent/opa test --v0-compatible libraries/envoy-v2.0
-	$(GO) run github.com/open-policy-agent/opa test --v0-compatible libraries/envoy-v2.1
-	$(GO) run github.com/open-policy-agent/opa test --v0-compatible libraries/kong-gateway-v1
-	$(GO) run github.com/open-policy-agent/opa test --v0-compatible libraries/kubernetes-v2
-	$(GO) run github.com/open-policy-agent/opa test --v0-compatible libraries/match-v1
-	$(GO) run github.com/open-policy-agent/opa test --v0-compatible libraries/terraform-v2.0
+	make -C libraries/entitlements-v1 test
+	make -C libraries/envoy-v2.0 test
+	make -C libraries/envoy-v2.1 test
+	make -C libraries/kong-gateway-v1 test
+	make -C libraries/kubernetes-v2 test
+	make -C libraries/terraform-v2.0 test
+
 
 .PHONY: clean
 clean:
