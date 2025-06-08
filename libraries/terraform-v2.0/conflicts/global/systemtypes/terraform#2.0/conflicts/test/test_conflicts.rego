@@ -219,7 +219,7 @@ test_applicable_stacks {
 		with data.stacks.stack3.selectors.systems as {"myid"}
 		with data.stacks.stack4.selectors.systems as {"myid2"}
 		with data.self.metadata as {"system_type": "terraform", "system_id": "myid"}
-	ans == {"stack1", "stack2"}
+	ans == {"stack1", "stack2", "stack3", "stack4"}  # NOTE(tsandall): only applicable stacks are included in bundle
 }
 
 test_canon_decision {
