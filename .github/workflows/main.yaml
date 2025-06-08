@@ -23,7 +23,7 @@ jobs:
         run: make go-test
 
       - name: Run Makefile target `library-test`
-        run: make library-tests
+        run: make library-test
 
       - name: Run Makefile target `go-e2e-migrate-test`
         env:
