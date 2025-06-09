@@ -1267,7 +1267,7 @@ func getSystemGitRoots(c *das.Client, sbomEnabled bool, v1 *das.V1System) ([]str
 		}
 	}
 
-	return nil, nil
+	return gitRoots, nil
 }
 
 func getStackGitRoots(c *das.Client, sbomEnabled bool, v1 *das.V1Stack) ([]string, error) {
