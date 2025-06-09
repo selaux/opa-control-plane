@@ -20,9 +20,9 @@ type Server struct {
 }
 
 type Database interface {
-	BundlesDataGet(ctx context.Context, bundleId, path string) (data interface{}, ok bool, err error)
-	BundlesDataPut(ctx context.Context, bundleId, path string, data interface{}) error
-	BundlesDataDelete(ctx context.Context, bundleId, path string) error
+	LibrariesDataGet(ctx context.Context, libraryId, path string) (data interface{}, ok bool, err error)
+	LibrariesDataPut(ctx context.Context, libraryId, path string, data interface{}) error
+	LibrariesDataDelete(ctx context.Context, libraryId, path string) error
 }
 
 func New() *Server {
@@ -34,9 +34,9 @@ func (s *Server) Init() *Server {
 		s.router = mux.NewRouter()
 	}
 
-	s.router.Handle("/v1/bundles/{bundle:.+}/{path:.+}", http.HandlerFunc(s.v1BundlesDataGet)).Methods(http.MethodGet)
-	s.router.Handle("/v1/bundles/{bundle:.+}/{path:.+}", http.HandlerFunc(s.v1BundlesDataPut)).Methods(http.MethodPost, http.MethodPut)
-	s.router.Handle("/v1/bundles/{bundle:.+}/{path:.+}", http.HandlerFunc(s.v1BundlesDataDelete)).Methods(http.MethodDelete)
+	s.router.Handle("/v1/libraries/{library:.+}/{path:.+}", http.HandlerFunc(s.v1LibrariesDataGet)).Methods(http.MethodGet)
+	s.router.Handle("/v1/libraries/{library:.+}/{path:.+}", http.HandlerFunc(s.v1LibrariesDataPut)).Methods(http.MethodPost, http.MethodPut)
+	s.router.Handle("/v1/libraries/{library:.+}/{path:.+}", http.HandlerFunc(s.v1LibrariesDataDelete)).Methods(http.MethodDelete)
 
 	return s
 }
@@ -55,24 +55,24 @@ func (s *Server) ListenAndServe(addr string) error {
 	return http.ListenAndServe(addr, s.router)
 }
 
-// v1BundlesDataGet handles GET requests to retrieve data from a bundle.
-func (s *Server) v1BundlesDataGet(w http.ResponseWriter, r *http.Request) {
+// v1LibrariesDataGet handles GET requests to retrieve data from a library.
+func (s *Server) v1LibrariesDataGet(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	vars := mux.Vars(r)
 
-	bundleId, err := url.PathUnescape(vars["bundle"])
+	libraryId, err := url.PathUnescape(vars["library"])
 	if err != nil {
 		ErrorString(w, http.StatusBadRequest, types.CodeInvalidParameter, err)
 		return
 	}
 
-	data, ok, err := s.database.BundlesDataGet(ctx, bundleId, path.Join(vars["path"], "data.json"))
+	data, ok, err := s.database.LibrariesDataGet(ctx, libraryId, path.Join(vars["path"], "data.json"))
 	if err != nil {
 		errorAuto(w, err)
 		return
 	}
 
-	resp := types.BundlesGetDataResponseV1{}
+	resp := types.LibrariesGetDataResponseV1{}
 
 	if ok {
 		resp.Result = &data
@@ -81,12 +81,12 @@ func (s *Server) v1BundlesDataGet(w http.ResponseWriter, r *http.Request) {
 	JSONOK(w, resp, pretty(r))
 }
 
-// v1BundlesDataPut handles PUT and POST requests to upload data to a bundle.
-func (s *Server) v1BundlesDataPut(w http.ResponseWriter, r *http.Request) {
+// v1LibrariesDataPut handles PUT and POST requests to upload data to a library.
+func (s *Server) v1LibrariesDataPut(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	vars := mux.Vars(r)
 
-	bundleId, err := url.PathUnescape(vars["bundle"])
+	libraryId, err := url.PathUnescape(vars["library"])
 	if err != nil {
 		ErrorString(w, http.StatusBadRequest, types.CodeInvalidParameter, err)
 		return
@@ -98,34 +98,34 @@ func (s *Server) v1BundlesDataPut(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err = s.database.BundlesDataPut(ctx, bundleId, path.Join(vars["path"], "data.json"), value)
+	err = s.database.LibrariesDataPut(ctx, libraryId, path.Join(vars["path"], "data.json"), value)
 	if err != nil {
 		errorAuto(w, err)
 		return
 	}
 
-	resp := types.BundlesPutDataResponseV1{}
+	resp := types.LibrariesPutDataResponseV1{}
 	JSONOK(w, resp, pretty(r))
 }
 
-// v1BundlesDataDelete handles DELETE requests to remove data from a bundle.
-func (s *Server) v1BundlesDataDelete(w http.ResponseWriter, r *http.Request) {
+// v1LibrariesDataDelete handles DELETE requests to remove data from a library.
+func (s *Server) v1LibrariesDataDelete(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	vars := mux.Vars(r)
 
-	bundleId, err := url.PathUnescape(vars["bundle"])
+	libraryId, err := url.PathUnescape(vars["library"])
 	if err != nil {
 		ErrorString(w, http.StatusBadRequest, types.CodeInvalidParameter, err)
 		return
 	}
 
-	err = s.database.BundlesDataDelete(ctx, bundleId, path.Join(vars["path"], "data.json"))
+	err = s.database.LibrariesDataDelete(ctx, libraryId, path.Join(vars["path"], "data.json"))
 	if err != nil {
 		errorAuto(w, err)
 		return
 	}
 
-	resp := types.BundlesDeleteDataResponseV1{}
+	resp := types.LibrariesDeleteDataResponseV1{}
 	JSONOK(w, resp, pretty(r))
 }
 

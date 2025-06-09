@@ -71,9 +71,6 @@ func (r *Root) unmarshal(raw *Root) error {
 
 	for name, bundle := range raw.Bundles {
 		bundle.Name = name
-		if bundle.Git.Credentials != nil {
-			bundle.Git.Credentials.value = raw.Secrets[bundle.Git.Credentials.Name]
-		}
 		if bundle.ObjectStorage.AmazonS3 != nil && bundle.ObjectStorage.AmazonS3.Credentials != nil {
 			bundle.ObjectStorage.AmazonS3.Credentials.value = raw.Secrets[bundle.ObjectStorage.AmazonS3.Credentials.Name]
 		}
@@ -117,10 +114,7 @@ func (r *Root) Validate() error {
 type Bundle struct {
 	Name          string        `json:"-" yaml:"-"`
 	Labels        Labels        `json:"labels,omitempty" yaml:"labels,omitempty"`
-	Git           Git           `json:"git,omitempty" yaml:"git,omitempty"`
 	ObjectStorage ObjectStorage `json:"object_storage,omitempty" yaml:"object_storage,omitempty"`
-	Datasources   []Datasource  `json:"datasources,omitempty" yaml:"datasources,omitempty"`
-	EmbeddedFiles Files         `json:"files,omitempty" yaml:"files,omitempty"`
 	Requirements  []Requirement `json:"requirements,omitempty" yaml:"requirements,omitempty"`
 	ExcludedFiles []string      `json:"excluded_files,omitempty" yaml:"excluded_files,omitempty"`
 }
@@ -196,24 +190,6 @@ func (f *Files) unmarshal(raw map[string]string) error {
 	return nil
 }
 
-func (s *Bundle) Files() map[string]string {
-	return s.EmbeddedFiles
-}
-
-func (s *Bundle) SetEmbeddedFile(path string, content string) {
-	if s.EmbeddedFiles == nil {
-		s.EmbeddedFiles = make(Files)
-	}
-	s.EmbeddedFiles[path] = content
-}
-
-func (s *Bundle) SetEmbeddedFiles(files map[string]string) {
-	s.EmbeddedFiles = nil
-	for path, content := range files {
-		s.SetEmbeddedFile(path, content)
-	}
-}
-
 // MarshalYAML implements the yaml.Marshaler interface for the Bundle struct. This
 
 func (s *Bundle) UnmarshalJSON(bs []byte) error {
@@ -260,10 +236,7 @@ func (s *Bundle) Equal(other *Bundle) bool {
 	}
 
 	return s.Name == other.Name &&
-		s.Git.Equal(&other.Git) &&
 		s.ObjectStorage.Equal(&other.ObjectStorage) &&
-		equalDatasources(s.Datasources, other.Datasources) &&
-		s.EmbeddedFiles.Equal(other.EmbeddedFiles) &&
 		equalRequirements(s.Requirements, other.Requirements) &&
 		equalStringSets(s.ExcludedFiles, other.ExcludedFiles)
 }

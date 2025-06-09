@@ -13,12 +13,12 @@ const (
 	ParamPrettyV1 = "pretty"
 )
 
-type BundlesGetDataResponseV1 struct {
+type LibrariesGetDataResponseV1 struct {
 	Result *interface{} `json:"result,omitempty"`
 }
 
-type BundlesDeleteDataResponseV1 struct{}
-type BundlesPutDataResponseV1 struct{}
+type LibrariesDeleteDataResponseV1 struct{}
+type LibrariesPutDataResponseV1 struct{}
 
 type ErrorV1 struct {
 	Code    string  `json:"code"`

@@ -13,7 +13,7 @@ import (
 func TestParseSecretResolve(t *testing.T) {
 
 	result, err := config.Parse(bytes.NewReader([]byte(`{
-		bundles: {
+		libraries: {
 			foo: {
 				git: {
 					repo: https://example.com/repo.git,
@@ -35,7 +35,7 @@ func TestParseSecretResolve(t *testing.T) {
 
 	t.Setenv("LIGHTHOUSE_PASSWORD", "passw0rd")
 
-	secret, err := result.Bundles["foo"].Git.Credentials.Resolve()
+	secret, err := result.Libraries["foo"].Git.Credentials.Resolve()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -58,11 +58,15 @@ func TestFilesMarshallingRoundtrip(t *testing.T) {
 	cfg, err := config.Parse(bytes.NewBufferString(`{
 		bundles: {
 			foo: {
+				excluded_files: ["bar.rego","*.json"],
+				requirements: [{library: foo}]
+			}
+		},
+		libraries: {
+			foo: {
 				files: {
 					"foo.rego": "cGFja2FnZSBmb28=",
-				},
-				excluded_files: ["bar.rego","*.json"]
-			}
+				},			}
 		},
 		stacks: {
 			bar: {
@@ -77,8 +81,8 @@ func TestFilesMarshallingRoundtrip(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if cfg.Bundles["foo"].Files()["foo.rego"] != "package foo" {
-		t.Fatalf("expected file to be 'package foo' but got:\n%v", cfg.Bundles["foo"].Files()["foo.rego"])
+	if cfg.Libraries["foo"].Files()["foo.rego"] != "package foo" {
+		t.Fatalf("expected file to be 'package foo' but got:\n%v", cfg.Libraries["foo"].Files()["foo.rego"])
 	}
 
 	bs, err := yaml.Marshal(cfg)

@@ -12,6 +12,11 @@ cases:
                   region: mock-region,
                 }
               },
+              requirements: [{library: TestApp}]
+            }
+          },
+          libraries: {
+            TestApp: {
               datasources: [
                 {
                   name: "datasource1",
@@ -29,9 +34,7 @@ cases:
               requirements: [
                 {library: TestLibrary}
               ]
-            }
-          },
-          libraries: {
+            },
             TestLibrary: {
               datasources: [
               {
@@ -61,9 +64,9 @@ cases:
     /datasource1: *datasource1_json
     /datasource2: *datasource2_json
   expected_filesystem:
-  - "/651b945976b07287063e8967060724a4/database/app/app.rego"
-  - "/651b945976b07287063e8967060724a4/database/foo.rego"
-  - "/651b945976b07287063e8967060724a4/datasources/datasource1/data.json"
+  - "/651b945976b07287063e8967060724a4/libraries/TestApp/database/app/app.rego"
+  - "/651b945976b07287063e8967060724a4/libraries/TestApp/database/foo.rego"
+  - "/651b945976b07287063e8967060724a4/libraries/TestApp/datasources/datasource1/data.json"
   - "/651b945976b07287063e8967060724a4/libraries/TestLibrary/database/bar.rego"
   - "/651b945976b07287063e8967060724a4/libraries/TestLibrary/database/lib/lib.rego"
   - "/651b945976b07287063e8967060724a4/libraries/TestLibrary/datasources/datasource2/data.json"

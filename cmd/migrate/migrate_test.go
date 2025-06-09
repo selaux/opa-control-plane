@@ -84,8 +84,7 @@ func TestPruneConfig(t *testing.T) {
 	root, err := config.Parse(bytes.NewBufferString(`{
 		bundles: {
 			sys1: {
-				requirements: [{library: lib1}],
-				git: {credentials: sec1},
+				requirements: [{library: app1}],
 				labels: {foo: bar}
 			}
 		},
@@ -102,6 +101,10 @@ func TestPruneConfig(t *testing.T) {
 			}
 		},
 		libraries: {
+			app1: {
+				git: {credentials: sec1},
+				requirements: [{library: lib1}],
+			},
 			lib1: {
 				requirements: [{library: lib3}],
 				git: {credentials: sec2}
@@ -181,8 +184,7 @@ func TestPruneConfig(t *testing.T) {
 	expRoot, err := config.Parse(bytes.NewBufferString(`{
 		bundles: {
 			sys1: {
-				requirements: [{library: lib1}],
-				git: {credentials: sec1},
+				requirements: [{library: app1}],
 				labels: {foo: bar}
 			}
 		},
@@ -193,6 +195,10 @@ func TestPruneConfig(t *testing.T) {
 			},
 		},
 		libraries: {
+			app1: {
+				git: {credentials: sec1},
+				requirements: [{library: lib1}],
+			},
 			lib1: {
 				requirements: [{library: lib3}],
 				git: {credentials: sec2}

@@ -78,11 +78,6 @@ func (d *Database) InitDB(ctx context.Context, persistenceDir string) error {
 		`CREATE TABLE IF NOT EXISTS bundles (
 			id TEXT PRIMARY KEY,
 			labels TEXT,
-			repo TEXT NOT NULL,
-			ref TEXT,
-			gitcommit TEXT,
-			path TEXT,
-			git_included_files TEXT,
 			s3url TEXT,
 			s3region TEXT,
 			s3bucket TEXT,
@@ -113,22 +108,6 @@ func (d *Database) InitDB(ctx context.Context, persistenceDir string) error {
 			PRIMARY KEY (bundle_id, secret_id),
 			FOREIGN KEY (bundle_id) REFERENCES bundles(id),
 			FOREIGN KEY (secret_id) REFERENCES secrets(id)
-		);`,
-		`CREATE TABLE IF NOT EXISTS bundles_data (
-			bundle_id TEXT NOT NULL,
-			path TEXT NOT NULL,
-			data BLOB NOT NULL,
-			PRIMARY KEY (bundle_id, path),
-			FOREIGN KEY (bundle_id) REFERENCES bundles(id)
-		);`,
-		`CREATE TABLE IF NOT EXISTS bundles_datasources (
-			name TEXT NOT NULL,
-			bundle_id TEXT NOT NULL,
-			type TEXT NOT NULL,
-			path TEXT NOT NULL,
-			config TEXT NOT NULL,
-			PRIMARY KEY (bundle_id, name),
-			FOREIGN KEY (bundle_id) REFERENCES bundles(id)
 		);`,
 		`CREATE TABLE IF NOT EXISTS bundles_requirements (
 			bundle_id TEXT NOT NULL,
@@ -191,12 +170,12 @@ func (d *Database) CloseDB() {
 	d.db.Close()
 }
 
-func (d *Database) BundlesDataGet(ctx context.Context, bundleId, path string) (interface{}, bool, error) {
+func (d *Database) LibrariesDataGet(ctx context.Context, libraryId, path string) (interface{}, bool, error) {
 	rows, err := d.db.Query(`SELECT
 	data
 FROM
-	bundles_data
-WHERE bundle_id = ? AND path = ?`, bundleId, path)
+	libraries_data
+WHERE library_id = ? AND path = ?`, libraryId, path)
 	if err != nil {
 		return nil, false, err
 	}
@@ -219,17 +198,17 @@ WHERE bundle_id = ? AND path = ?`, bundleId, path)
 	return data, true, nil
 }
 
-func (d *Database) BundlesDataPut(ctx context.Context, bundleId, path string, data interface{}) error {
+func (d *Database) LibrariesDataPut(ctx context.Context, libraryId, path string, data interface{}) error {
 	bs, err := json.Marshal(data)
 	if err != nil {
 		return err
 	}
-	_, err = d.db.Exec(`INSERT OR REPLACE INTO bundles_data (bundle_id, path, data) VALUES (?, ?, ?)`, bundleId, path, bs)
+	_, err = d.db.Exec(`INSERT OR REPLACE INTO libraries_data (library_id, path, data) VALUES (?, ?, ?)`, libraryId, path, bs)
 	return err
 }
 
-func (d *Database) BundlesDataDelete(ctx context.Context, bundleId, path string) error {
-	_, err := d.db.Exec(`DELETE FROM bundles_data WHERE bundle_id = ? AND path = ?`, bundleId, path)
+func (d *Database) LibrariesDataDelete(ctx context.Context, libraryId, path string) error {
+	_, err := d.db.Exec(`DELETE FROM libraries_data WHERE library_id = ? AND path = ?`, libraryId, path)
 	return err
 }
 
@@ -270,11 +249,6 @@ func (d *Database) ListBundlesWithGitCredentials() ([]*config.Bundle, error) {
 	rows, err := txn.Query(`SELECT
         bundles.id AS bundle_id,
 		bundles.labels,
-        bundles.repo,
-        bundles.ref,
-        bundles.gitcommit,
-        bundles.path,
-		bundles.git_included_files,
 		bundles.s3url,
 		bundles.s3region,
 		bundles.s3bucket,
@@ -303,14 +277,13 @@ func (d *Database) ListBundlesWithGitCredentials() ([]*config.Bundle, error) {
 	bundleMap := make(map[string]*config.Bundle)
 
 	for rows.Next() {
-		var bundleId, repo string
+		var bundleId string
 		var labels *string
 		var secretId, secretRefType, secretValue *string
-		var ref, gitCommit, path, includePaths *string
 		var s3url, s3region, s3bucket, s3key *string
 		var excluded *string
 		var reqLib *string
-		if err := rows.Scan(&bundleId, &labels, &repo, &ref, &gitCommit, &path, &includePaths, &s3url, &s3region, &s3bucket, &s3key, &excluded, &secretId, &secretRefType, &secretValue, &reqLib); err != nil {
+		if err := rows.Scan(&bundleId, &labels, &s3url, &s3region, &s3bucket, &s3key, &excluded, &secretId, &secretRefType, &secretValue, &reqLib); err != nil {
 			return nil, err
 		}
 
@@ -318,9 +291,6 @@ func (d *Database) ListBundlesWithGitCredentials() ([]*config.Bundle, error) {
 		if !exists {
 			bundle = &config.Bundle{
 				Name: bundleId,
-				Git: config.Git{
-					Repo: repo,
-				},
 			}
 
 			if labels != nil {
@@ -330,21 +300,6 @@ func (d *Database) ListBundlesWithGitCredentials() ([]*config.Bundle, error) {
 			}
 
 			bundleMap[bundleId] = bundle
-
-			if ref != nil {
-				bundle.Git.Reference = ref
-			}
-			if gitCommit != nil {
-				bundle.Git.Commit = gitCommit
-			}
-			if path != nil {
-				bundle.Git.Path = path
-			}
-			if includePaths != nil {
-				if err := json.Unmarshal([]byte(*includePaths), &bundle.Git.IncludedFiles); err != nil {
-					return nil, fmt.Errorf("failed to unmarshal include paths for %q: %w", bundle.Name, err)
-				}
-			}
 
 			if s3region != nil && s3bucket != nil && s3key != nil {
 				bundle.ObjectStorage.AmazonS3 = &config.AmazonS3{
@@ -371,8 +326,6 @@ func (d *Database) ListBundlesWithGitCredentials() ([]*config.Bundle, error) {
 			}
 
 			switch *secretRefType {
-			case "git_credentials":
-				bundle.Git.Credentials = s.Ref()
 			case "aws":
 				if bundle.ObjectStorage.AmazonS3 != nil {
 					bundle.ObjectStorage.AmazonS3.Credentials = s.Ref()
@@ -382,45 +335,6 @@ func (d *Database) ListBundlesWithGitCredentials() ([]*config.Bundle, error) {
 
 		if reqLib != nil {
 			bundle.Requirements = append(bundle.Requirements, config.Requirement{Library: reqLib})
-		}
-	}
-
-	// Load datasources for each bundle.
-
-	rows2, err := txn.Query(`SELECT
-	bundles_datasources.name,
-	bundles_datasources.bundle_id,
-	bundles_datasources.path,
-	bundles_datasources.type,
-	bundles_datasources.config
-FROM
-	bundles_datasources
-`)
-	if err != nil {
-		return nil, err
-	}
-
-	defer rows2.Close()
-
-	for rows2.Next() {
-		var name, bundle_id, path, type_, configuration string
-		if err := rows2.Scan(&name, &bundle_id, &path, &type_, &configuration); err != nil {
-			return nil, err
-		}
-
-		datasource := config.Datasource{
-			Name: name,
-			Type: type_,
-			Path: path,
-		}
-
-		if err := json.Unmarshal([]byte(configuration), &datasource.Config); err != nil {
-			return nil, err
-		}
-
-		b, ok := bundleMap[bundle_id]
-		if ok {
-			b.Datasources = append(b.Datasources, datasource)
 		}
 	}
 
@@ -626,10 +540,6 @@ func (d *Database) QueryLibraryData(id string) (*DataCursor, error) {
 	return d.queryData("libraries_data", "library_id", id)
 }
 
-func (d *Database) QueryBundleData(id string) (*DataCursor, error) {
-	return d.queryData("bundles_data", "bundle_id", id)
-}
-
 func (d *Database) queryData(table, pk, id string) (*DataCursor, error) {
 	rows, err := d.db.Query(fmt.Sprintf(`SELECT
 	path,
@@ -695,40 +605,14 @@ func (d *Database) loadBundles(root *config.Root) error {
 			return err
 		}
 
-		includedFiles, err := json.Marshal(b.Git.IncludedFiles)
-		if err != nil {
+		if _, err := d.db.Exec(`INSERT OR REPLACE INTO bundles (id, labels, s3url, s3region, s3bucket, s3key, excluded) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+			b.Name, string(labels), s3url, s3region, s3bucket, s3key, string(excluded)); err != nil {
 			return err
-		}
-
-		if _, err := d.db.Exec(`INSERT OR REPLACE INTO bundles (id, labels, repo, ref, gitcommit, path, git_included_files, s3url, s3region, s3bucket, s3key, excluded) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-			b.Name, string(labels), b.Git.Repo, b.Git.Reference, b.Git.Commit, b.Git.Path, string(includedFiles), s3url, s3region, s3bucket, s3key, string(excluded)); err != nil {
-			return err
-		}
-
-		if b.Git.Credentials != nil {
-			d.db.Exec(`INSERT OR REPLACE INTO bundles_secrets (bundle_id, secret_id, ref_type) VALUES (?, ?, ?)`, b.Name, b.Git.Credentials.Name, "git_credentials")
 		}
 
 		if b.ObjectStorage.AmazonS3 != nil {
 			if b.ObjectStorage.AmazonS3.Credentials != nil {
 				d.db.Exec(`INSERT OR REPLACE INTO bundles_secrets (bundle_id, secret_id, ref_type) VALUES (?, ?, ?)`, b.Name, b.ObjectStorage.AmazonS3.Credentials.Name, "aws")
-			}
-		}
-
-		for _, datasource := range b.Datasources {
-			bs, err := json.Marshal(datasource.Config)
-			if err != nil {
-				return err
-			}
-			if _, err := d.db.Exec(`INSERT OR REPLACE INTO bundles_datasources (name, bundle_id, type, path, config) VALUES (?, ?, ?, ?, ?)`,
-				datasource.Name, b.Name, datasource.Type, datasource.Path, string(bs)); err != nil {
-				return err
-			}
-		}
-
-		for path, data := range b.Files() {
-			if _, err := d.db.Exec(`INSERT OR REPLACE INTO bundles_data (bundle_id, path, data) VALUES (?, ?, ?)`, name, path, data); err != nil {
-				return err
 			}
 		}
 

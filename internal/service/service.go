@@ -149,9 +149,6 @@ func (s *Service) launchWorkers(ctx context.Context) {
 	//
 	// persistenceDir/
 	// └── {md5(bundle.Name)}/
-	//     ├── database/                  # bundle-specific files from SQL database
-	//     ├── datasources/               # bundle-specific HTTP datasources
-	//     ├── repo/                      # bundle git repository
 	//     └── libraries/
 	//         └── {library.Name}/
 	//             ├── builtin/           # Built-in library specific files
@@ -172,11 +169,7 @@ func (s *Service) launchWorkers(ctx context.Context) {
 
 		bundleDir := path.Join(s.persistenceDir, md5sum(b.Name))
 
-		src := newSource(b.Name).
-			SyncBundleSQL(&syncs, b.Name, &s.database, path.Join(bundleDir, "database")).
-			SyncDatasources(&syncs, b.Datasources, path.Join(bundleDir, "datasources")).
-			SyncGit(&syncs, b.Git, path.Join(bundleDir, "repo")).
-			AddRequirements(b.Requirements)
+		src := newSource(b.Name).AddRequirements(b.Requirements)
 
 		for _, stack := range stacks {
 			if stack.Selector.Matches(b.Labels) {
@@ -276,12 +269,6 @@ func (src *source) SyncDatasources(syncs *[]Synchronizer, datasources []config.D
 	if len(datasources) > 0 {
 		src.addDir(dir, true, nil)
 	}
-	return src
-}
-
-func (src *source) SyncBundleSQL(syncs *[]Synchronizer, name string, database *database.Database, dir string) *source {
-	*syncs = append(*syncs, sqlsync.NewSQLBundleDataSynchronizer(dir, database, name))
-	src.addDir(dir, true, nil)
 	return src
 }
 
