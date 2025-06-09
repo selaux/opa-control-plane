@@ -16,36 +16,35 @@ var (
 	successDelay = 1 * time.Minute
 )
 
-// Each BundleWorker is responsible for synchronizing a bundle's git repository,
-// constructing a bundle from the bundle and its libraries, and uploading the
-// bundle to an object storage service. It uses a git synchronizer to pull the
-// latest changes from the bundle's repository, constructs a bundle using the
-// builder package, and uploads the resulting bundle to an S3-compatible object
-// storage service.
+// Each BundleWorker is responsible for constructing a bundle from the source
+// dependencies and uploading it to an object storage service. It uses a git
+// synchronizer to pull the latest changes from the source repositories,
+// constructs a bundle using the builder package, and uploads the resulting
+// bundle to an S3-compatible object storage service.
 type BundleWorker struct {
-	bundleConfig   *config.Bundle
-	libraryConfigs []*config.Library
-	stackConfigs   []*config.Stack
-	synchronizers  []Synchronizer
-	sources        []*builder.Source
-	storage        s3.ObjectStorage
-	changed        chan struct{}
-	done           chan struct{}
-	singleShot     bool
-	log            *logging.Logger
+	bundleConfig  *config.Bundle
+	sourceConfigs []*config.Source
+	stackConfigs  []*config.Stack
+	synchronizers []Synchronizer
+	sources       []*builder.Source
+	storage       s3.ObjectStorage
+	changed       chan struct{}
+	done          chan struct{}
+	singleShot    bool
+	log           *logging.Logger
 }
 
 type Synchronizer interface {
 	Execute(ctx context.Context) error
 }
 
-func NewBundleWorker(b *config.Bundle, libraries []*config.Library, stacks []*config.Stack, logger *logging.Logger) *BundleWorker {
+func NewBundleWorker(b *config.Bundle, sources []*config.Source, stacks []*config.Stack, logger *logging.Logger) *BundleWorker {
 	return &BundleWorker{
-		bundleConfig:   b,
-		libraryConfigs: libraries,
-		stackConfigs:   stacks,
-		log:            logger,
-		changed:        make(chan struct{}), done: make(chan struct{}),
+		bundleConfig:  b,
+		sourceConfigs: sources,
+		stackConfigs:  stacks,
+		log:           logger,
+		changed:       make(chan struct{}), done: make(chan struct{}),
 	}
 }
 
@@ -78,8 +77,8 @@ func (worker *BundleWorker) Done() bool {
 	}
 }
 
-func (worker *BundleWorker) UpdateConfig(b *config.Bundle, libraries []*config.Library, stacks []*config.Stack) {
-	if b == nil || !worker.bundleConfig.Equal(b) || !config.EqualLibraries(worker.libraryConfigs, libraries) || !config.EqualStacks(worker.stackConfigs, stacks) {
+func (worker *BundleWorker) UpdateConfig(b *config.Bundle, sources []*config.Source, stacks []*config.Stack) {
+	if b == nil || !worker.bundleConfig.Equal(b) || !config.EqualSources(worker.sourceConfigs, sources) || !config.EqualStacks(worker.stackConfigs, stacks) {
 		worker.changeConfiguration()
 	}
 }

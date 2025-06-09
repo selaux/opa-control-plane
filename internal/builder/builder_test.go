@@ -219,7 +219,7 @@ func TestBuilder(t *testing.T) {
 			expError: fmt.Errorf("requirement \"lib1\" contains conflicting package x.y.z\n- package x.y from \"system\""),
 		},
 		{
-			note: "missing library",
+			note: "missing source",
 			sources: []sourceMock{
 				{
 					files: map[string]string{
@@ -236,7 +236,7 @@ func TestBuilder(t *testing.T) {
 					},
 				},
 			},
-			expError: fmt.Errorf("missing library \"libX\""),
+			expError: fmt.Errorf("missing source \"libX\""),
 		},
 		{
 			note: "shared dependency",
@@ -344,7 +344,7 @@ func TestBuilder(t *testing.T) {
 				for i, src := range tc.sources {
 					var rs []config.Requirement
 					for i := range src.requirements {
-						rs = append(rs, config.Requirement{Library: &src.requirements[i]})
+						rs = append(rs, config.Requirement{Source: &src.requirements[i]})
 					}
 					srcs = append(srcs, &builder.Source{
 						Name:         src.name,

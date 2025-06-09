@@ -27,7 +27,7 @@ func TestServer(t *testing.T) {
 		{
 			name:       "GET",
 			method:     "GET",
-			path:       "/v1/libraries/system1/foo",
+			path:       "/v1/sources/system1/foo",
 			body:       "",
 			statusCode: 200,
 			result:     "{}\n",
@@ -35,7 +35,7 @@ func TestServer(t *testing.T) {
 		{
 			name:       "PUT",
 			method:     "PUT",
-			path:       "/v1/libraries/system1/foo",
+			path:       "/v1/sources/system1/foo",
 			body:       `{"key": "value"}`,
 			statusCode: 200,
 			result:     "{}\n",
@@ -43,7 +43,7 @@ func TestServer(t *testing.T) {
 		{
 			name:       "GET after PUT",
 			method:     "GET",
-			path:       "/v1/libraries/system1/foo",
+			path:       "/v1/sources/system1/foo",
 			body:       "",
 			statusCode: 200,
 			result: `{"result":{"key":"value"}}
@@ -52,7 +52,7 @@ func TestServer(t *testing.T) {
 		{
 			name:       "POST",
 			method:     "POST",
-			path:       "/v1/libraries/system1/foo",
+			path:       "/v1/sources/system1/foo",
 			body:       `{"key": "value2"}`,
 			statusCode: 200,
 			result:     "{}\n",
@@ -60,7 +60,7 @@ func TestServer(t *testing.T) {
 		{
 			name:       "GET after POST",
 			method:     "GET",
-			path:       "/v1/libraries/system1/foo",
+			path:       "/v1/sources/system1/foo",
 			body:       "",
 			statusCode: 200,
 			result: `{"result":{"key":"value2"}}
@@ -69,7 +69,7 @@ func TestServer(t *testing.T) {
 		{
 			name:       "DELETE",
 			method:     "DELETE",
-			path:       "/v1/libraries/system1/foo",
+			path:       "/v1/sources/system1/foo",
 			body:       "",
 			statusCode: 200,
 			result:     "{}\n",
@@ -77,7 +77,7 @@ func TestServer(t *testing.T) {
 		{
 			name:       "GET after DELETE",
 			method:     "GET",
-			path:       "/v1/libraries/system1/foo",
+			path:       "/v1/sources/system1/foo",
 			body:       "",
 			statusCode: 200,
 			result:     "{}\n",
@@ -119,23 +119,23 @@ func newMockDatabase() *mockDatabase {
 }
 
 type key struct {
-	libraryId string
-	path      string
+	sourceId string
+	path     string
 }
 
-func (m *mockDatabase) LibrariesDataGet(ctx context.Context, libraryId, path string) (interface{}, bool, error) {
-	if data, ok := m.data[key{libraryId, path}]; ok {
+func (m *mockDatabase) SourcesDataGet(ctx context.Context, sourceId, path string) (interface{}, bool, error) {
+	if data, ok := m.data[key{sourceId, path}]; ok {
 		return data, true, nil
 	}
 	return nil, false, nil
 }
 
-func (m *mockDatabase) LibrariesDataPut(ctx context.Context, libraryId, path string, data interface{}) error {
-	m.data[key{libraryId, path}] = data
+func (m *mockDatabase) SourcesDataPut(ctx context.Context, sourceId, path string, data interface{}) error {
+	m.data[key{sourceId, path}] = data
 	return nil
 }
 
-func (m *mockDatabase) LibrariesDataDelete(ctx context.Context, libraryId, path string) error {
-	delete(m.data, key{libraryId, path})
+func (m *mockDatabase) SourcesDataDelete(ctx context.Context, sourceId, path string) error {
+	delete(m.data, key{sourceId, path})
 	return nil
 }

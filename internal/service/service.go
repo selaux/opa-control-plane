@@ -112,9 +112,9 @@ func (s *Service) launchWorkers(ctx context.Context) {
 		return
 	}
 
-	libraries, err := s.database.ListLibrariesWithGitCredentials()
+	sourceDefs, err := s.database.ListSourcesWithGitCredentials()
 	if err != nil {
-		s.log.Errorf("error listing libraries: %s", err.Error())
+		s.log.Errorf("error listing sources: %s", err.Error())
 		return
 	}
 
@@ -149,16 +149,16 @@ func (s *Service) launchWorkers(ctx context.Context) {
 	//
 	// persistenceDir/
 	// └── {md5(bundle.Name)}/
-	//     └── libraries/
-	//         └── {library.Name}/
-	//             ├── builtin/           # Built-in library specific files
-	//             ├── database/          # Library-specific files from SQL database
-	//             ├── datasources/       # Library-specific HTTP datasources
-	//             └── repo/              # Library git repository
+	//     └── sources/
+	//         └── {source.Name}/
+	//             ├── builtin/           # Built-in source specific files
+	//             ├── database/          # Source-specific files from SQL database
+	//             ├── datasources/       # Source-specific HTTP datasources
+	//             └── repo/              # Source git repository
 
 	for _, b := range bundles {
 		if w, ok := s.workers[b.Name]; ok {
-			w.UpdateConfig(b, libraries, stacks)
+			w.UpdateConfig(b, sourceDefs, stacks)
 			continue
 		}
 
@@ -179,14 +179,14 @@ func (s *Service) launchWorkers(ctx context.Context) {
 
 		sources = append(sources, &src.Source)
 
-		for _, l := range libraries {
-			libraryDir := path.Join(bundleDir, "libraries", l.Name)
+		for _, l := range sourceDefs {
+			srcDir := path.Join(bundleDir, "sources", l.Name)
 
 			src := newSource(l.Name).
-				SyncBuiltin(&syncs, l.Builtin, s.builtinFS, path.Join(libraryDir, "builtin")).
-				SyncLibrarySQL(&syncs, l.Name, &s.database, path.Join(libraryDir, "database")).
-				SyncDatasources(&syncs, l.Datasources, path.Join(libraryDir, "datasources")).
-				SyncGit(&syncs, l.Git, path.Join(libraryDir, "repo")).
+				SyncBuiltin(&syncs, l.Builtin, s.builtinFS, path.Join(srcDir, "builtin")).
+				SyncSourceSQL(&syncs, l.Name, &s.database, path.Join(srcDir, "database")).
+				SyncDatasources(&syncs, l.Datasources, path.Join(srcDir, "datasources")).
+				SyncGit(&syncs, l.Git, path.Join(srcDir, "repo")).
 				AddRequirements(l.Requirements)
 
 			sources = append(sources, &src.Source)
@@ -198,7 +198,7 @@ func (s *Service) launchWorkers(ctx context.Context) {
 			continue
 		}
 
-		w := NewBundleWorker(b, libraries, stacks, s.log).
+		w := NewBundleWorker(b, sourceDefs, stacks, s.log).
 			WithSources(sources).
 			WithSynchronizers(syncs).
 			WithStorage(storage).
@@ -272,15 +272,15 @@ func (src *source) SyncDatasources(syncs *[]Synchronizer, datasources []config.D
 	return src
 }
 
-func (src *source) SyncLibrarySQL(syncs *[]Synchronizer, name string, database *database.Database, dir string) *source {
-	*syncs = append(*syncs, sqlsync.NewSQLLibraryDataSynchronizer(dir, database, name))
+func (src *source) SyncSourceSQL(syncs *[]Synchronizer, name string, database *database.Database, dir string) *source {
+	*syncs = append(*syncs, sqlsync.NewSQLSourceDataSynchronizer(dir, database, name))
 	src.addDir(dir, true, nil)
 	return src
 }
 
 func (src *source) AddRequirements(requirements []config.Requirement) *source {
 	for _, r := range requirements {
-		if r.Library != nil {
+		if r.Source != nil {
 			src.Requirements = append(src.Requirements, r)
 		}
 	}

@@ -10,7 +10,7 @@ import (
 
 type BuiltinSynchronizer struct {
 	fs   fs.FS
-	path string // path where builtin library should be saved
+	path string // path where builtin source should be saved
 	key  string
 }
 

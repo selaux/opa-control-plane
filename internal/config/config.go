@@ -27,12 +27,12 @@ type Metadata struct {
 
 // Root is the top-level configuration structure used by Lighthouse.
 type Root struct {
-	Metadata  Metadata            `json:"metadata" yaml:"metadata"`
-	Bundles   map[string]*Bundle  `json:"bundles,omitempty" yaml:"bundles,omitempty"`
-	Stacks    map[string]*Stack   `json:"stacks,omitempty" yaml:"stacks,omitempty"`
-	Libraries map[string]*Library `json:"libraries,omitempty" yaml:"libraries,omitempty"`
-	Secrets   map[string]*Secret  `json:"secrets,omitempty" yaml:"secrets,omitempty"` // Schema validation overrides Secret to object type.
-	Database  *Database           `json:"database,omitempty" yaml:"database,omitempty"`
+	Metadata Metadata           `json:"metadata" yaml:"metadata"`
+	Bundles  map[string]*Bundle `json:"bundles,omitempty" yaml:"bundles,omitempty"`
+	Stacks   map[string]*Stack  `json:"stacks,omitempty" yaml:"stacks,omitempty"`
+	Sources  map[string]*Source `json:"sources,omitempty" yaml:"sources,omitempty"`
+	Secrets  map[string]*Secret `json:"secrets,omitempty" yaml:"secrets,omitempty"` // Schema validation overrides Secret to object type.
+	Database *Database          `json:"database,omitempty" yaml:"database,omitempty"`
 }
 
 // UnmarshalYAML implements the yaml.Marshaler interface for the Root struct. This
@@ -82,10 +82,10 @@ func (r *Root) unmarshal(raw *Root) error {
 		}
 	}
 
-	for name, library := range raw.Libraries {
-		library.Name = name
-		if library.Git.Credentials != nil {
-			library.Git.Credentials.value = raw.Secrets[library.Git.Credentials.Name]
+	for name, src := range raw.Sources {
+		src.Name = name
+		if src.Git.Credentials != nil {
+			src.Git.Credentials.value = raw.Secrets[src.Git.Credentials.Name]
 		}
 	}
 
@@ -122,11 +122,11 @@ type Bundle struct {
 type Labels map[string]string
 
 type Requirement struct {
-	Library *string `json:"library,omitempty" yaml:"library,omitempty"`
+	Source *string `json:"source,omitempty" yaml:"source,omitempty"`
 }
 
 func (a Requirement) Equal(b Requirement) bool {
-	return stringEqual(a.Library, b.Library)
+	return stringEqual(a.Source, b.Source)
 }
 
 type Files map[string]string
@@ -253,8 +253,8 @@ func equalRequirements(a, b []Requirement) bool {
 	return true
 }
 
-// Library defines the configuration for a Lighthouse Library.
-type Library struct {
+// Source defines the configuration for a Lighthouse Source.
+type Source struct {
 	Name          string        `json:"-" yaml:"-"`
 	Builtin       *string       `json:"builtin,omitempty" yaml:"builtin,omitempty"`
 	Git           Git           `json:"git,omitempty" yaml:"git,omitempty"`
@@ -263,7 +263,7 @@ type Library struct {
 	Requirements  []Requirement `json:"requirements,omitempty" yaml:"requirements,omitempty"`
 }
 
-func (s *Library) Equal(other *Library) bool {
+func (s *Source) Equal(other *Source) bool {
 	if s == other {
 		return true
 	}
@@ -280,22 +280,22 @@ func (s *Library) Equal(other *Library) bool {
 		equalRequirements(s.Requirements, other.Requirements)
 }
 
-func (s *Library) Requirement() Requirement {
-	return Requirement{Library: &s.Name}
+func (s *Source) Requirement() Requirement {
+	return Requirement{Source: &s.Name}
 }
 
-func (s *Library) Files() map[string]string {
+func (s *Source) Files() map[string]string {
 	return s.EmbeddedFiles
 }
 
-func (s *Library) SetEmbeddedFile(path string, content string) {
+func (s *Source) SetEmbeddedFile(path string, content string) {
 	if s.EmbeddedFiles == nil {
 		s.EmbeddedFiles = make(Files)
 	}
 	s.EmbeddedFiles[path] = content
 }
 
-func (s *Library) SetEmbeddedFiles(files map[string]string) {
+func (s *Source) SetEmbeddedFiles(files map[string]string) {
 	s.EmbeddedFiles = nil
 	for path, content := range files {
 		s.SetEmbeddedFile(path, content)
@@ -470,8 +470,7 @@ func equalStringSets(a, b []string) bool {
 	return true
 }
 
-// Git defines the Git synchronization configuration used by Lighthouse
-// resources like Bundles, Stacks, and Libraries.
+// Git defines the Git synchronization configuration used by Lighthouse Sources.
 type Git struct {
 	Repo          string     `json:"repo" yaml:"repo"`
 	Reference     *string    `json:"reference,omitempty" yaml:"reference,omitempty"`
@@ -787,15 +786,15 @@ type AmazonRDS struct {
 	Credentials  *SecretRef `json:"credentials,omitempty" yaml:"credentials,omitempty"`
 }
 
-func EqualLibraries(a, b []*Library) bool {
-	m := make(map[string]*Library, len(a))
-	for _, lib := range a {
-		m[lib.Name] = lib
+func EqualSources(a, b []*Source) bool {
+	m := make(map[string]*Source, len(a))
+	for _, src := range a {
+		m[src.Name] = src
 	}
 
-	n := make(map[string]*Library, len(b))
-	for _, lib := range b {
-		n[lib.Name] = lib
+	n := make(map[string]*Source, len(b))
+	for _, src := range b {
+		n[src.Name] = src
 	}
 
 	if len(m) != len(n) {
@@ -817,13 +816,13 @@ func EqualLibraries(a, b []*Library) bool {
 
 func EqualStacks(a, b []*Stack) bool {
 	m := make(map[string]*Stack, len(a))
-	for _, lib := range a {
-		m[lib.Name] = lib
+	for _, stack := range a {
+		m[stack.Name] = stack
 	}
 
 	n := make(map[string]*Stack, len(b))
-	for _, lib := range b {
-		n[lib.Name] = lib
+	for _, stack := range b {
+		n[stack.Name] = stack
 	}
 
 	if len(m) != len(n) {

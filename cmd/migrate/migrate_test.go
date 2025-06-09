@@ -84,33 +84,33 @@ func TestPruneConfig(t *testing.T) {
 	root, err := config.Parse(bytes.NewBufferString(`{
 		bundles: {
 			sys1: {
-				requirements: [{library: app1}],
+				requirements: [{source: app1}],
 				labels: {foo: bar}
 			}
 		},
 		stacks: {
 			stack1: {
 				selector: {foo: [bar]},
-				requirements: [{library: lib2}]
+				requirements: [{source: lib2}]
 			},
 			stack2: {
 				selector: {
 					DONOTMATCH: []
 				},
-				requirements: [{library: lib3}, {library: libUNUSED3}]
+				requirements: [{source: lib3}, {source: libUNUSED3}]
 			}
 		},
-		libraries: {
+		sources: {
 			app1: {
 				git: {credentials: sec1},
-				requirements: [{library: lib1}],
+				requirements: [{source: lib1}],
 			},
 			lib1: {
-				requirements: [{library: lib3}],
+				requirements: [{source: lib3}],
 				git: {credentials: sec2}
 			},
 			lib2: {
-				requirements: [{library: lib4}],
+				requirements: [{source: lib4}],
 				git: {credentials: sec3}
 			},
 			lib3: {
@@ -121,7 +121,7 @@ func TestPruneConfig(t *testing.T) {
 			},
 			libUNUSED1: {
 				git: {credentials: sec6},
-				requirements: [{library: libUNUSED2}]
+				requirements: [{source: libUNUSED2}]
 			},
 			libUNUSED2: {
 				git: {credentials: sec7},
@@ -143,9 +143,9 @@ func TestPruneConfig(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	stacks, libs, secrets := pruneConfig(root)
+	stacks, sources, secrets := pruneConfig(root)
 	expStacks := []string{"stack2"}
-	expLibs := []string{"libUNUSED1", "libUNUSED2", "libUNUSED3"}
+	expSrcs := []string{"libUNUSED1", "libUNUSED2", "libUNUSED3"}
 	expSecrets := []string{"sec6", "sec7"}
 
 	var gotStacks []string
@@ -155,12 +155,12 @@ func TestPruneConfig(t *testing.T) {
 
 	sort.Strings(gotStacks)
 
-	var gotLibs []string
-	for _, l := range libs {
-		gotLibs = append(gotLibs, l.Name)
+	var gotSrcs []string
+	for _, s := range sources {
+		gotSrcs = append(gotSrcs, s.Name)
 	}
 
-	sort.Strings(gotLibs)
+	sort.Strings(gotSrcs)
 
 	var gotSecrets []string
 	for _, s := range secrets {
@@ -173,8 +173,8 @@ func TestPruneConfig(t *testing.T) {
 		t.Fatalf("expected stacks %v but got %v", expStacks, gotStacks)
 	}
 
-	if !reflect.DeepEqual(expLibs, gotLibs) {
-		t.Fatalf("expected libs %v but got %v", expLibs, gotLibs)
+	if !reflect.DeepEqual(expSrcs, gotSrcs) {
+		t.Fatalf("expected libs %v but got %v", expSrcs, gotSrcs)
 	}
 
 	if !reflect.DeepEqual(expSecrets, gotSecrets) {
@@ -184,27 +184,27 @@ func TestPruneConfig(t *testing.T) {
 	expRoot, err := config.Parse(bytes.NewBufferString(`{
 		bundles: {
 			sys1: {
-				requirements: [{library: app1}],
+				requirements: [{source: app1}],
 				labels: {foo: bar}
 			}
 		},
 		stacks: {
 			stack1: {
 				selector: {foo: [bar]},
-				requirements: [{library: lib2}]
+				requirements: [{source: lib2}]
 			},
 		},
-		libraries: {
+		sources: {
 			app1: {
 				git: {credentials: sec1},
-				requirements: [{library: lib1}],
+				requirements: [{source: lib1}],
 			},
 			lib1: {
-				requirements: [{library: lib3}],
+				requirements: [{source: lib3}],
 				git: {credentials: sec2}
 			},
 			lib2: {
-				requirements: [{library: lib4}],
+				requirements: [{source: lib4}],
 				git: {credentials: sec3}
 			},
 			lib3: {
@@ -374,7 +374,7 @@ func TestMigrateV1Policies(t *testing.T) {
 
 			var expReqs []config.Requirement
 			for _, r := range tc.expReqs {
-				expReqs = append(expReqs, config.Requirement{Library: &r})
+				expReqs = append(expReqs, config.Requirement{Source: &r})
 			}
 
 			if !reflect.DeepEqual(expReqs, reqs) {

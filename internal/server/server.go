@@ -20,9 +20,9 @@ type Server struct {
 }
 
 type Database interface {
-	LibrariesDataGet(ctx context.Context, libraryId, path string) (data interface{}, ok bool, err error)
-	LibrariesDataPut(ctx context.Context, libraryId, path string, data interface{}) error
-	LibrariesDataDelete(ctx context.Context, libraryId, path string) error
+	SourcesDataGet(ctx context.Context, sourceId, path string) (data interface{}, ok bool, err error)
+	SourcesDataPut(ctx context.Context, sourceId, path string, data interface{}) error
+	SourcesDataDelete(ctx context.Context, sourceId, path string) error
 }
 
 func New() *Server {
@@ -34,9 +34,9 @@ func (s *Server) Init() *Server {
 		s.router = mux.NewRouter()
 	}
 
-	s.router.Handle("/v1/libraries/{library:.+}/{path:.+}", http.HandlerFunc(s.v1LibrariesDataGet)).Methods(http.MethodGet)
-	s.router.Handle("/v1/libraries/{library:.+}/{path:.+}", http.HandlerFunc(s.v1LibrariesDataPut)).Methods(http.MethodPost, http.MethodPut)
-	s.router.Handle("/v1/libraries/{library:.+}/{path:.+}", http.HandlerFunc(s.v1LibrariesDataDelete)).Methods(http.MethodDelete)
+	s.router.Handle("/v1/sources/{source:.+}/{path:.+}", http.HandlerFunc(s.v1SourcesDataGet)).Methods(http.MethodGet)
+	s.router.Handle("/v1/sources/{source:.+}/{path:.+}", http.HandlerFunc(s.v1SourcesDataPut)).Methods(http.MethodPost, http.MethodPut)
+	s.router.Handle("/v1/sources/{source:.+}/{path:.+}", http.HandlerFunc(s.v1SourcesDataDelete)).Methods(http.MethodDelete)
 
 	return s
 }
@@ -55,24 +55,24 @@ func (s *Server) ListenAndServe(addr string) error {
 	return http.ListenAndServe(addr, s.router)
 }
 
-// v1LibrariesDataGet handles GET requests to retrieve data from a library.
-func (s *Server) v1LibrariesDataGet(w http.ResponseWriter, r *http.Request) {
+// v1SourcesDataGet handles GET requests to retrieve data from a source.
+func (s *Server) v1SourcesDataGet(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	vars := mux.Vars(r)
 
-	libraryId, err := url.PathUnescape(vars["library"])
+	srcId, err := url.PathUnescape(vars["source"])
 	if err != nil {
 		ErrorString(w, http.StatusBadRequest, types.CodeInvalidParameter, err)
 		return
 	}
 
-	data, ok, err := s.database.LibrariesDataGet(ctx, libraryId, path.Join(vars["path"], "data.json"))
+	data, ok, err := s.database.SourcesDataGet(ctx, srcId, path.Join(vars["path"], "data.json"))
 	if err != nil {
 		errorAuto(w, err)
 		return
 	}
 
-	resp := types.LibrariesGetDataResponseV1{}
+	resp := types.SourcesGetDataResponseV1{}
 
 	if ok {
 		resp.Result = &data
@@ -81,12 +81,12 @@ func (s *Server) v1LibrariesDataGet(w http.ResponseWriter, r *http.Request) {
 	JSONOK(w, resp, pretty(r))
 }
 
-// v1LibrariesDataPut handles PUT and POST requests to upload data to a library.
-func (s *Server) v1LibrariesDataPut(w http.ResponseWriter, r *http.Request) {
+// v1SourcesDataPut handles PUT and POST requests to upload data to a source.
+func (s *Server) v1SourcesDataPut(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	vars := mux.Vars(r)
 
-	libraryId, err := url.PathUnescape(vars["library"])
+	sourceId, err := url.PathUnescape(vars["source"])
 	if err != nil {
 		ErrorString(w, http.StatusBadRequest, types.CodeInvalidParameter, err)
 		return
@@ -98,34 +98,34 @@ func (s *Server) v1LibrariesDataPut(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err = s.database.LibrariesDataPut(ctx, libraryId, path.Join(vars["path"], "data.json"), value)
+	err = s.database.SourcesDataPut(ctx, sourceId, path.Join(vars["path"], "data.json"), value)
 	if err != nil {
 		errorAuto(w, err)
 		return
 	}
 
-	resp := types.LibrariesPutDataResponseV1{}
+	resp := types.SourcesPutDataResponseV1{}
 	JSONOK(w, resp, pretty(r))
 }
 
-// v1LibrariesDataDelete handles DELETE requests to remove data from a library.
-func (s *Server) v1LibrariesDataDelete(w http.ResponseWriter, r *http.Request) {
+// v1SourcesDataDelete handles DELETE requests to remove data from a source.
+func (s *Server) v1SourcesDataDelete(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	vars := mux.Vars(r)
 
-	libraryId, err := url.PathUnescape(vars["library"])
+	sourceId, err := url.PathUnescape(vars["source"])
 	if err != nil {
 		ErrorString(w, http.StatusBadRequest, types.CodeInvalidParameter, err)
 		return
 	}
 
-	err = s.database.LibrariesDataDelete(ctx, libraryId, path.Join(vars["path"], "data.json"))
+	err = s.database.SourcesDataDelete(ctx, sourceId, path.Join(vars["path"], "data.json"))
 	if err != nil {
 		errorAuto(w, err)
 		return
 	}
 
-	resp := types.LibrariesDeleteDataResponseV1{}
+	resp := types.SourcesDeleteDataResponseV1{}
 	JSONOK(w, resp, pretty(r))
 }
 

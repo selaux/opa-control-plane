@@ -133,10 +133,10 @@ func (b *Builder) Build(ctx context.Context) error {
 		existingRoots = append(existingRoots, newRoots...)
 		toBuild = append(toBuild, next.Dirs...)
 		for _, r := range next.Requirements {
-			if r.Library != nil {
-				src, ok := sourceMap[*r.Library]
+			if r.Source != nil {
+				src, ok := sourceMap[*r.Source]
 				if !ok {
-					return fmt.Errorf("missing library %q", *r.Library)
+					return fmt.Errorf("missing source %q", *r.Source)
 				}
 				if _, ok := processed[src.Name]; !ok {
 					toProcess = append(toProcess, src)

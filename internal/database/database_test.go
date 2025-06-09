@@ -10,7 +10,7 @@ import (
 	"github.com/tsandall/lighthouse/internal/service"
 )
 
-func TestDatabaseLibrariesData(t *testing.T) {
+func TestDatabaseSourcesData(t *testing.T) {
 	ctx := context.Background()
 
 	db := service.New().Database()
@@ -56,9 +56,9 @@ func newTestCase(note string) *testCase {
 	}
 }
 
-func (tc *testCase) Get(libraryID, dataID string, expected interface{}) *testCase {
+func (tc *testCase) Get(srcID, dataID string, expected interface{}) *testCase {
 	tc.operations = append(tc.operations, func(ctx context.Context, t *testing.T, db *database.Database) {
-		data, found, err := db.LibrariesDataGet(ctx, libraryID, dataID)
+		data, found, err := db.SourcesDataGet(ctx, srcID, dataID)
 		if err != nil {
 			t.Fatalf("expected no error, got %v", err)
 		}
@@ -79,18 +79,18 @@ func (tc *testCase) Get(libraryID, dataID string, expected interface{}) *testCas
 	return tc
 }
 
-func (tc *testCase) Put(libraryID, dataID string, data interface{}) *testCase {
+func (tc *testCase) Put(srcID, dataID string, data interface{}) *testCase {
 	tc.operations = append(tc.operations, func(ctx context.Context, t *testing.T, db *database.Database) {
-		if err := db.LibrariesDataPut(ctx, libraryID, dataID, data); err != nil {
+		if err := db.SourcesDataPut(ctx, srcID, dataID, data); err != nil {
 			t.Fatalf("expected no error, got %v", err)
 		}
 	})
 	return tc
 }
 
-func (tc *testCase) Delete(libraryID, dataID string) *testCase {
+func (tc *testCase) Delete(srcID, dataID string) *testCase {
 	tc.operations = append(tc.operations, func(ctx context.Context, t *testing.T, db *database.Database) {
-		if err := db.LibrariesDataDelete(ctx, libraryID, dataID); err != nil {
+		if err := db.SourcesDataDelete(ctx, srcID, dataID); err != nil {
 			t.Fatalf("expected no error, got %v", err)
 		}
 	})
