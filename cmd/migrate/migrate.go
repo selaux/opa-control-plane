@@ -574,7 +574,7 @@ func Run(params Options) error {
 				AmazonS3: &config.AmazonS3{
 					Bucket:      params.S3BucketName,
 					Region:      params.S3BucketRegion,
-					Key:         "bundles/" + strings.Replace(name, " ", "_", -1) + "/bundle.tar.gz",
+					Key:         "bundles/" + name + "/bundle.tar.gz",
 					Credentials: &config.SecretRef{Name: "storage-creds"},
 				},
 			}
@@ -654,14 +654,6 @@ func Run(params Options) error {
 
 func splitConfig(outputDir string, output config.Root) (map[string][]byte, error) {
 
-	bundleStorage := make(map[string]*config.Bundle)
-	for name, original := range output.Bundles {
-		if original.ObjectStorage.AmazonS3 != nil {
-			bundleStorage[name] = &config.Bundle{ObjectStorage: original.ObjectStorage}
-			original.ObjectStorage.AmazonS3 = nil
-		}
-	}
-
 	configs := make(map[string]config.Root)
 
 	if len(output.Bundles) > 0 {
@@ -675,9 +667,6 @@ func splitConfig(outputDir string, output config.Root) (map[string][]byte, error
 	}
 	if len(output.Secrets) > 0 {
 		configs["config-secrets.yaml"] = config.Root{Secrets: output.Secrets}
-	}
-	if len(bundleStorage) > 0 {
-		configs["config-storage.yaml"] = config.Root{Bundles: bundleStorage}
 	}
 
 	testFiles := make(map[string]*config.Source)
