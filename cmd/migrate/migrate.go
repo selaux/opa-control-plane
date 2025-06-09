@@ -459,12 +459,12 @@ func Run(params Options) error {
 	}
 
 	for _, library := range state.LibrariesById {
-		lc, secrets, err := migrateV1Library(&c, state, library, params.Datasources)
+		sc, secrets, err := migrateV1Library(&c, state, library, params.Datasources)
 		if err != nil {
 			return err
 		}
 
-		output.Sources[lc.Name] = lc
+		output.Sources[sc.Name] = sc
 		for _, s := range secrets {
 			output.Secrets[s.Name] = s
 		}
@@ -483,12 +483,12 @@ func Run(params Options) error {
 	}
 
 	for _, system := range state.SystemsById {
-		b, l, secrets, err := migrateV1System(&c, state, system, params.Datasources)
+		b, src, secrets, err := migrateV1System(&c, state, system, params.Datasources)
 		if err != nil {
 			return err
 		}
 
-		output.Sources[l.Name] = l
+		output.Sources[src.Name] = src
 		output.Bundles[b.Name] = b
 
 		for _, s := range secrets {
@@ -497,13 +497,13 @@ func Run(params Options) error {
 	}
 
 	for _, stack := range state.StacksById {
-		sc, lc, secrets, err := migrateV1Stack(&c, state, stack, params.Datasources)
+		sc, src, secrets, err := migrateV1Stack(&c, state, stack, params.Datasources)
 		if err != nil {
 			return err
 		}
 
 		output.Stacks[sc.Name] = sc
-		output.Sources[lc.Name] = lc
+		output.Sources[src.Name] = src
 
 		for _, s := range secrets {
 			output.Secrets[s.Name] = s
@@ -515,12 +515,12 @@ func Run(params Options) error {
 	}
 
 	if params.Prune {
-		stacks, libraries, secrets := pruneConfig(&output)
+		stacks, sources, secrets := pruneConfig(&output)
 		sort.Slice(stacks, func(i, j int) bool {
 			return stacks[i].Name < stacks[j].Name
 		})
-		sort.Slice(libraries, func(i, j int) bool {
-			return libraries[i].Name < libraries[j].Name
+		sort.Slice(sources, func(i, j int) bool {
+			return sources[i].Name < sources[j].Name
 		})
 		sort.Slice(secrets, func(i, j int) bool {
 			return secrets[i].Name < secrets[j].Name
@@ -528,8 +528,8 @@ func Run(params Options) error {
 		for _, stack := range stacks {
 			log.Infof("Removed unused stack %q", stack.Name)
 		}
-		for _, lib := range libraries {
-			log.Infof("Removed unused library %q", lib.Name)
+		for _, lib := range sources {
+			log.Infof("Removed unused source %q", lib.Name)
 		}
 		for _, s := range secrets {
 			log.Infof("Removed unused secret %q", s.Name)
@@ -538,12 +538,12 @@ func Run(params Options) error {
 
 	files := make(map[string]string)
 
-	for _, library := range output.Sources {
-		for path, content := range library.Files() {
-			files[filepath.Join(append([]string{"libraries", library.Name}, filepath.SplitList(path)...)...)] = content
+	for _, src := range output.Sources {
+		for path, content := range src.Files() {
+			files[filepath.Join(append([]string{"sources", src.Name}, filepath.SplitList(path)...)...)] = content
 		}
 		if !params.EmbedFiles {
-			library.SetEmbeddedFiles(nil)
+			src.SetEmbeddedFiles(nil)
 		}
 	}
 
@@ -555,7 +555,7 @@ func Run(params Options) error {
 			return err
 		}
 
-		log.Infof("Found %d files for systems and libraries. Writing them to disk under %s", len(files), rootAbs)
+		log.Infof("Found %d files for sources. Writing them to disk under %s", len(files), rootAbs)
 
 		for path, content := range files {
 			if err := os.MkdirAll(filepath.Join(root, filepath.Dir(path)), 0755); err != nil {
@@ -671,7 +671,7 @@ func splitConfig(outputDir string, output config.Root) (map[string][]byte, error
 		configs["config-stacks.yaml"] = config.Root{Stacks: output.Stacks}
 	}
 	if len(output.Sources) > 0 {
-		configs["config-libraries.yaml"] = config.Root{Sources: output.Sources}
+		configs["config-sources.yaml"] = config.Root{Sources: output.Sources}
 	}
 	if len(output.Secrets) > 0 {
 		configs["config-secrets.yaml"] = config.Root{Secrets: output.Secrets}
@@ -709,7 +709,7 @@ func splitConfig(outputDir string, output config.Root) (map[string][]byte, error
 
 func migrateV1Library(client *das.Client, state *dasState, v1 *das.V1Library, migrateDSContent bool) (*config.Source, []*config.Secret, error) {
 
-	library, secrets, err := mapV1LibraryToLibraryAndSecretConfig(client, v1, migrateDSContent)
+	src, secrets, err := mapV1LibraryToSourceAndSecretConfig(client, v1, migrateDSContent)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -717,34 +717,34 @@ func migrateV1Library(client *das.Client, state *dasState, v1 *das.V1Library, mi
 	// NOTE(tsandall): we don't support a mix of git-backed and non-git backed
 	// files in libraries like we do for systems right now; if git config exists
 	// then stop
-	if library.Git.Repo != "" {
-		return library, secrets, nil
+	if src.Git.Repo != "" {
+		return src, secrets, nil
 	}
 
 	policies := state.LibraryPolicies[v1.Id]
 
 	for _, p := range policies {
 		for file, str := range p.Modules {
-			library.SetEmbeddedFile(p.Package+"/"+file, str)
+			src.SetEmbeddedFile(p.Package+"/"+file, str)
 		}
 	}
 
-	return library, secrets, nil
+	return src, secrets, nil
 }
 
-func mapV1LibraryToLibraryAndSecretConfig(client *das.Client, v1 *das.V1Library, datasources bool) (*config.Source, []*config.Secret, error) {
+func mapV1LibraryToSourceAndSecretConfig(client *das.Client, v1 *das.V1Library, datasources bool) (*config.Source, []*config.Secret, error) {
 
-	library := &config.Source{Name: v1.Id}
+	src := &config.Source{Name: v1.Id}
 	var secrets []*config.Secret
 
 	workspace, origin := getLibraryGitOrigin(v1)
-	secret := migrateV1GitConfig(origin, library)
+	secret := migrateV1GitConfig(origin, src)
 	if secret != nil {
 		secrets = append(secrets, secret)
 	}
 
 	if workspace {
-		library.Git.IncludedFiles = []string{"libraries/" + v1.Id + "/*"}
+		src.Git.IncludedFiles = []string{"libraries/" + v1.Id + "/*"}
 	}
 
 	if len(v1.Datasources) > 0 {
@@ -756,16 +756,16 @@ func mapV1LibraryToLibraryAndSecretConfig(client *das.Client, v1 *das.V1Library,
 		}
 
 		secrets = append(secrets, dsSecrets...)
-		library.Datasources = ds
+		src.Datasources = ds
 
 		for _, fs := range files {
 			for file, content := range fs {
-				library.SetEmbeddedFile(file, content)
+				src.SetEmbeddedFile(file, content)
 			}
 		}
 	}
 
-	return library, secrets, nil
+	return src, secrets, nil
 }
 
 func getLibraryGitOrigin(v1 *das.V1Library) (bool, *das.V1GitRepoConfig) {
@@ -781,7 +781,7 @@ func getLibraryGitOrigin(v1 *das.V1Library) (bool, *das.V1GitRepoConfig) {
 func migrateV1System(client *das.Client, state *dasState, v1 *das.V1System, migrateDSContent bool) (*config.Bundle, *config.Source, []*config.Secret, error) {
 
 	var secrets []*config.Secret
-	bundle, library, secret, err := mapV1SystemToBundleLibraryAndSecretConfig(client, v1)
+	bundle, library, secret, err := mapV1SystemToBundleSourceAndSecretConfig(client, v1)
 	if err != nil {
 		return nil, nil, nil, err
 	}
@@ -900,40 +900,40 @@ func migrateV1HTTPPullDatasource(nsPrefix string, v1 *das.V1Datasource) (config.
 	return ds, nil, nil
 }
 
-func mapV1SystemToBundleLibraryAndSecretConfig(_ *das.Client, v1 *das.V1System) (*config.Bundle, *config.Source, *config.Secret, error) {
+func mapV1SystemToBundleSourceAndSecretConfig(_ *das.Client, v1 *das.V1System) (*config.Bundle, *config.Source, *config.Secret, error) {
 	var bundle config.Bundle
-	var library config.Source
+	var src config.Source
 	var secret *config.Secret
 
 	bundle.Name = v1.Name
-	library.Name = v1.Name
-	bundle.Requirements = append(bundle.Requirements, config.Requirement{Source: strptr(library.Name)})
+	src.Name = v1.Name
+	bundle.Requirements = append(bundle.Requirements, config.Requirement{Source: strptr(src.Name)})
 
 	if v1.SourceControl != nil {
-		library.Git.Repo = v1.SourceControl.Origin.URL
+		src.Git.Repo = v1.SourceControl.Origin.URL
 
 		if v1.SourceControl.Origin.Commit != "" {
-			library.Git.Commit = &v1.SourceControl.Origin.Commit
+			src.Git.Commit = &v1.SourceControl.Origin.Commit
 		} else if v1.SourceControl.Origin.Reference != "" {
-			library.Git.Reference = &v1.SourceControl.Origin.Reference
+			src.Git.Reference = &v1.SourceControl.Origin.Reference
 		}
 
 		if v1.SourceControl.Origin.Path != "" {
-			library.Git.Path = &v1.SourceControl.Origin.Path
+			src.Git.Path = &v1.SourceControl.Origin.Path
 		}
 
 		if v1.SourceControl.Origin.Credentials != "" {
 			secret = &config.Secret{}
 			secret.Name = v1.SourceControl.Origin.Credentials
-			library.Git.Credentials = &config.SecretRef{Name: secret.Name}
+			src.Git.Credentials = &config.SecretRef{Name: secret.Name}
 		} else if v1.SourceControl.Origin.SSHCredentials.PrivateKey != "" {
 			secret = &config.Secret{}
 			secret.Name = v1.SourceControl.Origin.SSHCredentials.PrivateKey
-			library.Git.Credentials = &config.SecretRef{Name: secret.Name}
+			src.Git.Credentials = &config.SecretRef{Name: secret.Name}
 		}
 	}
 
-	return &bundle, &library, secret, nil
+	return &bundle, &src, secret, nil
 }
 
 func migrateV1Policies(typeLib *config.Source, nsPrefix string, policies []*das.V1Policy, gitRoots []string) (config.Files, []config.Requirement) {
@@ -1028,7 +1028,7 @@ func migrateV1Stack(c *das.Client, state *dasState, v1 *das.V1Stack, migrateDSCo
 	var stack config.Stack
 	stack.Name = v1.Name
 
-	library, secrets, err := mapV1StackToLibraryAndSecretConfig(c, v1, migrateDSContent)
+	src, secrets, err := mapV1StackToSourceAndSecretConfig(c, v1, migrateDSContent)
 	if err != nil {
 		return nil, nil, nil, err
 	}
@@ -1042,9 +1042,9 @@ func migrateV1Stack(c *das.Client, state *dasState, v1 *das.V1Stack, migrateDSCo
 
 	policies := state.StackPolicies[v1.Id]
 	var files config.Files
-	files, library.Requirements = migrateV1Policies(stackTypeLibraries[v1.Type], "", policies, gitRoots)
+	files, src.Requirements = migrateV1Policies(stackTypeLibraries[v1.Type], "", policies, gitRoots)
 	for path, content := range files {
-		library.SetEmbeddedFile(path, content)
+		src.SetEmbeddedFile(path, content)
 	}
 
 	pkg := fmt.Sprintf("stacks/%v/selectors", v1.Id)
@@ -1070,16 +1070,16 @@ func migrateV1Stack(c *das.Client, state *dasState, v1 *das.V1Stack, migrateDSCo
 				return nil, nil, nil, fmt.Errorf("failed to set system-type label for %q: %w", v1.Name, err)
 			}
 
-			return &stack, library, secrets, err
+			return &stack, src, secrets, err
 		}
 	}
 
 	return nil, nil, nil, fmt.Errorf("misisng selector policy for %q", v1.Name)
 }
 
-func mapV1StackToLibraryAndSecretConfig(client *das.Client, v1 *das.V1Stack, migrateDSContent bool) (*config.Source, []*config.Secret, error) {
+func mapV1StackToSourceAndSecretConfig(client *das.Client, v1 *das.V1Stack, migrateDSContent bool) (*config.Source, []*config.Secret, error) {
 
-	library := &config.Source{Name: v1.Name}
+	src := &config.Source{Name: v1.Name}
 	var secrets []*config.Secret
 
 	if len(v1.Datasources) > 0 {
@@ -1091,29 +1091,29 @@ func mapV1StackToLibraryAndSecretConfig(client *das.Client, v1 *das.V1Stack, mig
 		}
 
 		secrets = append(secrets, dsSecrets...)
-		library.Datasources = ds
+		src.Datasources = ds
 
 		for _, fs := range files {
 			for file, content := range fs {
-				library.SetEmbeddedFile(file, content)
+				src.SetEmbeddedFile(file, content)
 			}
 		}
 	}
 
 	workspace, origin := getStackGitOrigin(v1)
 	if origin == nil {
-		return library, secrets, nil
+		return src, secrets, nil
 	}
 
-	if secret := migrateV1GitConfig(origin, library); secret != nil {
+	if secret := migrateV1GitConfig(origin, src); secret != nil {
 		secrets = append(secrets, secret)
 	}
 
 	if workspace {
-		library.Git.IncludedFiles = []string{"stacks/" + v1.Id + "/*"}
+		src.Git.IncludedFiles = []string{"stacks/" + v1.Id + "/*"}
 	}
 
-	return library, secrets, nil
+	return src, secrets, nil
 }
 
 func getStackGitOrigin(v1 *das.V1Stack) (bool, *das.V1GitRepoConfig) {
@@ -1126,18 +1126,18 @@ func getStackGitOrigin(v1 *das.V1Stack) (bool, *das.V1GitRepoConfig) {
 	return false, &v1.SourceControl.StackOrigin
 }
 
-func migrateV1GitConfig(origin *das.V1GitRepoConfig, library *config.Source) *config.Secret {
+func migrateV1GitConfig(origin *das.V1GitRepoConfig, src *config.Source) *config.Secret {
 
-	library.Git.Repo = origin.URL
+	src.Git.Repo = origin.URL
 
 	if origin.Commit != "" {
-		library.Git.Commit = &origin.Commit
+		src.Git.Commit = &origin.Commit
 	} else if origin.Reference != "" {
-		library.Git.Reference = &origin.Reference
+		src.Git.Reference = &origin.Reference
 	}
 
 	if origin.Path != "" {
-		library.Git.Path = &origin.Path
+		src.Git.Path = &origin.Path
 	}
 
 	var secret *config.Secret
@@ -1145,11 +1145,11 @@ func migrateV1GitConfig(origin *das.V1GitRepoConfig, library *config.Source) *co
 	if origin.Credentials != "" {
 		secret = &config.Secret{}
 		secret.Name = origin.Credentials
-		library.Git.Credentials = &config.SecretRef{Name: secret.Name}
+		src.Git.Credentials = &config.SecretRef{Name: secret.Name}
 	} else if origin.SSHCredentials.PrivateKey != "" {
 		secret = &config.Secret{}
 		secret.Name = origin.SSHCredentials.PrivateKey
-		library.Git.Credentials = &config.SecretRef{Name: secret.Name}
+		src.Git.Credentials = &config.SecretRef{Name: secret.Name}
 	}
 
 	return secret
@@ -1308,8 +1308,8 @@ func migrateDependencies(_ *das.Client, state *dasState, output *config.Root) er
 			return err
 		}
 
-		lc := output.Sources[state.SystemsById[id].Name]
-		lc.Requirements = append(lc.Requirements, rs...)
+		src := output.Sources[state.SystemsById[id].Name]
+		src.Requirements = append(src.Requirements, rs...)
 	}
 
 	for id, policies := range state.StackPolicies {
@@ -1317,8 +1317,8 @@ func migrateDependencies(_ *das.Client, state *dasState, output *config.Root) er
 		if err != nil {
 			return err
 		}
-		lc := output.Sources[state.StacksById[id].Name]
-		lc.Requirements = append(lc.Requirements, rs...)
+		src := output.Sources[state.StacksById[id].Name]
+		src.Requirements = append(src.Requirements, rs...)
 	}
 
 	for id, policies := range state.LibraryPolicies {
@@ -1326,8 +1326,8 @@ func migrateDependencies(_ *das.Client, state *dasState, output *config.Root) er
 		if err != nil {
 			return err
 		}
-		lc := output.Sources[id]
-		lc.Requirements = append(lc.Requirements, rs...)
+		src := output.Sources[id]
+		src.Requirements = append(src.Requirements, rs...)
 	}
 
 	return nil
@@ -1380,7 +1380,7 @@ func getRequirementsForPolicies(policies []*das.V1Policy, index *libraryPackageI
 func pruneConfig(root *config.Root) ([]*config.Stack, []*config.Source, []*config.Secret) {
 
 	var removedStacks []*config.Stack
-	var removedLibraries []*config.Source
+	var removedSources []*config.Source
 	var removedSecrets []*config.Secret
 
 	for _, stack := range root.Stacks {
@@ -1414,24 +1414,24 @@ func pruneConfig(root *config.Root) ([]*config.Stack, []*config.Source, []*confi
 		}
 	}
 
-	for _, lib := range root.Sources {
-		for _, r := range lib.Requirements {
+	for _, src := range root.Sources {
+		for _, r := range src.Requirements {
 			if r.Source != nil {
-				g[*r.Source] = append(g[*r.Source], node{name: lib.Name, lib: true})
+				g[*r.Source] = append(g[*r.Source], node{name: src.Name, lib: true})
 			}
 		}
 	}
 
-	for _, lib := range root.Sources {
+	for _, src := range root.Sources {
 		var found bool
-		g.DFS(lib.Name, func(n node) {
+		g.DFS(src.Name, func(n node) {
 			if !n.lib {
 				found = true
 			}
 		})
 		if !found {
-			delete(root.Sources, lib.Name)
-			removedLibraries = append(removedLibraries, lib)
+			delete(root.Sources, src.Name)
+			removedSources = append(removedSources, src)
 		}
 	}
 
@@ -1449,7 +1449,7 @@ func pruneConfig(root *config.Root) ([]*config.Stack, []*config.Source, []*confi
 		}
 	}
 
-	return removedStacks, removedLibraries, removedSecrets
+	return removedStacks, removedSources, removedSecrets
 }
 
 type node struct {
