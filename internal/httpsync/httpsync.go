@@ -75,6 +75,9 @@ func setAuthHeaders(ctx context.Context, credentials *config.SecretRef, req *htt
 		username, _ := value["username"].(string)
 		password, _ := value["password"].(string)
 		req.SetBasicAuth(username, password)
+	case "token":
+		token, _ := value["token"].(string)
+		req.Header.Set("Authorization", "Bearer "+token)
 	default:
 		return fmt.Errorf("unsupported authentication type: %v", value["type"])
 	}
