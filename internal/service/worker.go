@@ -36,6 +36,7 @@ type BundleWorker struct {
 
 type Synchronizer interface {
 	Execute(ctx context.Context) error
+	Close(ctx context.Context)
 }
 
 func NewBundleWorker(b *config.Bundle, sources []*config.Source, stacks []*config.Stack, logger *logging.Logger) *BundleWorker {
@@ -89,20 +90,20 @@ func (w *BundleWorker) Execute(ctx context.Context) time.Time {
 	// If a configuration change was requested, request the worker to be removed from the pool and signal this worker being done.
 
 	if w.configurationChanged() {
-		return w.die()
+		return w.die(ctx)
 	}
 
 	// Wipe any old files synchronized during the previous run to avoid deleted files in database/http from reappearing to bundle bundles.
 	for _, src := range w.sources {
 		if err := src.Wipe(); err != nil {
-			return w.warn("failed to remove a directory for bundle %q: %v", w.bundleConfig.Name, err)
+			return w.warn(ctx, "failed to remove a directory for bundle %q: %v", w.bundleConfig.Name, err)
 		}
 	}
 
 	for _, synchronizer := range w.synchronizers {
 		err := synchronizer.Execute(ctx)
 		if err != nil {
-			return w.warn("failed to synchronize bundle %q: %v", w.bundleConfig.Name, err)
+			return w.warn(ctx, "failed to synchronize bundle %q: %v", w.bundleConfig.Name, err)
 		}
 	}
 
@@ -115,35 +116,35 @@ func (w *BundleWorker) Execute(ctx context.Context) time.Time {
 
 	err := b.Build(ctx)
 	if err != nil {
-		return w.warn("failed to build a bundle %q: %v", w.bundleConfig.Name, err)
+		return w.warn(ctx, "failed to build a bundle %q: %v", w.bundleConfig.Name, err)
 	}
 
 	if w.storage != nil {
 		if err := w.storage.Upload(ctx, bytes.NewReader(buffer.Bytes())); err != nil {
-			return w.warn("failed to upload bundle %q: %v", w.bundleConfig.Name, err)
+			return w.warn(ctx, "failed to upload bundle %q: %v", w.bundleConfig.Name, err)
 		}
 
-		return w.success("Bundle %q built and uploaded.", w.bundleConfig.Name)
+		return w.success(ctx, "Bundle %q built and uploaded.", w.bundleConfig.Name)
 	}
 
-	return w.success("Bundle %q built.", w.bundleConfig.Name)
+	return w.success(ctx, "Bundle %q built.", w.bundleConfig.Name)
 }
 
-func (w *BundleWorker) success(msg string, args ...interface{}) time.Time {
+func (w *BundleWorker) success(ctx context.Context, msg string, args ...interface{}) time.Time {
 	w.log.Debugf(msg, args...)
 
 	if w.singleShot {
-		return w.die()
+		return w.die(ctx)
 	}
 
 	return time.Now().Add(successDelay)
 }
 
-func (w *BundleWorker) warn(msg string, args ...interface{}) time.Time {
+func (w *BundleWorker) warn(ctx context.Context, msg string, args ...interface{}) time.Time {
 	w.log.Warnf(msg, args...)
 
 	if w.singleShot {
-		return w.die()
+		return w.die(ctx)
 	}
 
 	return time.Now().Add(errorDelay)
@@ -166,7 +167,11 @@ func (w *BundleWorker) configurationChanged() bool {
 	}
 }
 
-func (w *BundleWorker) die() time.Time {
+func (w *BundleWorker) die(ctx context.Context) time.Time {
+	for _, synchronizer := range w.synchronizers {
+		synchronizer.Close(ctx)
+	}
+
 	close(w.done)
 
 	var zero time.Time

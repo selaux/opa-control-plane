@@ -55,6 +55,10 @@ func (s *HttpDataSynchronizer) Execute(ctx context.Context) error {
 	return err
 }
 
+func (s *HttpDataSynchronizer) Close(ctx context.Context) {
+	// No resources to close for HTTP synchronizer
+}
+
 func setAuthHeaders(ctx context.Context, credentials *config.SecretRef, req *http.Request) error {
 	if credentials == nil {
 		return nil

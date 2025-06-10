@@ -37,3 +37,7 @@ func (s *BuiltinSynchronizer) Execute(ctx context.Context) error {
 		return os.WriteFile(filepath.Join(s.path, dstFilename), bs, 0644)
 	})
 }
+
+func (s *BuiltinSynchronizer) Close(ctx context.Context) {
+	// No resources to close.
+}

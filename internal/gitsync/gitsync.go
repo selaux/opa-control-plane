@@ -106,6 +106,10 @@ func (s *Synchronizer) Execute(ctx context.Context) error {
 	return w.Checkout(checkoutOpts)
 }
 
+func (s *Synchronizer) Close(ctx context.Context) {
+	// No resources to close.
+}
+
 func (s *Synchronizer) auth(ctx context.Context) (transport.AuthMethod, error) {
 
 	if s.config.Credentials == nil {
