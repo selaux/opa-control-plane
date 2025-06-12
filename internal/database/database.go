@@ -151,6 +151,7 @@ func (d *Database) InitDB(ctx context.Context, persistenceDir string) error {
 			type TEXT NOT NULL,
 			path TEXT NOT NULL,
 			config TEXT NOT NULL,
+			transform_query TEXT NOT NULL,
 			PRIMARY KEY (source_id, name),
 			FOREIGN KEY (source_id) REFERENCES sources(id)
 		);`,
@@ -442,7 +443,8 @@ WHERE (sources_secrets.ref_type = 'git_credentials' AND secrets.value IS NOT NUL
 		sources_datasources.source_id,
 		sources_datasources.path,
 		sources_datasources.type,
-		sources_datasources.config
+		sources_datasources.config,
+		sources_datasources.transform_query
 	FROM
 		sources_datasources
 	`)
@@ -453,15 +455,16 @@ WHERE (sources_secrets.ref_type = 'git_credentials' AND secrets.value IS NOT NUL
 	defer rows2.Close()
 
 	for rows2.Next() {
-		var name, source_id, path, type_, configuration string
-		if err := rows2.Scan(&name, &source_id, &path, &type_, &configuration); err != nil {
+		var name, source_id, path, type_, configuration, transformQuery string
+		if err := rows2.Scan(&name, &source_id, &path, &type_, &configuration, &transformQuery); err != nil {
 			return nil, err
 		}
 
 		datasource := config.Datasource{
-			Name: name,
-			Type: type_,
-			Path: path,
+			Name:           name,
+			Type:           type_,
+			Path:           path,
+			TransformQuery: transformQuery,
 		}
 
 		if err := json.Unmarshal([]byte(configuration), &datasource.Config); err != nil {
@@ -659,8 +662,8 @@ func (d *Database) loadSources(root *config.Root) error {
 			if err != nil {
 				return err
 			}
-			if _, err := d.db.Exec(`INSERT OR REPLACE INTO sources_datasources (name, source_id, type, path, config) VALUES (?, ?, ?, ?, ?)`,
-				datasource.Name, src.Name, datasource.Type, datasource.Path, string(bs)); err != nil {
+			if _, err := d.db.Exec(`INSERT OR REPLACE INTO sources_datasources (name, source_id, type, path, config, transform_query) VALUES (?, ?, ?, ?, ?, ?)`,
+				datasource.Name, src.Name, datasource.Type, datasource.Path, string(bs), datasource.TransformQuery); err != nil {
 				return err
 			}
 		}

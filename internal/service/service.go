@@ -265,6 +265,13 @@ func (src *source) SyncDatasources(syncs *[]Synchronizer, datasources []config.D
 			credentials := datasource.Credentials
 			*syncs = append(*syncs, httpsync.New(path.Join(dir, datasource.Path, "data.json"), url, credentials))
 		}
+
+		if datasource.TransformQuery != "" {
+			src.Transforms = append(src.Transforms, builder.Transform{
+				Query: datasource.TransformQuery,
+				Path:  path.Join(dir, datasource.Path, "data.json"),
+			})
+		}
 	}
 	if len(datasources) > 0 {
 		src.addDir(dir, true, nil)

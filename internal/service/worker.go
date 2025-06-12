@@ -107,6 +107,12 @@ func (w *BundleWorker) Execute(ctx context.Context) time.Time {
 		}
 	}
 
+	for _, src := range w.sources {
+		if err := src.Transform(ctx); err != nil {
+			return w.warn(ctx, "failed to evaluate source %q for bundle %q: %v", src.Name, w.bundleConfig.Name, err)
+		}
+	}
+
 	buffer := bytes.NewBuffer(nil)
 
 	b := builder.New().

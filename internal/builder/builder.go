@@ -2,6 +2,7 @@ package builder
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"io/fs"
@@ -13,6 +14,7 @@ import (
 	"github.com/open-policy-agent/opa/ast"
 	"github.com/open-policy-agent/opa/bundle"
 	"github.com/open-policy-agent/opa/compile"
+	"github.com/open-policy-agent/opa/rego"
 	"github.com/tsandall/lighthouse/internal/config"
 	"github.com/tsandall/lighthouse/internal/util"
 	"github.com/yalue/merged_fs"
@@ -22,6 +24,12 @@ type Source struct {
 	Name         string
 	Dirs         []Dir
 	Requirements []config.Requirement
+	Transforms   []Transform
+}
+
+type Transform struct {
+	Query string
+	Path  string
 }
 
 func NewSource(name string) *Source {
@@ -38,6 +46,64 @@ func (s *Source) Wipe() error {
 			}
 		}
 	}
+	return nil
+}
+
+// Transform applies Rego policies to data, replacing the original content with the
+// transformed content.
+func (s *Source) Transform(ctx context.Context) error {
+	paths := make([]string, len(s.Dirs))
+	for i, dir := range s.Dirs {
+		paths[i] = dir.Path
+	}
+
+	for _, t := range s.Transforms {
+		content, err := os.ReadFile(t.Path)
+		if err != nil {
+			return err
+		}
+
+		var input any
+		err = json.Unmarshal(content, &input)
+		if err != nil {
+			return fmt.Errorf("failed to unmarshal content: %w", err)
+		}
+
+		q, err := rego.New(
+			rego.Query(t.Query),
+			rego.Load(paths, nil),
+		).PrepareForEval(ctx)
+		if err != nil {
+			return err
+		}
+
+		rs, err := q.Eval(ctx, rego.EvalInput(input))
+		if err != nil {
+			return err
+		}
+
+		value := make([]any, 0)
+		for _, result := range rs {
+			for _, expr := range result.Expressions {
+				if expr.Text == t.Query {
+					value = append(value, expr.Value)
+				}
+			}
+		}
+
+		if len(value) == 1 {
+			content, err = json.Marshal(value[0])
+		} else {
+			content, err = json.Marshal(value)
+		}
+
+		if err != nil {
+			return err
+		}
+
+		return os.WriteFile(t.Path, content, 0644)
+	}
+
 	return nil
 }
 

@@ -734,11 +734,12 @@ func (a *AzureBlobStorage) Equal(other *AzureBlobStorage) bool {
 }
 
 type Datasource struct {
-	Name        string                 `json:"name" yaml:"name"`
-	Path        string                 `json:"path" yaml:"path"`
-	Type        string                 `json:"type" yaml:"type"`
-	Config      map[string]interface{} `json:"config,omitempty" yaml:"config,omitempty"`
-	Credentials *SecretRef             `json:"credentials,omitempty" yaml:"credentials,omitempty"`
+	Name           string                 `json:"name" yaml:"name"`
+	Path           string                 `json:"path" yaml:"path"`
+	Type           string                 `json:"type" yaml:"type"`
+	TransformQuery string                 `json:"transform_query,omitempty" yaml:"transform_query,omitempty"`
+	Config         map[string]interface{} `json:"config,omitempty" yaml:"config,omitempty"`
+	Credentials    *SecretRef             `json:"credentials,omitempty" yaml:"credentials,omitempty"`
 }
 
 func (d *Datasource) Equal(other *Datasource) bool {
@@ -762,6 +763,10 @@ func (d *Datasource) Equal(other *Datasource) bool {
 		if ov, ok := other.Config[k]; !ok || !reflect.DeepEqual(v, ov) {
 			return false
 		}
+	}
+
+	if d.TransformQuery != other.TransformQuery {
+		return false
 	}
 
 	return d.Credentials.Equal(other.Credentials)
