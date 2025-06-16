@@ -30,6 +30,7 @@ func TestBuilder(t *testing.T) {
 		sources  []sourceMock
 		excluded []string
 		exp      map[string]string
+		expRoots []string
 		expError error
 	}{
 		{
@@ -50,6 +51,7 @@ func TestBuilder(t *testing.T) {
 				p := 7`,
 				"/data.json": `{"x":{"y":{"A":7}}}`,
 			},
+			expRoots: []string{"x"},
 		},
 		{
 			note: "multiple requirements",
@@ -98,6 +100,7 @@ func TestBuilder(t *testing.T) {
 				import rego.v1
 				r if input.x > 7`,
 			},
+			expRoots: []string{"x", "lib1", "lib2"},
 		},
 		{
 			note: "package conflict: same",
@@ -272,6 +275,7 @@ func TestBuilder(t *testing.T) {
 				"/lib2.rego": `package z
 				r := 7`,
 			},
+			expRoots: []string{"x", "y", "z"},
 		},
 		{
 			note: "included files (source level)",
@@ -297,6 +301,7 @@ func TestBuilder(t *testing.T) {
 				"/x/x.rego": "package x\np := 7",
 				"/z/z.rego": "package z\nq := 10",
 			},
+			expRoots: []string{"x", "z"},
 		},
 		{
 			note:     "excluded files apply to roots",
@@ -319,6 +324,18 @@ func TestBuilder(t *testing.T) {
 				"/x.rego":       "package x\np { data.lib.y.q }",
 				"/lib/y/y.rego": "package lib.y\nq := true",
 			},
+			expRoots: []string{"x", "lib/y"},
+		},
+		{
+			note: "roots inferred from directory structure for data files",
+			sources: []sourceMock{
+				{
+					name:  "system",
+					files: map[string]string{"foo/bar/data.json": `{"A": 7}`},
+				},
+			},
+			exp:      map[string]string{"/data.json": `{"foo":{"bar":{"A":7}}}`},
+			expRoots: []string{"foo/bar"},
 		},
 	}
 

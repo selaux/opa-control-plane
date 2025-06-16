@@ -216,14 +216,12 @@ func (b *Builder) Build(ctx context.Context) error {
 	}
 
 	var fses []fs.FS
-	var includes []string
 	for _, srcDir := range toBuild {
 		fs, err := util.NewFilterFS(os.DirFS(srcDir.Path), srcDir.IncludedFiles, nil)
 		if err != nil {
 			return err
 		}
 		fses = append(fses, fs)
-		includes = append(includes, srcDir.IncludedFiles...)
 	}
 
 	fs, err := util.NewFilterFS(merged_fs.MergeMultiple(fses...), nil, b.excluded)
@@ -239,6 +237,17 @@ func (b *Builder) Build(ctx context.Context) error {
 	}
 
 	result := c.Bundle()
+
+	var roots []string
+	result.Manifest.Roots = &roots
+
+	for _, root := range existingRoots {
+		r, err := root.Ptr()
+		if err != nil {
+			return err
+		}
+		result.Manifest.AddRoot(r)
+	}
 	result.Manifest.SetRegoVersion(ast.RegoV0)
 	return bundle.Write(b.output, *result)
 }
