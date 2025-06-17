@@ -101,7 +101,10 @@ func (s *Source) Transform(ctx context.Context) error {
 			return err
 		}
 
-		return os.WriteFile(t.Path, content, 0644)
+		err = os.WriteFile(t.Path, content, 0644)
+		if err != nil {
+			return err
+		}
 	}
 
 	return nil
