@@ -152,7 +152,7 @@ type Bundle struct {
 	Labels        Labels        `json:"labels,omitempty" yaml:"labels,omitempty"`
 	ObjectStorage ObjectStorage `json:"object_storage,omitempty" yaml:"object_storage,omitempty"`
 	Requirements  Requirements  `json:"requirements,omitempty" yaml:"requirements,omitempty"`
-	ExcludedFiles []string      `json:"excluded_files,omitempty" yaml:"excluded_files,omitempty"`
+	ExcludedFiles StringSet     `json:"excluded_files,omitempty" yaml:"excluded_files,omitempty"`
 }
 
 type Labels map[string]string
@@ -280,7 +280,7 @@ func (s *Bundle) Equal(other *Bundle) bool {
 	return s.Name == other.Name &&
 		s.ObjectStorage.Equal(&other.ObjectStorage) &&
 		s.Requirements.Equal(other.Requirements) &&
-		equalStringSets(s.ExcludedFiles, other.ExcludedFiles)
+		s.ExcludedFiles.Equal(other.ExcludedFiles)
 }
 
 // Source defines the configuration for a Lighthouse Source.
@@ -410,7 +410,7 @@ func (a Stacks) Equal(b Stacks) bool {
 }
 
 type Selector struct {
-	s map[string][]string
+	s map[string]StringSet
 	m map[string][]glob.Glob // Pre-compiled glob patterns for faster matching
 }
 
@@ -453,7 +453,7 @@ func (s Selector) Equal(other Selector) bool {
 		return false
 	}
 	for k := range s.s {
-		if !equalStringSets(s.s[k], other.s[k]) {
+		if !s.s[k].Equal(other.s[k]) {
 			return false
 		}
 	}
@@ -492,7 +492,7 @@ func (s *Selector) UnmarshalJSON(bs []byte) error {
 }
 
 func (s *Selector) unmarshal(raw map[string][]string) error {
-	*s = Selector{s: make(map[string][]string), m: make(map[string][]glob.Glob)}
+	*s = Selector{s: make(map[string]StringSet), m: make(map[string][]glob.Glob)}
 	for key, encodedValue := range raw {
 		if err := s.Set(key, encodedValue); err != nil {
 			return err
@@ -512,7 +512,7 @@ func (s *Selector) Get(key string) ([]string, bool) {
 
 func (s *Selector) Set(key string, value []string) error {
 	if s.s == nil {
-		s.s = make(map[string][]string)
+		s.s = make(map[string]StringSet)
 		s.m = make(map[string][]glob.Glob)
 	}
 
@@ -536,7 +536,9 @@ func (s *Selector) Len() int {
 	return len(s.s)
 }
 
-func equalStringSets(a, b []string) bool {
+type StringSet []string
+
+func (a StringSet) Equal(b StringSet) bool {
 	sa := make(map[string]struct{})
 	for i := range a {
 		sa[a[i]] = struct{}{}
@@ -554,7 +556,7 @@ type Git struct {
 	Reference     *string    `json:"reference,omitempty" yaml:"reference,omitempty"`
 	Commit        *string    `json:"commit,omitempty" yaml:"commit,omitempty"`
 	Path          *string    `json:"path,omitempty" yaml:"path,omitempty"`
-	IncludedFiles []string   `json:"included_files,omitempty" yaml:"included_files,omitempty"`
+	IncludedFiles StringSet  `json:"included_files,omitempty" yaml:"included_files,omitempty"`
 	Credentials   *SecretRef `json:"credentials,omitempty" yaml:"credentials,omitempty"` // Schema validation overrides this to string type.
 }
 
@@ -567,7 +569,7 @@ func (g *Git) Equal(other *Git) bool {
 		return false
 	}
 
-	return stringEqual(g.Reference, other.Reference) && stringEqual(g.Commit, other.Commit) && stringEqual(g.Path, other.Path) && g.Credentials.Equal(other.Credentials) && equalStringSets(g.IncludedFiles, other.IncludedFiles)
+	return stringEqual(g.Reference, other.Reference) && stringEqual(g.Commit, other.Commit) && stringEqual(g.Path, other.Path) && g.Credentials.Equal(other.Credentials) && g.IncludedFiles.Equal(other.IncludedFiles)
 }
 
 type SecretRef struct {
