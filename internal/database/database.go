@@ -11,7 +11,6 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
-	"sort"
 
 	"github.com/aws/aws-sdk-go-v2/feature/rds/auth"
 	_ "github.com/go-sql-driver/mysql"
@@ -571,16 +570,7 @@ func (c *DataCursor) Value() (Data, error) {
 }
 
 func (d *Database) loadBundles(root *config.Root) error {
-
-	var names []string
-	for _, b := range root.Bundles {
-		names = append(names, b.Name)
-	}
-
-	sort.Strings(names)
-
-	for _, name := range names {
-		b := root.Bundles[name]
+	for _, b := range root.SortedBundles() {
 		var s3url, s3region, s3bucket, s3key *string
 		if b.ObjectStorage.AmazonS3 != nil {
 			s3url = &b.ObjectStorage.AmazonS3.URL
@@ -613,7 +603,7 @@ func (d *Database) loadBundles(root *config.Root) error {
 		for _, src := range b.Requirements {
 			if src.Source != nil {
 				// TODO: add support for mounts on requirements; currently that is only used internally for stacks.
-				if _, err := d.db.Exec(`INSERT OR REPLACE INTO bundles_requirements (bundle_id, source_id) VALUES (?, ?)`, name, src.Source); err != nil {
+				if _, err := d.db.Exec(`INSERT OR REPLACE INTO bundles_requirements (bundle_id, source_id) VALUES (?, ?)`, b.Name, src.Source); err != nil {
 					return err
 				}
 			}
@@ -624,17 +614,7 @@ func (d *Database) loadBundles(root *config.Root) error {
 }
 
 func (d *Database) loadSources(root *config.Root) error {
-
-	var names []string
-	for _, s := range root.Sources {
-		names = append(names, s.Name)
-	}
-
-	sort.Strings(names)
-
-	for _, name := range names {
-		src := root.Sources[name]
-
+	for _, src := range root.SortedSources() {
 		includedFiles, err := json.Marshal(src.Git.IncludedFiles)
 		if err != nil {
 			return err
@@ -660,14 +640,14 @@ func (d *Database) loadSources(root *config.Root) error {
 		}
 
 		for path, data := range src.Files() {
-			if _, err := d.db.Exec(`INSERT OR REPLACE INTO sources_data (source_id, path, data) VALUES (?, ?, ?)`, name, path, data); err != nil {
+			if _, err := d.db.Exec(`INSERT OR REPLACE INTO sources_data (source_id, path, data) VALUES (?, ?, ?)`, src.Name, path, data); err != nil {
 				return err
 			}
 		}
 
 		for _, r := range src.Requirements {
 			if r.Source != nil {
-				if _, err := d.db.Exec(`INSERT OR REPLACE INTO sources_requirements (source_id, requirement_id) VALUES (?, ?)`, name, r.Source); err != nil {
+				if _, err := d.db.Exec(`INSERT OR REPLACE INTO sources_requirements (source_id, requirement_id) VALUES (?, ?)`, src.Name, r.Source); err != nil {
 					return err
 				}
 			}
@@ -678,16 +658,7 @@ func (d *Database) loadSources(root *config.Root) error {
 }
 
 func (d *Database) loadSecrets(root *config.Root) error {
-
-	var names []string
-	for _, secret := range root.Secrets {
-		names = append(names, secret.Name)
-	}
-
-	sort.Strings(names)
-
-	for _, name := range names {
-		secret := root.Secrets[name]
+	for _, secret := range root.SortedSecrets() {
 		if len(secret.Value) > 0 {
 			bs, err := json.Marshal(secret.Value)
 			if err != nil {
@@ -707,29 +678,20 @@ func (d *Database) loadSecrets(root *config.Root) error {
 }
 
 func (d *Database) loadStacks(root *config.Root) error {
-	var names []string
-	for _, stack := range root.Stacks {
-		names = append(names, stack.Name)
-	}
-
-	sort.Strings(names)
-
-	for _, name := range names {
-		stack := root.Stacks[name]
-
+	for _, stack := range root.SortedStacks() {
 		bs, err := json.Marshal(stack.Selector)
 		if err != nil {
-			return fmt.Errorf("failed to marshal selector for stack %q: %w", name, err)
+			return fmt.Errorf("failed to marshal selector for stack %q: %w", stack.Name, err)
 		}
 
 		if _, err := d.db.Exec(`INSERT OR REPLACE INTO stacks (id, selector) VALUES (?, ?)`, stack.Name, string(bs)); err != nil {
-			return fmt.Errorf("failed to insert stack %q: %w", name, err)
+			return fmt.Errorf("failed to insert stack %q: %w", stack.Name, err)
 		}
 
 		for _, r := range stack.Requirements {
 			if r.Source != nil {
 				// TODO: add support for mounts on requirements; currently that is only used internally for stacks.
-				if _, err := d.db.Exec(`INSERT OR REPLACE INTO stacks_requirements (stack_id, source_id) VALUES (?, ?)`, name, r.Source); err != nil {
+				if _, err := d.db.Exec(`INSERT OR REPLACE INTO stacks_requirements (stack_id, source_id) VALUES (?, ?)`, stack.Name, r.Source); err != nil {
 					return err
 				}
 			}

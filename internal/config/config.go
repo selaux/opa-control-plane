@@ -7,9 +7,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"iter"
 	"maps"
 	"os"
 	"reflect"
+	"sort"
 
 	"github.com/gobwas/glob"
 	"github.com/swaggest/jsonschema-go"
@@ -95,6 +97,39 @@ func (r *Root) unmarshal(raw *Root) error {
 	}
 
 	return nil
+}
+
+func (r *Root) SortedBundles() iter.Seq2[int, *Bundle] {
+	return iterator(r.Bundles, func(b *Bundle) string { return b.Name })
+}
+
+func (r *Root) SortedSecrets() iter.Seq2[int, *Secret] {
+	return iterator(r.Secrets, func(s *Secret) string { return s.Name })
+}
+
+func (r *Root) SortedSources() iter.Seq2[int, *Source] {
+	return iterator(r.Sources, func(s *Source) string { return s.Name })
+}
+
+func (r *Root) SortedStacks() iter.Seq2[int, *Stack] {
+	return iterator(r.Stacks, func(s *Stack) string { return s.Name })
+}
+
+func iterator[V any](m map[string]V, name func(v V) string) func(yield func(int, V) bool) {
+	var names []string
+	for _, v := range m {
+		names = append(names, name(v))
+	}
+
+	sort.Strings(names)
+
+	return func(yield func(int, V) bool) {
+		for i, name := range names {
+			if !yield(i, m[name]) {
+				return
+			}
+		}
+	}
 }
 
 func (r *Root) Validate() error {
