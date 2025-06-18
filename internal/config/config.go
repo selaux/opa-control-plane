@@ -168,15 +168,7 @@ func (a Requirement) Equal(b Requirement) bool {
 type Files map[string]string
 
 func (f Files) Equal(other Files) bool {
-	if len(f) != len(other) {
-		return false
-	}
-	for k := range other {
-		if other[k] != f[k] {
-			return false
-		}
-	}
-	return true
+	return maps.Equal(f, other)
 }
 
 func (f Files) MarshalYAML() (interface{}, error) {
@@ -491,15 +483,7 @@ func equalStringSets(a, b []string) bool {
 	for i := range b {
 		sb[b[i]] = struct{}{}
 	}
-	if len(sa) != len(sb) {
-		return false
-	}
-	for k := range sa {
-		if _, ok := sb[k]; !ok {
-			return false
-		}
-	}
-	return true
+	return maps.Equal(sa, sb)
 }
 
 // Git defines the Git synchronization configuration used by Lighthouse Sources.
