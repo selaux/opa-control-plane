@@ -11,6 +11,7 @@ import (
 	"maps"
 	"os"
 	"reflect"
+	"slices"
 	"sort"
 
 	"github.com/gobwas/glob"
@@ -162,21 +163,13 @@ type Requirement struct {
 }
 
 func (a Requirement) Equal(b Requirement) bool {
-	return stringEqual(a.Source, b.Source)
+	return stringPtrEqual(a.Source, b.Source)
 }
 
 type Requirements []Requirement
 
 func (a Requirements) Equal(b Requirements) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for k := range a {
-		if !a[k].Equal(b[k]) {
-			return false
-		}
-	}
-	return true
+	return slices.EqualFunc(a, b, func(a, b Requirement) bool { return a.Equal(b) })
 }
 
 type Files map[string]string
@@ -269,18 +262,12 @@ func (s *Bundle) validate() error {
 }
 
 func (s *Bundle) Equal(other *Bundle) bool {
-	if s == other {
-		return true
-	}
-
-	if s == nil || other == nil {
-		return false
-	}
-
-	return s.Name == other.Name &&
-		s.ObjectStorage.Equal(&other.ObjectStorage) &&
-		s.Requirements.Equal(other.Requirements) &&
-		s.ExcludedFiles.Equal(other.ExcludedFiles)
+	return fastEqual(s, other, func() bool {
+		return s.Name == other.Name &&
+			s.ObjectStorage.Equal(&other.ObjectStorage) &&
+			s.Requirements.Equal(other.Requirements) &&
+			s.ExcludedFiles.Equal(other.ExcludedFiles)
+	})
 }
 
 // Source defines the configuration for a Lighthouse Source.
@@ -294,20 +281,14 @@ type Source struct {
 }
 
 func (s *Source) Equal(other *Source) bool {
-	if s == other {
-		return true
-	}
-
-	if s == nil || other == nil {
-		return false
-	}
-
-	return s.Name == other.Name &&
-		stringEqual(s.Builtin, other.Builtin) &&
-		s.Git.Equal(&other.Git) &&
-		s.Datasources.Equal(other.Datasources) &&
-		s.EmbeddedFiles.Equal(other.EmbeddedFiles) &&
-		s.Requirements.Equal(other.Requirements)
+	return fastEqual(s, other, func() bool {
+		return s.Name == other.Name &&
+			stringPtrEqual(s.Builtin, other.Builtin) &&
+			s.Git.Equal(&other.Git) &&
+			s.Datasources.Equal(other.Datasources) &&
+			s.EmbeddedFiles.Equal(other.EmbeddedFiles) &&
+			s.Requirements.Equal(other.Requirements)
+	})
 }
 
 func (s *Source) Requirement() Requirement {
@@ -335,7 +316,7 @@ func (s *Source) SetEmbeddedFiles(files map[string]string) {
 type Sources []*Source
 
 func (a Sources) Equal(b Sources) bool {
-	return equal(a, b, func(s *Source) string { return s.Name }, func(a, b *Source) bool { return a.Equal(b) })
+	return setEqual(a, b, func(s *Source) string { return s.Name }, func(a, b *Source) bool { return a.Equal(b) })
 }
 
 // Stack defines the configuration for a Lighthouse Stack.
@@ -346,19 +327,15 @@ type Stack struct {
 }
 
 func (a *Stack) Equal(other *Stack) bool {
-	if a == other {
-		return true
-	}
-	if a == nil || other == nil {
-		return false
-	}
-	return a.Name == other.Name && a.Selector.Equal(other.Selector) && a.Requirements.Equal(other.Requirements)
+	return fastEqual(a, other, func() bool {
+		return a.Name == other.Name && a.Selector.Equal(other.Selector) && a.Requirements.Equal(other.Requirements)
+	})
 }
 
 type Stacks []*Stack
 
 func (a Stacks) Equal(b Stacks) bool {
-	return equal(a, b, func(s *Stack) string { return s.Name }, func(a, b *Stack) bool { return a.Equal(b) })
+	return setEqual(a, b, func(s *Stack) string { return s.Name }, func(a, b *Stack) bool { return a.Equal(b) })
 }
 
 type Selector struct {
@@ -483,7 +460,7 @@ func (s *Selector) Len() int {
 type StringSet []string
 
 func (a StringSet) Equal(b StringSet) bool {
-	return equal(a, b, func(s string) string { return s }, func(a, b string) bool { return a == b })
+	return setEqual(a, b, func(s string) string { return s }, func(a, b string) bool { return a == b })
 }
 
 // Git defines the Git synchronization configuration used by Lighthouse Sources.
@@ -497,15 +474,13 @@ type Git struct {
 }
 
 func (g *Git) Equal(other *Git) bool {
-	if g == other {
-		return true
-	}
-
-	if g == nil || other == nil {
-		return false
-	}
-
-	return stringEqual(g.Reference, other.Reference) && stringEqual(g.Commit, other.Commit) && stringEqual(g.Path, other.Path) && g.Credentials.Equal(other.Credentials) && g.IncludedFiles.Equal(other.IncludedFiles)
+	return fastEqual(g, other, func() bool {
+		return stringPtrEqual(g.Reference, other.Reference) &&
+			stringPtrEqual(g.Commit, other.Commit) &&
+			stringPtrEqual(g.Path, other.Path) &&
+			g.Credentials.Equal(other.Credentials) &&
+			g.IncludedFiles.Equal(other.IncludedFiles)
+	})
 }
 
 type SecretRef struct {
@@ -558,19 +533,13 @@ func (s *SecretRef) UnmarshalJSON(bs []byte) error {
 }
 
 func (s *SecretRef) Equal(other *SecretRef) bool {
-	if s == other {
-		return true
-	}
+	return fastEqual(s, other, func() bool {
+		return s.Name == other.Name && s.value.Equal(other.value)
+	})
+}
 
-	if s == nil || other == nil {
-		return false
-	}
-
-	if s.Name != other.Name {
-		return false
-	}
-
-	return s.value.Equal(other.value)
+func (s *SecretRef) slowEqual(other *SecretRef) bool {
+	return s.Name == other.Name && s.value.Equal(other.value)
 }
 
 // Secret defines the configuration for secrets/tokens used by Lighthouse
@@ -618,15 +587,9 @@ func (s *Secret) UnmarshalJSON(bs []byte) error {
 }
 
 func (s *Secret) Equal(other *Secret) bool {
-	if s == other {
-		return true
-	}
-
-	if s == nil || other == nil {
-		return false
-	}
-
-	return s.Name == other.Name && reflect.DeepEqual(s.Value, other.Value)
+	return fastEqual(s, other, func() bool {
+		return s.Name == other.Name && reflect.DeepEqual(s.Value, other.Value)
+	})
 }
 
 // Get retrieves the values from any external source as necessary.
@@ -677,15 +640,9 @@ type ObjectStorage struct {
 }
 
 func (o *ObjectStorage) Equal(other *ObjectStorage) bool {
-	if o == other {
-		return true
-	}
-
-	if o == nil || other == nil {
-		return false
-	}
-
-	return o.AmazonS3.Equal(other.AmazonS3) && o.GCPCloudStorage.Equal(other.GCPCloudStorage) && o.AzureBlobStorage.Equal(other.AzureBlobStorage)
+	return fastEqual(o, other, func() bool {
+		return o.AmazonS3.Equal(other.AmazonS3) && o.GCPCloudStorage.Equal(other.GCPCloudStorage) && o.AzureBlobStorage.Equal(other.AzureBlobStorage)
+	})
 }
 
 // AmazonS3 defines the configuration for an Amazon S3-compatible object storage.
@@ -714,39 +671,21 @@ type AzureBlobStorage struct {
 }
 
 func (a *AmazonS3) Equal(other *AmazonS3) bool {
-	if a == other {
-		return true
-	}
-
-	if a == nil || other == nil {
-		return false
-	}
-
-	return a.Bucket == other.Bucket && a.Key == other.Key && a.Region == other.Region && a.Credentials.Equal(other.Credentials) && a.URL == other.URL
+	return fastEqual(a, other, func() bool {
+		return a.Bucket == other.Bucket && a.Key == other.Key && a.Region == other.Region && a.Credentials.Equal(other.Credentials) && a.URL == other.URL
+	})
 }
 
 func (g *GCPCloudStorage) Equal(other *GCPCloudStorage) bool {
-	if g == other {
-		return true
-	}
-
-	if g == nil || other == nil {
-		return false
-	}
-
-	return g.Project == other.Project && g.Bucket == other.Bucket && g.Object == other.Object
+	return fastEqual(g, other, func() bool {
+		return g.Project == other.Project && g.Bucket == other.Bucket && g.Object == other.Object
+	})
 }
 
 func (a *AzureBlobStorage) Equal(other *AzureBlobStorage) bool {
-	if a == other {
-		return true
-	}
-
-	if a == nil || other == nil {
-		return false
-	}
-
-	return a.AccountURL == other.AccountURL && a.Container == other.Container && a.Path == other.Path
+	return fastEqual(a, other, func() bool {
+		return a.AccountURL == other.AccountURL && a.Container == other.Container && a.Path == other.Path
+	})
 }
 
 type Datasource struct {
@@ -759,39 +698,20 @@ type Datasource struct {
 }
 
 func (d *Datasource) Equal(other *Datasource) bool {
-	if d == other {
-		return true
-	}
-
-	if d == nil || other == nil {
-		return false
-	}
-
-	if d.Name != other.Name || d.Path != other.Path || d.Type != other.Type {
-		return false
-	}
-
-	if len(d.Config) != len(other.Config) {
-		return false
-	}
-
-	for k, v := range d.Config {
-		if ov, ok := other.Config[k]; !ok || !reflect.DeepEqual(v, ov) {
-			return false
-		}
-	}
-
-	if d.TransformQuery != other.TransformQuery {
-		return false
-	}
-
-	return d.Credentials.Equal(other.Credentials)
+	return fastEqual(d, other, func() bool {
+		return d.Name == other.Name &&
+			d.Path == other.Path &&
+			d.Type == other.Type &&
+			d.TransformQuery == other.TransformQuery &&
+			reflect.DeepEqual(d.Config, other.Config) &&
+			d.Credentials.Equal(other.Credentials)
+	})
 }
 
 type Datasources []Datasource
 
 func (a Datasources) Equal(b Datasources) bool {
-	return equal(a, b, func(ds Datasource) string { return ds.Name }, func(a, b Datasource) bool { return a.Equal(&b) })
+	return setEqual(a, b, func(ds Datasource) string { return ds.Name }, func(a, b Datasource) bool { return a.Equal(&b) })
 }
 
 type Database struct {
@@ -813,21 +733,25 @@ type AmazonRDS struct {
 	Credentials  *SecretRef `json:"credentials,omitempty" yaml:"credentials,omitempty"`
 }
 
-func equal[V any](a, b []V, name func(V) string, eq func(a, b V) bool) bool {
-	m := make(map[string]V, len(a))
+func setEqual[K comparable, V any](a, b []V, key func(V) K, eq func(a, b V) bool) bool {
+	m := make(map[K]V, len(a))
 	for _, v := range a {
-		m[name(v)] = v
+		m[key(v)] = v
 	}
 
-	n := make(map[string]V, len(b))
+	n := make(map[K]V, len(b))
 	for _, v := range b {
-		n[name(v)] = v
+		n[key(v)] = v
 	}
 
 	return maps.EqualFunc(m, n, eq)
 }
 
-func stringEqual(a, b *string) bool {
+func stringPtrEqual(a, b *string) bool {
+	return fastEqual(a, b, func() bool { return *a == *b })
+}
+
+func fastEqual[V any](a, b *V, slowEqual func() bool) bool {
 	if a == b {
 		return true
 	}
@@ -836,5 +760,5 @@ func stringEqual(a, b *string) bool {
 		return false
 	}
 
-	return *a == *b
+	return slowEqual()
 }

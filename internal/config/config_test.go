@@ -66,7 +66,8 @@ func TestFilesMarshallingRoundtrip(t *testing.T) {
 			foo: {
 				files: {
 					"foo.rego": "cGFja2FnZSBmb28=",
-				},			}
+				},
+			}
 		},
 		stacks: {
 			bar: {
