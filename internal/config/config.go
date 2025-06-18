@@ -335,31 +335,7 @@ func (s *Source) SetEmbeddedFiles(files map[string]string) {
 type Sources []*Source
 
 func (a Sources) Equal(b Sources) bool {
-	m := make(map[string]*Source, len(a))
-	for _, src := range a {
-		m[src.Name] = src
-	}
-
-	n := make(map[string]*Source, len(b))
-	for _, src := range b {
-		n[src.Name] = src
-	}
-
-	if len(m) != len(n) {
-		return false
-	}
-
-	for id, a := range m {
-		b, ok := n[id]
-		if !ok {
-			return false
-		}
-		if !a.Equal(b) {
-			return false
-		}
-	}
-
-	return true
+	return equal(a, b, func(s *Source) string { return s.Name }, func(a, b *Source) bool { return a.Equal(b) })
 }
 
 // Stack defines the configuration for a Lighthouse Stack.
@@ -382,31 +358,7 @@ func (a *Stack) Equal(other *Stack) bool {
 type Stacks []*Stack
 
 func (a Stacks) Equal(b Stacks) bool {
-	m := make(map[string]*Stack, len(a))
-	for _, stack := range a {
-		m[stack.Name] = stack
-	}
-
-	n := make(map[string]*Stack, len(b))
-	for _, stack := range b {
-		n[stack.Name] = stack
-	}
-
-	if len(m) != len(n) {
-		return false
-	}
-
-	for id, a := range m {
-		b, ok := n[id]
-		if !ok {
-			return false
-		}
-		if !a.Equal(b) {
-			return false
-		}
-	}
-
-	return true
+	return equal(a, b, func(s *Stack) string { return s.Name }, func(a, b *Stack) bool { return a.Equal(b) })
 }
 
 type Selector struct {
@@ -449,15 +401,7 @@ func (s *Selector) Matches(labels Labels) bool {
 }
 
 func (s Selector) Equal(other Selector) bool {
-	if len(s.s) != len(other.s) {
-		return false
-	}
-	for k := range s.s {
-		if !s.s[k].Equal(other.s[k]) {
-			return false
-		}
-	}
-	return true
+	return maps.EqualFunc(s.s, other.s, func(a, b StringSet) bool { return a.Equal(b) })
 }
 
 func (s Selector) MarshalYAML() (interface{}, error) {
@@ -539,15 +483,7 @@ func (s *Selector) Len() int {
 type StringSet []string
 
 func (a StringSet) Equal(b StringSet) bool {
-	sa := make(map[string]struct{})
-	for i := range a {
-		sa[a[i]] = struct{}{}
-	}
-	sb := make(map[string]struct{})
-	for i := range b {
-		sb[b[i]] = struct{}{}
-	}
-	return maps.Equal(sa, sb)
+	return equal(a, b, func(s string) string { return s }, func(a, b string) bool { return a == b })
 }
 
 // Git defines the Git synchronization configuration used by Lighthouse Sources.
@@ -855,22 +791,7 @@ func (d *Datasource) Equal(other *Datasource) bool {
 type Datasources []Datasource
 
 func (a Datasources) Equal(b Datasources) bool {
-	if len(a) != len(b) {
-		return false
-	}
-
-	m := make(map[string]Datasource, len(a))
-	for _, ds := range a {
-		m[ds.Name] = ds
-	}
-
-	for _, ds := range b {
-		if other, ok := m[ds.Name]; !ok || !ds.Equal(&other) {
-			return false
-		}
-	}
-
-	return true
+	return equal(a, b, func(ds Datasource) string { return ds.Name }, func(a, b Datasource) bool { return a.Equal(&b) })
 }
 
 type Database struct {
@@ -890,6 +811,20 @@ type AmazonRDS struct {
 	DatabaseUser string     `json:"database_user" yaml:"database_user"`
 	DatabaseName string     `json:"database_name" yaml:"database_name"`
 	Credentials  *SecretRef `json:"credentials,omitempty" yaml:"credentials,omitempty"`
+}
+
+func equal[V any](a, b []V, name func(V) string, eq func(a, b V) bool) bool {
+	m := make(map[string]V, len(a))
+	for _, v := range a {
+		m[name(v)] = v
+	}
+
+	n := make(map[string]V, len(b))
+	for _, v := range b {
+		n[name(v)] = v
+	}
+
+	return maps.EqualFunc(m, n, eq)
 }
 
 func stringEqual(a, b *string) bool {
