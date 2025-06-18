@@ -23,8 +23,8 @@ var (
 // bundle to an S3-compatible object storage service.
 type BundleWorker struct {
 	bundleConfig  *config.Bundle
-	sourceConfigs []*config.Source
-	stackConfigs  []*config.Stack
+	sourceConfigs config.Sources
+	stackConfigs  config.Stacks
 	synchronizers []Synchronizer
 	sources       []*builder.Source
 	storage       s3.ObjectStorage
@@ -79,7 +79,7 @@ func (worker *BundleWorker) Done() bool {
 }
 
 func (worker *BundleWorker) UpdateConfig(b *config.Bundle, sources []*config.Source, stacks []*config.Stack) {
-	if b == nil || !worker.bundleConfig.Equal(b) || !config.EqualSources(worker.sourceConfigs, sources) || !config.EqualStacks(worker.stackConfigs, stacks) {
+	if b == nil || !worker.bundleConfig.Equal(b) || !worker.sourceConfigs.Equal(sources) || !worker.stackConfigs.Equal(stacks) {
 		worker.changeConfiguration()
 	}
 }

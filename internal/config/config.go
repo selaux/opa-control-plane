@@ -151,7 +151,7 @@ type Bundle struct {
 	Name          string        `json:"-" yaml:"-"`
 	Labels        Labels        `json:"labels,omitempty" yaml:"labels,omitempty"`
 	ObjectStorage ObjectStorage `json:"object_storage,omitempty" yaml:"object_storage,omitempty"`
-	Requirements  []Requirement `json:"requirements,omitempty" yaml:"requirements,omitempty"`
+	Requirements  Requirements  `json:"requirements,omitempty" yaml:"requirements,omitempty"`
 	ExcludedFiles []string      `json:"excluded_files,omitempty" yaml:"excluded_files,omitempty"`
 }
 
@@ -163,6 +163,20 @@ type Requirement struct {
 
 func (a Requirement) Equal(b Requirement) bool {
 	return stringEqual(a.Source, b.Source)
+}
+
+type Requirements []Requirement
+
+func (a Requirements) Equal(b Requirements) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for k := range a {
+		if !a[k].Equal(b[k]) {
+			return false
+		}
+	}
+	return true
 }
 
 type Files map[string]string
@@ -265,30 +279,18 @@ func (s *Bundle) Equal(other *Bundle) bool {
 
 	return s.Name == other.Name &&
 		s.ObjectStorage.Equal(&other.ObjectStorage) &&
-		equalRequirements(s.Requirements, other.Requirements) &&
+		s.Requirements.Equal(other.Requirements) &&
 		equalStringSets(s.ExcludedFiles, other.ExcludedFiles)
-}
-
-func equalRequirements(a, b []Requirement) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for k := range a {
-		if !a[k].Equal(b[k]) {
-			return false
-		}
-	}
-	return true
 }
 
 // Source defines the configuration for a Lighthouse Source.
 type Source struct {
-	Name          string        `json:"-" yaml:"-"`
-	Builtin       *string       `json:"builtin,omitempty" yaml:"builtin,omitempty"`
-	Git           Git           `json:"git,omitempty" yaml:"git,omitempty"`
-	Datasources   []Datasource  `json:"datasources,omitempty" yaml:"datasources,omitempty"`
-	EmbeddedFiles Files         `json:"files,omitempty" yaml:"files,omitempty"`
-	Requirements  []Requirement `json:"requirements,omitempty" yaml:"requirements,omitempty"`
+	Name          string       `json:"-" yaml:"-"`
+	Builtin       *string      `json:"builtin,omitempty" yaml:"builtin,omitempty"`
+	Git           Git          `json:"git,omitempty" yaml:"git,omitempty"`
+	Datasources   Datasources  `json:"datasources,omitempty" yaml:"datasources,omitempty"`
+	EmbeddedFiles Files        `json:"files,omitempty" yaml:"files,omitempty"`
+	Requirements  Requirements `json:"requirements,omitempty" yaml:"requirements,omitempty"`
 }
 
 func (s *Source) Equal(other *Source) bool {
@@ -303,9 +305,9 @@ func (s *Source) Equal(other *Source) bool {
 	return s.Name == other.Name &&
 		stringEqual(s.Builtin, other.Builtin) &&
 		s.Git.Equal(&other.Git) &&
-		equalDatasources(s.Datasources, other.Datasources) &&
+		s.Datasources.Equal(other.Datasources) &&
 		s.EmbeddedFiles.Equal(other.EmbeddedFiles) &&
-		equalRequirements(s.Requirements, other.Requirements)
+		s.Requirements.Equal(other.Requirements)
 }
 
 func (s *Source) Requirement() Requirement {
@@ -330,11 +332,41 @@ func (s *Source) SetEmbeddedFiles(files map[string]string) {
 	}
 }
 
+type Sources []*Source
+
+func (a Sources) Equal(b Sources) bool {
+	m := make(map[string]*Source, len(a))
+	for _, src := range a {
+		m[src.Name] = src
+	}
+
+	n := make(map[string]*Source, len(b))
+	for _, src := range b {
+		n[src.Name] = src
+	}
+
+	if len(m) != len(n) {
+		return false
+	}
+
+	for id, a := range m {
+		b, ok := n[id]
+		if !ok {
+			return false
+		}
+		if !a.Equal(b) {
+			return false
+		}
+	}
+
+	return true
+}
+
 // Stack defines the configuration for a Lighthouse Stack.
 type Stack struct {
-	Name         string        `json:"-" yaml:"-"`
-	Selector     Selector      `json:"selector" yaml:"selector"` // Schema validation overrides Selector to object of string array values.
-	Requirements []Requirement `json:"requirements,omitempty" yaml:"requirements,omitempty"`
+	Name         string       `json:"-" yaml:"-"`
+	Selector     Selector     `json:"selector" yaml:"selector"` // Schema validation overrides Selector to object of string array values.
+	Requirements Requirements `json:"requirements,omitempty" yaml:"requirements,omitempty"`
 }
 
 func (a *Stack) Equal(other *Stack) bool {
@@ -344,7 +376,37 @@ func (a *Stack) Equal(other *Stack) bool {
 	if a == nil || other == nil {
 		return false
 	}
-	return a.Name == other.Name && a.Selector.Equal(other.Selector) && equalRequirements(a.Requirements, other.Requirements)
+	return a.Name == other.Name && a.Selector.Equal(other.Selector) && a.Requirements.Equal(other.Requirements)
+}
+
+type Stacks []*Stack
+
+func (a Stacks) Equal(b Stacks) bool {
+	m := make(map[string]*Stack, len(a))
+	for _, stack := range a {
+		m[stack.Name] = stack
+	}
+
+	n := make(map[string]*Stack, len(b))
+	for _, stack := range b {
+		n[stack.Name] = stack
+	}
+
+	if len(m) != len(n) {
+		return false
+	}
+
+	for id, a := range m {
+		b, ok := n[id]
+		if !ok {
+			return false
+		}
+		if !a.Equal(b) {
+			return false
+		}
+	}
+
+	return true
 }
 
 type Selector struct {
@@ -788,6 +850,27 @@ func (d *Datasource) Equal(other *Datasource) bool {
 	return d.Credentials.Equal(other.Credentials)
 }
 
+type Datasources []Datasource
+
+func (a Datasources) Equal(b Datasources) bool {
+	if len(a) != len(b) {
+		return false
+	}
+
+	m := make(map[string]Datasource, len(a))
+	for _, ds := range a {
+		m[ds.Name] = ds
+	}
+
+	for _, ds := range b {
+		if other, ok := m[ds.Name]; !ok || !ds.Equal(&other) {
+			return false
+		}
+	}
+
+	return true
+}
+
 type Database struct {
 	SQL    *SQLDatabase `json:"sql,omitempty" yaml:"sql,omitempty"`
 	AWSRDS *AmazonRDS   `json:"aws_rds,omitempty" yaml:"aws_rds,omitempty"`
@@ -805,81 +888,6 @@ type AmazonRDS struct {
 	DatabaseUser string     `json:"database_user" yaml:"database_user"`
 	DatabaseName string     `json:"database_name" yaml:"database_name"`
 	Credentials  *SecretRef `json:"credentials,omitempty" yaml:"credentials,omitempty"`
-}
-
-func EqualSources(a, b []*Source) bool {
-	m := make(map[string]*Source, len(a))
-	for _, src := range a {
-		m[src.Name] = src
-	}
-
-	n := make(map[string]*Source, len(b))
-	for _, src := range b {
-		n[src.Name] = src
-	}
-
-	if len(m) != len(n) {
-		return false
-	}
-
-	for id, a := range m {
-		b, ok := n[id]
-		if !ok {
-			return false
-		}
-		if !a.Equal(b) {
-			return false
-		}
-	}
-
-	return true
-}
-
-func EqualStacks(a, b []*Stack) bool {
-	m := make(map[string]*Stack, len(a))
-	for _, stack := range a {
-		m[stack.Name] = stack
-	}
-
-	n := make(map[string]*Stack, len(b))
-	for _, stack := range b {
-		n[stack.Name] = stack
-	}
-
-	if len(m) != len(n) {
-		return false
-	}
-
-	for id, a := range m {
-		b, ok := n[id]
-		if !ok {
-			return false
-		}
-		if !a.Equal(b) {
-			return false
-		}
-	}
-
-	return true
-}
-
-func equalDatasources(a, b []Datasource) bool {
-	if len(a) != len(b) {
-		return false
-	}
-
-	m := make(map[string]Datasource, len(a))
-	for _, ds := range a {
-		m[ds.Name] = ds
-	}
-
-	for _, ds := range b {
-		if other, ok := m[ds.Name]; !ok || !ds.Equal(&other) {
-			return false
-		}
-	}
-
-	return true
 }
 
 func stringEqual(a, b *string) bool {
