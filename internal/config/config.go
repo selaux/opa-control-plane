@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"maps"
 	"os"
 	"reflect"
 
@@ -371,11 +372,7 @@ func (s Selector) Equal(other Selector) bool {
 }
 
 func (s Selector) MarshalYAML() (interface{}, error) {
-	encodedMap := make(map[string][]string)
-	for key, value := range s.s {
-		encodedMap[key] = value
-	}
-	return encodedMap, nil
+	return maps.Clone(s.s), nil
 }
 
 func (s Selector) MarshalJSON() ([]byte, error) {

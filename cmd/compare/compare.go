@@ -6,9 +6,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"net/http"
 	"os"
 	"reflect"
+	"slices"
 	"sort"
 	"strings"
 
@@ -133,11 +135,7 @@ func doCompare(params compareParams) error {
 		return errors.New("please provide Styra URL with -u/--url")
 	}
 
-	var sortedBundles []*config.Bundle
-	for _, b := range cfg.Bundles {
-		sortedBundles = append(sortedBundles, b)
-	}
-
+	sortedBundles := slices.Collect(maps.Values(cfg.Bundles))
 	sort.Slice(sortedBundles, func(i, j int) bool {
 		return sortedBundles[i].Name < sortedBundles[j].Name
 	})

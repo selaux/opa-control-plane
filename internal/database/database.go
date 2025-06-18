@@ -7,8 +7,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 
 	"github.com/aws/aws-sdk-go-v2/feature/rds/auth"
@@ -339,12 +341,7 @@ func (d *Database) ListBundlesWithGitCredentials() ([]*config.Bundle, error) {
 		}
 	}
 
-	var bundles []*config.Bundle
-	for _, b := range bundleMap {
-		bundles = append(bundles, b)
-	}
-
-	return bundles, nil
+	return slices.Collect(maps.Values(bundleMap)), nil
 }
 
 func (d *Database) ListSourcesWithGitCredentials() ([]*config.Source, error) {
@@ -477,13 +474,7 @@ WHERE (sources_secrets.ref_type = 'git_credentials' AND secrets.value IS NOT NUL
 		}
 	}
 
-	var srcs []*config.Source
-	for _, s := range srcMap {
-		srcs = append(srcs, s)
-	}
-
-	return srcs, nil
-
+	return slices.Collect(maps.Values(srcMap)), nil
 }
 
 func (d *Database) ListStacks() ([]*config.Stack, error) {

@@ -3,10 +3,11 @@ package config
 import (
 	"fmt"
 	"io/fs"
+	"maps"
 	"os"
 	"path/filepath"
 	"reflect"
-	"sort"
+	"slices"
 
 	"gopkg.in/yaml.v3"
 )
@@ -56,13 +57,7 @@ func Merge(configFiles []string, conflictError bool) ([]byte, error) {
 func merge(docs []map[string]interface{}, path string, conflictError bool) (map[string]interface{}, error) {
 	result := make(map[string]interface{})
 	for _, doc := range docs {
-		keys := make([]string, 0, len(doc))
-		for key := range doc {
-			keys = append(keys, key)
-		}
-		sort.Strings(keys) // Sort keys to ensure deterministic merge errors.
-
-		for _, key := range keys {
+		for _, key := range slices.Sorted(maps.Keys(doc)) { // Sort keys to ensure deterministic merge errors.
 			value := doc[key]
 			if existing, ok := result[key]; ok {
 				if existingMap, ok1 := existing.(map[string]interface{}); ok1 {
