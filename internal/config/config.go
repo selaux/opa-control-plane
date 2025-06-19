@@ -538,10 +538,6 @@ func (s *SecretRef) Equal(other *SecretRef) bool {
 	})
 }
 
-func (s *SecretRef) slowEqual(other *SecretRef) bool {
-	return s.Name == other.Name && s.value.Equal(other.value)
-}
-
 // Secret defines the configuration for secrets/tokens used by Lighthouse
 // for Git synchronization, datasources, etc.
 type Secret struct {
