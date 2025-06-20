@@ -181,8 +181,7 @@ func (f Files) Equal(other Files) bool {
 func (f Files) MarshalYAML() (interface{}, error) {
 	encodedMap := make(map[string]string)
 	for key, value := range f {
-		encodedValue := base64.StdEncoding.EncodeToString([]byte(value))
-		encodedMap[key] = encodedValue
+		encodedMap[key] = base64.StdEncoding.EncodeToString([]byte(value))
 	}
 	return encodedMap, nil
 }
@@ -356,21 +355,11 @@ func (s *Selector) PrepareJSONSchema(schema *jsonschema.Schema) error {
 	return nil
 }
 
-// Matches checks if the given labels match the selector.
+// Matches checks if the given labels match the selector. Empty selector value matches any label value
 func (s *Selector) Matches(labels Labels) bool {
 	for expLabel, expValues := range s.m {
 		v, ok := labels[expLabel]
-		if !ok {
-			return false
-		}
-		found := len(expValues) == 0 // empty selector value matches any label value
-		for _, ev := range expValues {
-			if ev.Match(v) {
-				found = true
-				break
-			}
-		}
-		if !found {
+		if !ok || (len(expValues) > 0 && !slices.ContainsFunc(expValues, func(ev glob.Glob) bool { return ev.Match(v) })) {
 			return false
 		}
 	}
@@ -404,8 +393,7 @@ func (s *Selector) UnmarshalYAML(node *yaml.Node) error {
 
 func (s *Selector) UnmarshalJSON(bs []byte) error {
 	raw := make(map[string][]string)
-	err := json.Unmarshal(bs, &raw)
-	if err != nil {
+	if err := json.Unmarshal(bs, &raw); err != nil {
 		return err
 	}
 
@@ -594,8 +582,7 @@ func (s *Secret) Get(ctx context.Context) (map[string]interface{}, error) {
 
 	for k, v := range s.Value {
 		if str, ok := v.(string); ok && str != "" {
-			str = os.ExpandEnv(str)
-			value[k] = str
+			value[k] = os.ExpandEnv(str)
 		} else {
 			value[k] = v // Keep non-string values as is
 		}
