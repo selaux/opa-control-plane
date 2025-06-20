@@ -416,19 +416,13 @@ func (s *Selector) unmarshal(raw map[string][]string) error {
 }
 
 func (s *Selector) Get(key string) ([]string, bool) {
-	if s.s == nil {
-		return nil, false
-	}
-
+	s.init()
 	v, ok := s.s[key]
 	return v, ok
 }
 
 func (s *Selector) Set(key string, value []string) error {
-	if s.s == nil {
-		s.s = make(map[string]StringSet)
-		s.m = make(map[string][]glob.Glob)
-	}
+	s.init()
 
 	if len(value) > 0 {
 		for _, v := range value {
@@ -448,6 +442,13 @@ func (s *Selector) Set(key string, value []string) error {
 
 func (s *Selector) Len() int {
 	return len(s.s)
+}
+
+func (s *Selector) init() {
+	if s.s == nil {
+		s.s = make(map[string]StringSet)
+		s.m = make(map[string][]glob.Glob)
+	}
 }
 
 type StringSet []string
