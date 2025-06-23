@@ -19,6 +19,10 @@ func TestDatabaseSourcesData(t *testing.T) {
 		t.Fatalf("expected no error, got %v", err)
 	}
 
+	if err := database.InsertPrincipal(ctx, db, database.Principal{Id: "admin", Role: "administrator"}); err != nil {
+		t.Fatal(err)
+	}
+
 	defer db.CloseDB()
 
 	data1 := map[string]interface{}{
@@ -58,7 +62,7 @@ func newTestCase(note string) *testCase {
 
 func (tc *testCase) Get(srcID, dataID string, expected interface{}) *testCase {
 	tc.operations = append(tc.operations, func(ctx context.Context, t *testing.T, db *database.Database) {
-		data, found, err := db.SourcesDataGet(ctx, srcID, dataID)
+		data, found, err := db.SourcesDataGet(ctx, srcID, dataID, "admin")
 		if err != nil {
 			t.Fatalf("expected no error, got %v", err)
 		}
@@ -81,7 +85,7 @@ func (tc *testCase) Get(srcID, dataID string, expected interface{}) *testCase {
 
 func (tc *testCase) Put(srcID, dataID string, data interface{}) *testCase {
 	tc.operations = append(tc.operations, func(ctx context.Context, t *testing.T, db *database.Database) {
-		if err := db.SourcesDataPut(ctx, srcID, dataID, data); err != nil {
+		if err := db.SourcesDataPut(ctx, srcID, dataID, data, "admin"); err != nil {
 			t.Fatalf("expected no error, got %v", err)
 		}
 	})
@@ -90,7 +94,7 @@ func (tc *testCase) Put(srcID, dataID string, data interface{}) *testCase {
 
 func (tc *testCase) Delete(srcID, dataID string) *testCase {
 	tc.operations = append(tc.operations, func(ctx context.Context, t *testing.T, db *database.Database) {
-		if err := db.SourcesDataDelete(ctx, srcID, dataID); err != nil {
+		if err := db.SourcesDataDelete(ctx, srcID, dataID, "admin"); err != nil {
 			t.Fatalf("expected no error, got %v", err)
 		}
 	})

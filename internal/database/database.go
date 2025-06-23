@@ -16,6 +16,7 @@ import (
 	_ "github.com/go-sql-driver/mysql"
 	_ "github.com/jackc/pgx/v5/stdlib" // database/sql compatible driver for pgx
 	_ "github.com/mattn/go-sqlite3"
+	"github.com/tsandall/lighthouse/internal/authz"
 	"github.com/tsandall/lighthouse/internal/aws"
 	"github.com/tsandall/lighthouse/internal/config"
 )
@@ -156,6 +157,21 @@ func (d *Database) InitDB(ctx context.Context, persistenceDir string) error {
 			PRIMARY KEY (source_id, name),
 			FOREIGN KEY (source_id) REFERENCES sources(id)
 		);`,
+		`CREATE TABLE IF NOT EXISTS principals (
+			id TEXT PRIMARY KEY,
+			role TEXT NOT NULL,
+			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+		);`,
+		`CREATE TABLE IF NOT EXISTS resource_permissions (
+			id TEXT	NOT NULL,
+			resource TEXT NOT NULL,
+			principal_id TEXT NOT NULL,
+			role TEXT,
+			permission TEXT,
+			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+			PRIMARY KEY (id, resource),
+			FOREIGN KEY (principal_id) REFERENCES principals(id) ON DELETE CASCADE -- TODO(tsandall): e2e test
+		);`,
 	}
 
 	for _, stmt := range stmts {
@@ -172,12 +188,23 @@ func (d *Database) CloseDB() {
 	d.db.Close()
 }
 
-func (d *Database) SourcesDataGet(ctx context.Context, srcId, path string) (interface{}, bool, error) {
+func (d *Database) SourcesDataGet(ctx context.Context, srcId, path string, principal string) (interface{}, bool, error) {
+
+	expr, err := authz.Partial(ctx, authz.Access{
+		Principal:  principal,
+		Permission: "sources.data.read",
+		Resource:   "sources",
+		Id:         srcId,
+	}, nil)
+	if err != nil {
+		return nil, false, err
+	}
+
 	rows, err := d.db.Query(`SELECT
 	data
 FROM
 	sources_data
-WHERE source_id = ? AND path = ?`, srcId, path)
+WHERE source_id = ? AND path = ? AND `+expr.SQL(), srcId, path)
 	if err != nil {
 		return nil, false, err
 	}
@@ -200,17 +227,52 @@ WHERE source_id = ? AND path = ?`, srcId, path)
 	return data, true, nil
 }
 
-func (d *Database) SourcesDataPut(ctx context.Context, srcId, path string, data interface{}) error {
+func (d *Database) SourcesDataPut(ctx context.Context, srcId, path string, data interface{}, principal string) error {
+
+	tx, err := d.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+
+	allowed := authz.Check(ctx, tx, authz.Access{
+		Principal:  principal,
+		Permission: "sources.data.write",
+		Resource:   "sources",
+		Id:         srcId,
+	})
+	if !allowed {
+		_ = tx.Rollback()
+		return fmt.Errorf("unauthorized")
+	}
+
 	bs, err := json.Marshal(data)
 	if err != nil {
 		return err
 	}
-	_, err = d.db.Exec(`INSERT OR REPLACE INTO sources_data (source_id, path, data) VALUES (?, ?, ?)`, srcId, path, bs)
-	return err
+
+	_, err = tx.Exec(`INSERT OR REPLACE INTO sources_data (source_id, path, data) VALUES (?, ?, ?)`, srcId, path, bs)
+	if err != nil {
+		if err2 := tx.Rollback(); err2 != nil {
+			return err2
+		}
+		return err
+	}
+
+	return tx.Commit()
 }
 
-func (d *Database) SourcesDataDelete(ctx context.Context, srcId, path string) error {
-	_, err := d.db.Exec(`DELETE FROM sources_data WHERE source_id = ? AND path = ?`, srcId, path)
+func (d *Database) SourcesDataDelete(ctx context.Context, srcId, path string, principal string) error {
+
+	expr, err := authz.Partial(ctx, authz.Access{
+		Principal:  principal,
+		Permission: "sources.data.write",
+		Resource:   "sources",
+		Id:         srcId,
+	}, nil)
+	if err != nil {
+		return err
+	}
+	_, err = d.db.Exec(`DELETE FROM sources_data WHERE source_id = ? AND path = ? AND `+expr.SQL(), srcId, path)
 	return err
 }
 
