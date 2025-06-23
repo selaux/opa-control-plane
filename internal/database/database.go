@@ -529,17 +529,13 @@ func (d *Database) ListStacks() ([]*config.Stack, error) {
 }
 
 func (d *Database) QuerySourceData(id string) (*DataCursor, error) {
-	return d.queryData("sources_data", "source_id", id)
-}
-
-func (d *Database) queryData(table, pk, id string) (*DataCursor, error) {
-	rows, err := d.db.Query(fmt.Sprintf(`SELECT
+	rows, err := d.db.Query(`SELECT
 	path,
 	data
 FROM
-	%v
+	sources_data
 WHERE
-	%v = ?`, table, pk), id)
+	source_id = ?`, id)
 	if err != nil {
 		return nil, err
 	}
