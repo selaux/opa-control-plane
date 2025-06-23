@@ -106,7 +106,7 @@ shutdown:
 
 func (s *Service) launchWorkers(ctx context.Context) {
 
-	bundles, err := s.database.ListBundlesWithGitCredentials()
+	bundles, err := s.database.ListBundlesToBuild()
 	if err != nil {
 		s.log.Errorf("error listing bundles: %s", err.Error())
 		return

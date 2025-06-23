@@ -241,7 +241,7 @@ func (d *Database) LoadConfig(_ context.Context, bs []byte) error {
 	return nil
 }
 
-func (d *Database) ListBundlesWithGitCredentials() ([]*config.Bundle, error) {
+func (d *Database) ListBundlesToBuild() ([]*config.Bundle, error) {
 	txn, err := d.db.Begin()
 	if err != nil {
 		return nil, err
@@ -269,8 +269,7 @@ func (d *Database) ListBundlesWithGitCredentials() ([]*config.Bundle, error) {
 	LEFT JOIN
 		bundles_requirements ON bundles.id = bundles_requirements.bundle_id
 	WHERE (bundles.s3bucket IS NOT NULL) AND
-		((bundles_secrets.ref_type = 'git_credentials' AND secrets.value IS NOT NULL) OR bundles_secrets.ref_type IS NULL) OR
-		bundles_secrets.ref_type = 'aws'`)
+		(bundles_secrets.ref_type IS NULL OR bundles_secrets.ref_type = 'aws')`) // TODO(tsandall): do we support object storage w/o credentials?
 	if err != nil {
 		return nil, err
 	}
