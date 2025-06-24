@@ -22,3 +22,17 @@ func InsertPrincipal(ctx context.Context, db *Database, principal Principal) err
 	}
 	return nil
 }
+
+func GetPrincipalId(ctx context.Context, db *Database, apiKey string) (string, error) {
+
+	query := `
+		SELECT principals.id FROM principals JOIN tokens ON tokens.id = principals.id WHERE tokens.api_key = ?
+	`
+
+	row := db.db.QueryRowContext(ctx, query, apiKey)
+	var principalId string
+	if err := row.Scan(&principalId); err != nil {
+		return "", err
+	}
+	return principalId, nil
+}

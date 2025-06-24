@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/url"
@@ -32,7 +33,7 @@ func (s *Server) Init() *Server {
 	s.router.Handle("/v1/sources/{source:.+}/{path:.+}", http.HandlerFunc(s.v1SourcesDataGet)).Methods(http.MethodGet)
 	s.router.Handle("/v1/sources/{source:.+}/{path:.+}", http.HandlerFunc(s.v1SourcesDataPut)).Methods(http.MethodPost, http.MethodPut)
 	s.router.Handle("/v1/sources/{source:.+}/{path:.+}", http.HandlerFunc(s.v1SourcesDataDelete)).Methods(http.MethodDelete)
-	s.router.Use(authenticationMiddleware)
+	s.router.Use(authenticationMiddleware(s.db))
 
 	return s
 }
@@ -202,12 +203,38 @@ func newJSONDecoder(r io.Reader) *json.Decoder {
 	return decoder
 }
 
-// TODO(tsandall): replace w/ actual authenticating middleware once tokens are implemented
-func authenticationMiddleware(h http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		principal := strings.TrimPrefix(r.Header.Get("authorization"), "Bearer ")
-		h.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), principalKey{}, principal)))
-	})
+func authenticationMiddleware(db *database.Database) func(http.Handler) http.Handler {
+	return func(h http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			apiKey, err := extractBearerToken(r)
+			if err != nil {
+				http.Error(w, "Unauthorized", http.StatusUnauthorized)
+				return
+			}
+
+			principalId, err := database.GetPrincipalId(r.Context(), db, apiKey)
+			if err != nil {
+				http.Error(w, "Unauthorized", http.StatusUnauthorized)
+				return
+			}
+
+			h.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), principalKey{}, principalId)))
+		})
+	}
 }
 
 type principalKey struct{}
+
+func extractBearerToken(r *http.Request) (string, error) {
+	authHeader := r.Header.Get("Authorization")
+	if authHeader == "" {
+		return "", fmt.Errorf("authorization header is missing")
+	}
+
+	parts := strings.SplitN(authHeader, " ", 2)
+	if len(parts) != 2 || strings.ToLower(parts[0]) != "bearer" {
+		return "", fmt.Errorf("invalid authorization header format")
+	}
+
+	return parts[1], nil
+}

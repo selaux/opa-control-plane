@@ -36,6 +36,7 @@ type Root struct {
 	Stacks   map[string]*Stack  `json:"stacks,omitempty" yaml:"stacks,omitempty"`
 	Sources  map[string]*Source `json:"sources,omitempty" yaml:"sources,omitempty"`
 	Secrets  map[string]*Secret `json:"secrets,omitempty" yaml:"secrets,omitempty"` // Schema validation overrides Secret to object type.
+	Tokens   map[string]*Token  `json:"tokens,omitempty" yaml:"tokens,omitempty"`
 	Database *Database          `json:"database,omitempty" yaml:"database,omitempty"`
 }
 
@@ -69,6 +70,10 @@ func (r *Root) UnmarshalJSON(bs []byte) error {
 }
 
 func (r *Root) unmarshal(raw *Root) error {
+	for name, token := range raw.Tokens {
+		token.Name = name
+	}
+
 	for name, secret := range raw.Secrets {
 		secret.Name = name
 	}
@@ -589,6 +594,45 @@ func (s *Secret) Get(ctx context.Context) (map[string]interface{}, error) {
 	}
 
 	return value, nil
+}
+
+// Token represents an API token to access the Lighthouse APIs.
+type Token struct {
+	Name   string  `json:"-" yaml:"-"`
+	APIKey string  `json:"api_key" yaml:"api_key"`
+	Scopes []Scope `json:"scopes" yaml:"scopes"`
+}
+
+func (t *Token) Equal(other *Token) bool {
+	return fastEqual(t, other, func() bool {
+		return t.Name == other.Name && t.APIKey == other.APIKey && scopesEqual(t.Scopes, other.Scopes)
+	})
+}
+
+type Scope struct {
+	Role string `json:"role" yaml:"role" enum:"administrator,viewer,owner,stack_owner"`
+}
+
+func scopesEqual(a, b []Scope) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		var found bool
+		for j := range b {
+			if a[i].Equal(b[j]) {
+				found = true
+			}
+		}
+		if !found {
+			return false
+		}
+	}
+	return true
+}
+
+func (s Scope) Equal(other Scope) bool {
+	return s.Role == other.Role
 }
 
 func ParseFile(filename string) (root *Root, err error) {

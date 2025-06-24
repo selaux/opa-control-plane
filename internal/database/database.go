@@ -103,6 +103,10 @@ func (d *Database) InitDB(ctx context.Context, persistenceDir string) error {
 			id TEXT PRIMARY KEY,
 			value TEXT
 		);`,
+		`CREATE TABLE IF NOT EXISTS tokens (
+			id TEXT PRIMARY KEY,
+			api_key TEXT NOT NULL
+		);`,
 		`CREATE TABLE IF NOT EXISTS bundles_secrets (
 			bundle_id TEXT NOT NULL,
 			secret_id TEXT NOT NULL,
@@ -277,7 +281,7 @@ func (d *Database) SourcesDataDelete(ctx context.Context, srcId, path string, pr
 }
 
 // LoadConfig loads the configuration from the configuration file into the database.
-func (d *Database) LoadConfig(_ context.Context, bs []byte) error {
+func (d *Database) LoadConfig(ctx context.Context, bs []byte) error {
 
 	root, err := config.Parse(bytes.NewBuffer(bs))
 	if err != nil {
@@ -297,6 +301,10 @@ func (d *Database) LoadConfig(_ context.Context, bs []byte) error {
 	}
 
 	if err := d.loadStacks(root); err != nil {
+		return err
+	}
+
+	if err := d.loadTokens(ctx, root); err != nil {
 		return err
 	}
 
@@ -755,5 +763,14 @@ func (d *Database) loadStacks(root *config.Root) error {
 		}
 	}
 
+	return nil
+}
+
+func (d *Database) loadTokens(ctx context.Context, root *config.Root) error {
+	for _, token := range root.Tokens {
+		if err := InsertToken(ctx, d, token); err != nil {
+			return err
+		}
+	}
 	return nil
 }

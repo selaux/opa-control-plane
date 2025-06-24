@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/gorilla/mux"
+	"github.com/tsandall/lighthouse/internal/config"
 	"github.com/tsandall/lighthouse/internal/database"
 )
 
@@ -19,7 +20,7 @@ func TestServer(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := database.InsertPrincipal(ctx, &db, database.Principal{Id: "admin", Role: "administrator"}); err != nil {
+	if err := database.InsertToken(ctx, &db, &config.Token{Name: "admin", APIKey: "testapikey", Scopes: []config.Scope{{Role: "administrator"}}}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -105,7 +106,7 @@ func TestServer(t *testing.T) {
 				}
 			}
 			req := httptest.NewRequest(test.method, s.URL+test.path, bytes.NewBuffer(body))
-			req.Header.Add("authorization", "Bearer admin") // TODO(tsandall): replace once token support added
+			req.Header.Add("authorization", "Bearer testapikey")
 			w := httptest.NewRecorder()
 			router.ServeHTTP(w, req)
 

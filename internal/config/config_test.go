@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/tsandall/lighthouse/internal/config"
@@ -75,6 +76,14 @@ func TestFilesMarshallingRoundtrip(t *testing.T) {
 					labelX: [abcd]
 				}
 			}
+		},
+		tokens: {
+			admin: {
+				api_key: x1234,
+				scopes: [
+					{role: administrator}
+				]
+			}
 		}
 	}`))
 
@@ -102,6 +111,10 @@ func TestFilesMarshallingRoundtrip(t *testing.T) {
 
 	if !cfg.Stacks["bar"].Equal(cfg2.Stacks["bar"]) {
 		t.Fatal("expected stacks to be equal")
+	}
+
+	if !cfg.Tokens["admin"].Equal(cfg2.Tokens["admin"]) {
+		t.Fatal("expected tokens to be equal")
 	}
 
 }
@@ -167,4 +180,26 @@ func TestSelectorMatch(t *testing.T) {
 			t.Fatalf("expected no match for selector %v and labels %v", selector, labels)
 		}
 	}
+}
+
+func TestValidateRoleEnum(t *testing.T) {
+
+	_, err := config.Parse(bytes.NewBufferString(`{
+		tokens: {
+			admin: {
+				api_key: x1234,
+				scopes: [
+					{role: xxxadministrator}
+				]
+			}
+		}
+	}`))
+	if err == nil {
+		t.Fatal("expected error")
+	}
+
+	if !strings.Contains(err.Error(), "value must be one of 'administrator', 'viewer', 'owner', 'stack_owner'") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
 }
