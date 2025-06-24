@@ -7,12 +7,23 @@ import (
 	"testing"
 
 	"github.com/gorilla/mux"
+	"github.com/tsandall/lighthouse/internal/database"
 )
 
 func TestServer(t *testing.T) {
 	router := mux.NewRouter()
-	database := newMockDatabase()
-	New().WithDatabase(database).WithRouter(router).Init()
+	var db database.Database
+
+	ctx := context.Background()
+	if err := db.InitDB(context.Background(), t.TempDir()); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := database.InsertPrincipal(ctx, &db, database.Principal{Id: "admin", Role: "administrator"}); err != nil {
+		t.Fatal(err)
+	}
+
+	New().WithDatabase(&db).WithRouter(router).Init()
 	s := httptest.NewServer(router)
 	defer s.Close()
 
@@ -94,6 +105,7 @@ func TestServer(t *testing.T) {
 				}
 			}
 			req := httptest.NewRequest(test.method, s.URL+test.path, bytes.NewBuffer(body))
+			req.Header.Add("authorization", "Bearer admin") // TODO(tsandall): replace once token support added
 			w := httptest.NewRecorder()
 			router.ServeHTTP(w, req)
 
@@ -106,36 +118,4 @@ func TestServer(t *testing.T) {
 			}
 		})
 	}
-}
-
-type mockDatabase struct {
-	data map[key]interface{}
-}
-
-func newMockDatabase() *mockDatabase {
-	return &mockDatabase{
-		data: make(map[key]interface{}),
-	}
-}
-
-type key struct {
-	sourceId string
-	path     string
-}
-
-func (m *mockDatabase) SourcesDataGet(ctx context.Context, sourceId, path string) (interface{}, bool, error) {
-	if data, ok := m.data[key{sourceId, path}]; ok {
-		return data, true, nil
-	}
-	return nil, false, nil
-}
-
-func (m *mockDatabase) SourcesDataPut(ctx context.Context, sourceId, path string, data interface{}) error {
-	m.data[key{sourceId, path}] = data
-	return nil
-}
-
-func (m *mockDatabase) SourcesDataDelete(ctx context.Context, sourceId, path string) error {
-	delete(m.data, key{sourceId, path})
-	return nil
 }

@@ -11,18 +11,13 @@ import (
 
 	"github.com/gorilla/mux"
 	"github.com/open-policy-agent/opa/server/writer"
+	"github.com/tsandall/lighthouse/internal/database"
 	"github.com/tsandall/lighthouse/internal/server/types"
 )
 
 type Server struct {
-	router   *mux.Router
-	database Database
-}
-
-type Database interface {
-	SourcesDataGet(ctx context.Context, sourceId, path string) (data interface{}, ok bool, err error)
-	SourcesDataPut(ctx context.Context, sourceId, path string, data interface{}) error
-	SourcesDataDelete(ctx context.Context, sourceId, path string) error
+	router *mux.Router
+	db     *database.Database
 }
 
 func New() *Server {
@@ -37,6 +32,7 @@ func (s *Server) Init() *Server {
 	s.router.Handle("/v1/sources/{source:.+}/{path:.+}", http.HandlerFunc(s.v1SourcesDataGet)).Methods(http.MethodGet)
 	s.router.Handle("/v1/sources/{source:.+}/{path:.+}", http.HandlerFunc(s.v1SourcesDataPut)).Methods(http.MethodPost, http.MethodPut)
 	s.router.Handle("/v1/sources/{source:.+}/{path:.+}", http.HandlerFunc(s.v1SourcesDataDelete)).Methods(http.MethodDelete)
+	s.router.Use(authenticationMiddleware)
 
 	return s
 }
@@ -46,8 +42,8 @@ func (s *Server) WithRouter(router *mux.Router) *Server {
 	return s
 }
 
-func (s *Server) WithDatabase(db Database) *Server {
-	s.database = db
+func (s *Server) WithDatabase(db *database.Database) *Server {
+	s.db = db
 	return s
 }
 
@@ -66,7 +62,7 @@ func (s *Server) v1SourcesDataGet(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	data, ok, err := s.database.SourcesDataGet(ctx, srcId, path.Join(vars["path"], "data.json"))
+	data, ok, err := s.db.SourcesDataGet(ctx, srcId, path.Join(vars["path"], "data.json"), s.auth(r))
 	if err != nil {
 		errorAuto(w, err)
 		return
@@ -98,7 +94,7 @@ func (s *Server) v1SourcesDataPut(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err = s.database.SourcesDataPut(ctx, sourceId, path.Join(vars["path"], "data.json"), value)
+	err = s.db.SourcesDataPut(ctx, sourceId, path.Join(vars["path"], "data.json"), value, s.auth(r))
 	if err != nil {
 		errorAuto(w, err)
 		return
@@ -119,7 +115,7 @@ func (s *Server) v1SourcesDataDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err = s.database.SourcesDataDelete(ctx, sourceId, path.Join(vars["path"], "data.json"))
+	err = s.db.SourcesDataDelete(ctx, sourceId, path.Join(vars["path"], "data.json"), s.auth(r))
 	if err != nil {
 		errorAuto(w, err)
 		return
@@ -127,6 +123,18 @@ func (s *Server) v1SourcesDataDelete(w http.ResponseWriter, r *http.Request) {
 
 	resp := types.SourcesDeleteDataResponseV1{}
 	JSONOK(w, resp, pretty(r))
+}
+
+func (s *Server) auth(r *http.Request) string {
+	p := r.Context().Value(principalKey{})
+	if p == nil {
+		// NOTE(tsandall): this should never be reached because the
+		// authentication middleware will reject requests that do not contain a
+		// valid API key. If this panic occurs it indicates an logical error in
+		// the server that must be fixed.
+		panic("unreachable")
+	}
+	return p.(string)
 }
 
 func errorAuto(w http.ResponseWriter, err error) {
@@ -193,3 +201,13 @@ func newJSONDecoder(r io.Reader) *json.Decoder {
 	decoder.UseNumber()
 	return decoder
 }
+
+// TODO(tsandall): replace w/ actual authenticating middleware once tokens are implemented
+func authenticationMiddleware(h http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		principal := strings.TrimPrefix(r.Header.Get("authorization"), "Bearer ")
+		h.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), principalKey{}, principal)))
+	})
+}
+
+type principalKey struct{}
