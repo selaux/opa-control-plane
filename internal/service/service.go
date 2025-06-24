@@ -21,6 +21,7 @@ import (
 	"github.com/tsandall/lighthouse/internal/sqlsync"
 )
 
+const internalPrincipal = "internal"
 const reconfigurationInterval = 15 * time.Second
 
 type Service struct {
@@ -74,6 +75,11 @@ func (s *Service) Run(ctx context.Context) error {
 	if err := s.database.InitDB(ctx, s.persistenceDir); err != nil {
 		return err
 	}
+
+	if err := database.InsertPrincipal(ctx, &s.database, database.Principal{Id: internalPrincipal, Role: "administrator"}); err != nil {
+		return err
+	}
+
 	defer s.database.CloseDB()
 
 	if err := s.database.LoadConfig(ctx, s.config); err != nil {
@@ -112,7 +118,7 @@ func (s *Service) launchWorkers(ctx context.Context) {
 		return
 	}
 
-	sourceDefs, err := s.database.ListSourcesWithGitCredentials()
+	sourceDefs, err := s.database.ListSourcesWithGitCredentials(ctx, internalPrincipal)
 	if err != nil {
 		s.log.Errorf("error listing sources: %s", err.Error())
 		return

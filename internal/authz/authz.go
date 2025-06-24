@@ -24,7 +24,7 @@ var src string
 //
 // This function extracts the unknowns and column references from the policy for the
 // partial evaluation and query translation (respectively) below.
-var defaultUnknowns, defaultColumnMappings = func() ([]string, map[string]sqlColumnRef) {
+var defaultUnknowns, defaultColumnMappings = func() ([]string, map[string]ColumnRef) {
 
 	deps, err := dependencies.Minimal(ast.MustParseModule(src))
 	if err != nil {
@@ -32,13 +32,13 @@ var defaultUnknowns, defaultColumnMappings = func() ([]string, map[string]sqlCol
 	}
 
 	var unknowns []string
-	columns := make(map[string]sqlColumnRef)
+	columns := make(map[string]ColumnRef)
 
 	for _, dep := range deps {
 		if dep[0].Equal(ast.DefaultRootDocument) {
 			table := string(dep[1].Value.(ast.String))
 			column := string(dep[2].Value.(ast.String))
-			columns[dep.String()] = sqlColumnRef{Table: table, Column: column}
+			columns[dep.String()] = ColumnRef{Table: table, Column: column}
 			unknowns = append(unknowns, dep[:2].String())
 		}
 	}
@@ -47,23 +47,23 @@ var defaultUnknowns, defaultColumnMappings = func() ([]string, map[string]sqlCol
 }()
 
 type sqlSelect struct {
-	Select []sqlExpr
+	Select []Expr
 	From   []sqlTableRef
 	Where  sqlWhere
 }
 
 type sqlWhere struct {
-	expr sqlExpr
+	expr Expr
 }
 
-func (x sqlWhere) And(other sqlExpr) sqlWhere {
+func (x sqlWhere) And(other Expr) sqlWhere {
 	if x.expr == nil {
 		return sqlWhere{other}
 	}
 	return sqlWhere{sqlExprAnd{x.expr, other}}
 }
 
-func (x sqlWhere) Or(other sqlExpr) sqlWhere {
+func (x sqlWhere) Or(other Expr) sqlWhere {
 	if x.expr == nil {
 		return sqlWhere{other}
 	}
@@ -72,7 +72,7 @@ func (x sqlWhere) Or(other sqlExpr) sqlWhere {
 
 func (x sqlWhere) Tables() []sqlTableRef { return x.expr.Tables() }
 
-type sqlExpr interface {
+type Expr interface {
 	SQL() string
 	Tables() []sqlTableRef
 }
@@ -86,8 +86,8 @@ func (x sqlExprExists) Tables() []sqlTableRef {
 }
 
 type sqlExprAnd struct {
-	LHS sqlExpr
-	RHS sqlExpr
+	LHS Expr
+	RHS Expr
 }
 
 func (x sqlExprAnd) Tables() []sqlTableRef {
@@ -95,8 +95,8 @@ func (x sqlExprAnd) Tables() []sqlTableRef {
 }
 
 type sqlExprOr struct {
-	LHS sqlExpr
-	RHS sqlExpr
+	LHS Expr
+	RHS Expr
 }
 
 func (x sqlExprOr) Tables() []sqlTableRef {
@@ -113,7 +113,7 @@ func (x sqlExprEq) Tables() []sqlTableRef {
 }
 
 type sqlExprIsNotNull struct {
-	Column sqlColumnRef
+	Column ColumnRef
 }
 
 func (e sqlExprIsNotNull) Tables() []sqlTableRef {
@@ -129,12 +129,12 @@ type sqlOperand interface {
 	SQL() string
 }
 
-type sqlColumnRef struct {
+type ColumnRef struct {
 	Table  string
 	Column string
 }
 
-func (c sqlColumnRef) Tables() []sqlTableRef {
+func (c ColumnRef) Tables() []sqlTableRef {
 	return []sqlTableRef{{Table: c.Table}}
 }
 
@@ -164,7 +164,7 @@ func (x sqlExprOr) SQL() string        { return x.LHS.SQL() + " OR " + x.RHS.SQL
 func (x sqlExprEq) SQL() string        { return x.LHS.SQL() + "=" + x.RHS.SQL() }
 func (x sqlExprIsNotNull) SQL() string { return x.Column.SQL() + " IS NOT NULL" }
 func (x sqlTableRef) SQL() string      { return x.Table }
-func (x sqlColumnRef) SQL() string     { return x.Table + "." + x.Column }
+func (x ColumnRef) SQL() string        { return x.Table + "." + x.Column }
 func (x sqlInt) SQL() string           { return strconv.Itoa(x.Value) }
 func (x sqlString) SQL() string        { return "'" + x.Value + "'" }
 
@@ -191,9 +191,10 @@ func Check(ctx context.Context, tx *sql.Tx, access Access) bool {
 }
 
 // TODO(tsandall): add caching
-// TODO(tsandall): decide how to expose column mapping outside this package
-
-func Partial(ctx context.Context, access Access, extraColumnMappings map[string]sqlColumnRef) (sqlExpr, error) {
+// TODO(tsandall): revisit extra column mappings... we may only need this for
+// input.id in which case we could special-case that and keep the API a bit more
+// constrained.
+func Partial(ctx context.Context, access Access, extraColumnMappings map[string]ColumnRef) (Expr, error) {
 
 	var extraUnknowns []string
 	for k := range extraColumnMappings {
@@ -226,7 +227,7 @@ func Partial(ctx context.Context, access Access, extraColumnMappings map[string]
 	for _, b := range pqs.Queries {
 
 		var exists sqlExprExists
-		exists.Query.Select = []sqlExpr{sqlInt{Value: 1}}
+		exists.Query.Select = []Expr{sqlInt{Value: 1}}
 
 		for _, expr := range b {
 			op := expr.Operator()
@@ -273,9 +274,9 @@ func Partial(ctx context.Context, access Access, extraColumnMappings map[string]
 	return w.expr, nil
 }
 
-type columnMapper map[string]sqlColumnRef
+type columnMapper map[string]ColumnRef
 
-func (cm columnMapper) trySqlExprIsNotNull(a, b *ast.Term) (sqlExpr, bool) {
+func (cm columnMapper) trySqlExprIsNotNull(a, b *ast.Term) (Expr, bool) {
 	if r, ok := a.Value.(ast.Ref); ok {
 		if _, ok := b.Value.(ast.Null); ok {
 			if c, ok := cm.trySqlColumnOperand(r); ok {
@@ -298,9 +299,9 @@ func (cm columnMapper) toSqlOp(t *ast.Term) sqlOperand {
 	return nil
 }
 
-func (cm columnMapper) trySqlColumnOperand(ref ast.Ref) (sqlColumnRef, bool) {
+func (cm columnMapper) trySqlColumnOperand(ref ast.Ref) (ColumnRef, bool) {
 	if c, ok := cm[ref.String()]; ok {
 		return c, true
 	}
-	return sqlColumnRef{}, false
+	return ColumnRef{}, false
 }

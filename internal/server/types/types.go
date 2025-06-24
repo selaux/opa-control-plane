@@ -2,6 +2,8 @@ package types
 
 import (
 	"encoding/json"
+
+	"github.com/tsandall/lighthouse/internal/config"
 )
 
 const (
@@ -15,6 +17,10 @@ const (
 
 type SourcesGetDataResponseV1 struct {
 	Result *interface{} `json:"result,omitempty"`
+}
+
+type SourcesListResponseV1 struct {
+	Result []*config.Source `json:"result,omitempty"`
 }
 
 type SourcesDeleteDataResponseV1 struct{}

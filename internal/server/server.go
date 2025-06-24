@@ -30,6 +30,7 @@ func (s *Server) Init() *Server {
 		s.router = mux.NewRouter()
 	}
 
+	s.router.Handle("/v1/sources", http.HandlerFunc(s.v1SourcesList)).Methods(http.MethodGet)
 	s.router.Handle("/v1/sources/{source:.+}/{path:.+}", http.HandlerFunc(s.v1SourcesDataGet)).Methods(http.MethodGet)
 	s.router.Handle("/v1/sources/{source:.+}/{path:.+}", http.HandlerFunc(s.v1SourcesDataPut)).Methods(http.MethodPost, http.MethodPut)
 	s.router.Handle("/v1/sources/{source:.+}/{path:.+}", http.HandlerFunc(s.v1SourcesDataDelete)).Methods(http.MethodDelete)
@@ -50,6 +51,20 @@ func (s *Server) WithDatabase(db *database.Database) *Server {
 
 func (s *Server) ListenAndServe(addr string) error {
 	return http.ListenAndServe(addr, s.router)
+}
+
+// v1SourcesList handles GET requests to list sources.
+func (s *Server) v1SourcesList(w http.ResponseWriter, r *http.Request) {
+
+	ctx := r.Context()
+	sources, err := s.db.ListSourcesWithGitCredentials(ctx, s.auth(r))
+	if err != nil {
+		errorAuto(w, err)
+		return
+	}
+
+	resp := types.SourcesListResponseV1{Result: sources}
+	JSONOK(w, resp, pretty(r))
 }
 
 // v1SourcesDataGet handles GET requests to retrieve data from a source.

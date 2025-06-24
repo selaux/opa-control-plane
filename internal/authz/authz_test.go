@@ -8,7 +8,7 @@ import (
 
 // TODO(tsandall): add integration test
 func testPartial(t *testing.T) {
-	result, err := Partial(context.Background(), Access{Principal: "bob", Resource: "sources", Permission: "sources.view"}, map[string]sqlColumnRef{"input.id": {Table: "sources", Column: "id"}})
+	result, err := Partial(context.Background(), Access{Principal: "bob", Resource: "sources", Permission: "sources.view"}, map[string]ColumnRef{"input.id": {Table: "sources", Column: "id"}})
 	if err != nil {
 		t.Fatal(err)
 	}

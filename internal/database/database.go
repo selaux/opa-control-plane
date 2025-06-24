@@ -412,14 +412,25 @@ func (d *Database) ListBundlesToBuild() ([]*config.Bundle, error) {
 	return slices.Collect(maps.Values(bundleMap)), nil
 }
 
-func (d *Database) ListSourcesWithGitCredentials() ([]*config.Source, error) {
+func (d *Database) ListSourcesWithGitCredentials(ctx context.Context, principal string) ([]*config.Source, error) {
 	txn, err := d.db.Begin()
 	if err != nil {
 		return nil, err
 	}
 	defer txn.Commit()
 
-	rows, err := txn.Query(`SELECT
+	expr, err := authz.Partial(ctx, authz.Access{
+		Principal:  principal,
+		Resource:   "sources",
+		Permission: "sources.view",
+	}, map[string]authz.ColumnRef{
+		"input.id": {Table: "sources", Column: "id"},
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	query := `SELECT
 	sources.id AS source_id,
 	sources.builtin,
 	sources.repo,
@@ -439,7 +450,9 @@ LEFT JOIN
 	secrets ON sources_secrets.secret_id = secrets.id
 LEFT JOIN
 	sources_requirements ON sources.id = sources_requirements.source_id
-WHERE (sources_secrets.ref_type = 'git_credentials' AND secrets.value IS NOT NULL) OR sources_secrets.ref_type IS NULL`)
+WHERE ((sources_secrets.ref_type = 'git_credentials' AND secrets.value IS NOT NULL) OR sources_secrets.ref_type IS NULL) AND ` + expr.SQL()
+
+	rows, err := txn.Query(query)
 	if err != nil {
 		return nil, err
 	}
