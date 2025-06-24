@@ -11,9 +11,9 @@ type Principal struct {
 	CreatedAt string
 }
 
-func InsertPrincipal(ctx context.Context, db *Database, principal Principal) error {
+func UpsertPrincipal(ctx context.Context, db *Database, principal Principal) error {
 	query := `
-        INSERT INTO principals (id, role)
+        INSERT OR REPLACE INTO principals (id, role)
         VALUES ($1, $2)
     `
 	_, err := db.db.ExecContext(ctx, query, principal.Id, principal.Role)

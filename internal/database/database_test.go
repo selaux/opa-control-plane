@@ -19,7 +19,7 @@ func TestDatabaseSourcesData(t *testing.T) {
 		t.Fatalf("expected no error, got %v", err)
 	}
 
-	if err := database.InsertPrincipal(ctx, db, database.Principal{Id: "admin", Role: "administrator"}); err != nil {
+	if err := database.UpsertPrincipal(ctx, db, database.Principal{Id: "admin", Role: "administrator"}); err != nil {
 		t.Fatal(err)
 	}
 

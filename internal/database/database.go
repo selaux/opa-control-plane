@@ -288,19 +288,19 @@ func (d *Database) LoadConfig(ctx context.Context, bs []byte) error {
 		return err
 	}
 
-	if err := d.loadSecrets(root); err != nil {
+	if err := d.loadSecrets(ctx, root); err != nil {
 		return err
 	}
 
-	if err := d.loadBundles(root); err != nil {
+	if err := d.loadBundles(ctx, root); err != nil {
 		return err
 	}
 
-	if err := d.loadSources(root); err != nil {
+	if err := d.loadSources(ctx, root); err != nil {
 		return err
 	}
 
-	if err := d.loadStacks(root); err != nil {
+	if err := d.loadStacks(ctx, root); err != nil {
 		return err
 	}
 
@@ -647,132 +647,39 @@ func (c *DataCursor) Value() (Data, error) {
 	return Data{Path: path, Data: data}, nil
 }
 
-func (d *Database) loadBundles(root *config.Root) error {
+func (d *Database) loadBundles(ctx context.Context, root *config.Root) error {
 	for _, b := range root.SortedBundles() {
-		var s3url, s3region, s3bucket, s3key *string
-		if b.ObjectStorage.AmazonS3 != nil {
-			s3url = &b.ObjectStorage.AmazonS3.URL
-			s3region = &b.ObjectStorage.AmazonS3.Region
-			s3bucket = &b.ObjectStorage.AmazonS3.Bucket
-			s3key = &b.ObjectStorage.AmazonS3.Key
-		}
-
-		labels, err := json.Marshal(b.Labels)
-		if err != nil {
+		if err := d.UpsertBundle(ctx, b); err != nil {
 			return err
-		}
-
-		excluded, err := json.Marshal(b.ExcludedFiles)
-		if err != nil {
-			return err
-		}
-
-		if _, err := d.db.Exec(`INSERT OR REPLACE INTO bundles (id, labels, s3url, s3region, s3bucket, s3key, excluded) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-			b.Name, string(labels), s3url, s3region, s3bucket, s3key, string(excluded)); err != nil {
-			return err
-		}
-
-		if b.ObjectStorage.AmazonS3 != nil {
-			if b.ObjectStorage.AmazonS3.Credentials != nil {
-				d.db.Exec(`INSERT OR REPLACE INTO bundles_secrets (bundle_id, secret_id, ref_type) VALUES (?, ?, ?)`, b.Name, b.ObjectStorage.AmazonS3.Credentials.Name, "aws")
-			}
-		}
-
-		for _, src := range b.Requirements {
-			if src.Source != nil {
-				// TODO: add support for mounts on requirements; currently that is only used internally for stacks.
-				if _, err := d.db.Exec(`INSERT OR REPLACE INTO bundles_requirements (bundle_id, source_id) VALUES (?, ?)`, b.Name, src.Source); err != nil {
-					return err
-				}
-			}
 		}
 	}
 
 	return nil
 }
 
-func (d *Database) loadSources(root *config.Root) error {
+func (d *Database) loadSources(ctx context.Context, root *config.Root) error {
 	for _, src := range root.SortedSources() {
-		includedFiles, err := json.Marshal(src.Git.IncludedFiles)
-		if err != nil {
+		if err := d.UpsertSource(ctx, src); err != nil {
 			return err
-		}
-
-		if _, err := d.db.Exec(`INSERT OR REPLACE INTO sources (id, builtin, repo, ref, gitcommit, path, git_included_files) VALUES (?, ?, ?, ?, ?, ?, ?)`, src.Name, src.Builtin, src.Git.Repo, src.Git.Reference, src.Git.Commit, src.Git.Path, string(includedFiles)); err != nil {
-			return err
-		}
-
-		if src.Git.Credentials != nil {
-			d.db.Exec(`INSERT OR REPLACE INTO sources_secrets (source_id, secret_id, ref_type) VALUES (?, ?, ?)`, src.Name, src.Git.Credentials.Name, "git_credentials")
-		}
-
-		for _, datasource := range src.Datasources {
-			bs, err := json.Marshal(datasource.Config)
-			if err != nil {
-				return err
-			}
-			if _, err := d.db.Exec(`INSERT OR REPLACE INTO sources_datasources (name, source_id, type, path, config, transform_query) VALUES (?, ?, ?, ?, ?, ?)`,
-				datasource.Name, src.Name, datasource.Type, datasource.Path, string(bs), datasource.TransformQuery); err != nil {
-				return err
-			}
-		}
-
-		for path, data := range src.Files() {
-			if _, err := d.db.Exec(`INSERT OR REPLACE INTO sources_data (source_id, path, data) VALUES (?, ?, ?)`, src.Name, path, data); err != nil {
-				return err
-			}
-		}
-
-		for _, r := range src.Requirements {
-			if r.Source != nil {
-				if _, err := d.db.Exec(`INSERT OR REPLACE INTO sources_requirements (source_id, requirement_id) VALUES (?, ?)`, src.Name, r.Source); err != nil {
-					return err
-				}
-			}
 		}
 	}
 
 	return nil
 }
 
-func (d *Database) loadSecrets(root *config.Root) error {
+func (d *Database) loadSecrets(ctx context.Context, root *config.Root) error {
 	for _, secret := range root.SortedSecrets() {
-		if len(secret.Value) > 0 {
-			bs, err := json.Marshal(secret.Value)
-			if err != nil {
-				return err
-			}
-			if _, err := d.db.Exec(`INSERT OR REPLACE INTO secrets (id, value) VALUES (?, ?)`, secret.Name, string(bs)); err != nil {
-				return err
-			}
-		} else {
-			if _, err := d.db.Exec(`INSERT OR REPLACE INTO secrets (id) VALUES (?)`, secret.Name); err != nil {
-				return err
-			}
+		if err := d.UpsertSecret(ctx, secret); err != nil {
+			return err
 		}
 	}
-
 	return nil
 }
 
-func (d *Database) loadStacks(root *config.Root) error {
+func (d *Database) loadStacks(ctx context.Context, root *config.Root) error {
 	for _, stack := range root.SortedStacks() {
-		bs, err := json.Marshal(stack.Selector)
-		if err != nil {
-			return fmt.Errorf("failed to marshal selector for stack %q: %w", stack.Name, err)
-		}
-
-		if _, err := d.db.Exec(`INSERT OR REPLACE INTO stacks (id, selector) VALUES (?, ?)`, stack.Name, string(bs)); err != nil {
-			return fmt.Errorf("failed to insert stack %q: %w", stack.Name, err)
-		}
-
-		for _, r := range stack.Requirements {
-			if r.Source != nil {
-				// TODO: add support for mounts on requirements; currently that is only used internally for stacks.
-				if _, err := d.db.Exec(`INSERT OR REPLACE INTO stacks_requirements (stack_id, source_id) VALUES (?, ?)`, stack.Name, r.Source); err != nil {
-					return err
-				}
-			}
+		if err := d.UpsertStack(ctx, stack); err != nil {
+			return err
 		}
 	}
 
@@ -781,9 +688,178 @@ func (d *Database) loadStacks(root *config.Root) error {
 
 func (d *Database) loadTokens(ctx context.Context, root *config.Root) error {
 	for _, token := range root.Tokens {
-		if err := InsertToken(ctx, d, token); err != nil {
+		if err := d.UpsertToken(ctx, token); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+func (d *Database) UpsertBundle(ctx context.Context, b *config.Bundle) error {
+
+	tx, err := d.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+
+	defer tx.Rollback()
+
+	var s3url, s3region, s3bucket, s3key *string
+	if b.ObjectStorage.AmazonS3 != nil {
+		s3url = &b.ObjectStorage.AmazonS3.URL
+		s3region = &b.ObjectStorage.AmazonS3.Region
+		s3bucket = &b.ObjectStorage.AmazonS3.Bucket
+		s3key = &b.ObjectStorage.AmazonS3.Key
+	}
+
+	labels, err := json.Marshal(b.Labels)
+	if err != nil {
+		return err
+	}
+
+	excluded, err := json.Marshal(b.ExcludedFiles)
+	if err != nil {
+		return err
+	}
+
+	if _, err := tx.Exec(`INSERT OR REPLACE INTO bundles (id, labels, s3url, s3region, s3bucket, s3key, excluded) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		b.Name, string(labels), s3url, s3region, s3bucket, s3key, string(excluded)); err != nil {
+		return err
+	}
+
+	if b.ObjectStorage.AmazonS3 != nil {
+		if b.ObjectStorage.AmazonS3.Credentials != nil {
+			tx.Exec(`INSERT OR REPLACE INTO bundles_secrets (bundle_id, secret_id, ref_type) VALUES (?, ?, ?)`, b.Name, b.ObjectStorage.AmazonS3.Credentials.Name, "aws")
+		}
+	}
+
+	for _, src := range b.Requirements {
+		if src.Source != nil {
+			// TODO: add support for mounts on requirements; currently that is only used internally for stacks.
+			if _, err := tx.Exec(`INSERT OR REPLACE INTO bundles_requirements (bundle_id, source_id) VALUES (?, ?)`, b.Name, src.Source); err != nil {
+				return err
+			}
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("failed to commit txn for bundle %q: %w", b.Name, err)
+	}
+
+	return nil
+}
+
+func (d *Database) UpsertSource(ctx context.Context, src *config.Source) error {
+
+	tx, err := d.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+
+	defer tx.Rollback()
+
+	includedFiles, err := json.Marshal(src.Git.IncludedFiles)
+	if err != nil {
+		return err
+	}
+
+	if _, err := tx.Exec(`INSERT OR REPLACE INTO sources (id, builtin, repo, ref, gitcommit, path, git_included_files) VALUES (?, ?, ?, ?, ?, ?, ?)`, src.Name, src.Builtin, src.Git.Repo, src.Git.Reference, src.Git.Commit, src.Git.Path, string(includedFiles)); err != nil {
+		return err
+	}
+
+	if src.Git.Credentials != nil {
+		tx.Exec(`INSERT OR REPLACE INTO sources_secrets (source_id, secret_id, ref_type) VALUES (?, ?, ?)`, src.Name, src.Git.Credentials.Name, "git_credentials")
+	}
+
+	for _, datasource := range src.Datasources {
+		bs, err := json.Marshal(datasource.Config)
+		if err != nil {
+			return err
+		}
+		if _, err := tx.Exec(`INSERT OR REPLACE INTO sources_datasources (name, source_id, type, path, config, transform_query) VALUES (?, ?, ?, ?, ?, ?)`,
+			datasource.Name, src.Name, datasource.Type, datasource.Path, string(bs), datasource.TransformQuery); err != nil {
+			return err
+		}
+	}
+
+	for path, data := range src.Files() {
+		if _, err := tx.Exec(`INSERT OR REPLACE INTO sources_data (source_id, path, data) VALUES (?, ?, ?)`, src.Name, path, data); err != nil {
+			return err
+		}
+	}
+
+	for _, r := range src.Requirements {
+		if r.Source != nil {
+			if _, err := tx.Exec(`INSERT OR REPLACE INTO sources_requirements (source_id, requirement_id) VALUES (?, ?)`, src.Name, r.Source); err != nil {
+				return err
+			}
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("failed to commit txn for source %q: %w", src.Name, err)
+	}
+
+	return nil
+}
+
+func (d *Database) UpsertSecret(ctx context.Context, secret *config.Secret) error {
+	if len(secret.Value) > 0 {
+		bs, err := json.Marshal(secret.Value)
+		if err != nil {
+			return err
+		}
+		if _, err := d.db.Exec(`INSERT OR REPLACE INTO secrets (id, value) VALUES (?, ?)`, secret.Name, string(bs)); err != nil {
+			return err
+		}
+	} else {
+		if _, err := d.db.Exec(`INSERT OR REPLACE INTO secrets (id) VALUES (?)`, secret.Name); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (d *Database) UpsertStack(ctx context.Context, stack *config.Stack) error {
+
+	tx, err := d.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+
+	defer tx.Rollback()
+
+	bs, err := json.Marshal(stack.Selector)
+	if err != nil {
+		return fmt.Errorf("failed to marshal selector for stack %q: %w", stack.Name, err)
+	}
+
+	if _, err = tx.Exec(`INSERT OR REPLACE INTO stacks (id, selector) VALUES (?, ?)`, stack.Name, string(bs)); err != nil {
+		return fmt.Errorf("failed to insert stack %q: %w", stack.Name, err)
+	}
+
+	for _, r := range stack.Requirements {
+		if r.Source != nil {
+			// TODO: add support for mounts on requirements; currently that is only used internally for stacks.
+			if _, err = tx.Exec(`INSERT OR REPLACE INTO stacks_requirements (stack_id, source_id) VALUES (?, ?)`, stack.Name, r.Source); err != nil {
+				return fmt.Errorf("failed to insert stack requirement %q: %w", stack.Name, err)
+			}
+		}
+	}
+
+	if err = tx.Commit(); err != nil {
+		return fmt.Errorf("failed to commit txn for stack %q: %w", stack.Name, err)
+	}
+
+	return nil
+}
+
+func (d *Database) UpsertToken(ctx context.Context, token *config.Token) error {
+	if _, err := d.db.Exec(`INSERT OR REPLACE INTO tokens (id, api_key) VALUES (?, ?)`, token.Name, token.APIKey); err != nil {
+		return err
+	}
+	if len(token.Scopes) != 1 {
+		return fmt.Errorf("exactly one scope must be provided for token %q", token.Name)
+	}
+	return UpsertPrincipal(ctx, d, Principal{Id: token.Name, Role: token.Scopes[0].Role})
 }
