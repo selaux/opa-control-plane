@@ -52,7 +52,7 @@ func TestMigration(t *testing.T) {
 				"config.d/1-secrets.yaml": `{
 					secrets: {
 						libraries/envoy/git: {
-							type: http_basic_auth,
+							type: basic_auth,
 							password: $GITHUB_PASSWORD,
 							username: $GITHUB_USERNAME,
 						},
@@ -82,7 +82,7 @@ func TestMigration(t *testing.T) {
 				"config.d/1-secrets.yaml": `{
 					secrets: {
 						libraries/test/git: {
-							type: http_basic_auth,
+							type: basic_auth,
 							password: $GITHUB_PASSWORD,
 							username: $GITHUB_USERNAME,
 						},
@@ -113,7 +113,7 @@ func TestMigration(t *testing.T) {
 				"config.d/1-secrets.yaml": `{
 					secrets: {
 						libraries/test/git: {
-							type: http_basic_auth,
+							type: basic_auth,
 							password: $GITHUB_PASSWORD,
 							username: $GITHUB_USERNAME,
 						},
@@ -144,12 +144,12 @@ func TestMigration(t *testing.T) {
 				"config.d/1-secrets.yaml": `{
 					secrets: {
 						libraries/custom_snippets/git: {
-							type: http_basic_auth,
+							type: basic_auth,
 							password: $GITHUB_PASSWORD,
 							username: $GITHUB_USERNAME,
 						},
 						systems/a8318943a5814712a69adcb2d9f76976/git: {
-							type: http_basic_auth,
+							type: basic_auth,
 							password: $GITHUB_PASSWORD,
 							username: $GITHUB_USERNAME,
 						},
