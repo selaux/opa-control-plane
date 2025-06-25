@@ -3,6 +3,7 @@ package util
 import (
 	"io/fs"
 	"path/filepath"
+	"slices"
 
 	"github.com/gobwas/glob"
 )
@@ -110,23 +111,13 @@ func (d *filteredDir) Read(bs []byte) (int, error) {
 }
 
 func isExcluded(excluded []glob.Glob, name string) bool {
-	for _, g := range excluded {
-		if g.Match(name) {
-			return true
-		}
-	}
-
-	return false
+	return slices.ContainsFunc(excluded, func(g glob.Glob) bool {
+		return g.Match(name)
+	})
 }
 
 func isIncluded(included []glob.Glob, name string) bool {
-	if len(included) == 0 {
-		return true
-	}
-	for _, g := range included {
-		if g.Match(name) {
-			return true
-		}
-	}
-	return false
+	return len(included) == 0 || slices.ContainsFunc(included, func(g glob.Glob) bool {
+		return g.Match(name)
+	})
 }

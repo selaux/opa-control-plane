@@ -8,6 +8,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/gobwas/glob"
@@ -282,24 +283,15 @@ func walkFilesRecursive(excludes []glob.Glob, dir Dir, suffix string, fn func(pa
 }
 
 func isExcluded(path string, excludes []glob.Glob) bool {
-	for _, g := range excludes {
-		if g.Match(path) {
-			return true
-		}
-	}
-	return false
+	return slices.ContainsFunc(excludes, func(g glob.Glob) bool {
+		return g.Match(path)
+	})
 }
 
 func isIncluded(path string, includes []glob.Glob) bool {
-	if len(includes) == 0 {
-		return true
-	}
-	for _, g := range includes {
-		if g.Match(path) {
-			return true
-		}
-	}
-	return false
+	return len(includes) == 0 || slices.ContainsFunc(includes, func(g glob.Glob) bool {
+		return g.Match(path)
+	})
 }
 
 // getRegoAndJSONRootsForDirs returns the set of roots for the given directories. The
