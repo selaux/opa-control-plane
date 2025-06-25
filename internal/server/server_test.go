@@ -44,6 +44,15 @@ func TestServerSourcesData(t *testing.T) {
 		result     string
 	}{
 		{
+			name:       "Create source",
+			method:     "PUT",
+			path:       "/v1/sources/system1",
+			body:       `{}`,
+			apikey:     adminKey,
+			statusCode: 200,
+			result:     "{}\n",
+		},
+		{
 			name:       "GET",
 			method:     "GET",
 			path:       "/v1/sources/system1/foo",

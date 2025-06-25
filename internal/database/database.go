@@ -194,6 +194,17 @@ func (d *Database) CloseDB() {
 
 func (d *Database) SourcesDataGet(ctx context.Context, srcId, path string, principal string) (interface{}, bool, error) {
 
+	tx, err := d.db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, false, err
+	}
+
+	defer tx.Rollback()
+
+	if err := d.resourceExists(ctx, tx, "sources", srcId); err != nil {
+		return nil, false, err
+	}
+
 	expr, err := authz.Partial(ctx, authz.Access{
 		Principal:  principal,
 		Permission: "sources.data.read",
@@ -204,7 +215,7 @@ func (d *Database) SourcesDataGet(ctx context.Context, srcId, path string, princ
 		return nil, false, err
 	}
 
-	rows, err := d.db.Query(`SELECT
+	rows, err := tx.Query(`SELECT
 	data
 FROM
 	sources_data
@@ -238,6 +249,12 @@ func (d *Database) SourcesDataPut(ctx context.Context, srcId, path string, data 
 		return err
 	}
 
+	defer tx.Rollback()
+
+	if err := d.resourceExists(ctx, tx, "sources", srcId); err != nil {
+		return err
+	}
+
 	allowed := authz.Check(ctx, tx, authz.Access{
 		Principal:  principal,
 		Permission: "sources.data.write",
@@ -254,18 +271,29 @@ func (d *Database) SourcesDataPut(ctx context.Context, srcId, path string, data 
 		return err
 	}
 
-	_, err = tx.Exec(`INSERT OR REPLACE INTO sources_data (source_id, path, data) VALUES (?, ?, ?)`, srcId, path, bs)
-	if err != nil {
-		if err2 := tx.Rollback(); err2 != nil {
-			return err2
-		}
+	if _, err := tx.Exec(`INSERT OR REPLACE INTO sources_data (source_id, path, data) VALUES (?, ?, ?)`, srcId, path, bs); err != nil {
 		return err
 	}
 
-	return tx.Commit()
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("failed to commit txn for source data update %q: %w", srcId, err)
+	}
+
+	return nil
 }
 
 func (d *Database) SourcesDataDelete(ctx context.Context, srcId, path string, principal string) error {
+
+	tx, err := d.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+
+	defer tx.Rollback()
+
+	if err := d.resourceExists(ctx, tx, "sources", srcId); err != nil {
+		return err
+	}
 
 	expr, err := authz.Partial(ctx, authz.Access{
 		Principal:  principal,
@@ -276,8 +304,15 @@ func (d *Database) SourcesDataDelete(ctx context.Context, srcId, path string, pr
 	if err != nil {
 		return err
 	}
-	_, err = d.db.Exec(`DELETE FROM sources_data WHERE source_id = ? AND path = ? AND `+expr.SQL(), srcId, path)
-	return err
+	if _, err := tx.Exec(`DELETE FROM sources_data WHERE source_id = ? AND path = ? AND `+expr.SQL(), srcId, path); err != nil {
+		return err
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("failed to commit txn for source data delete %q: %w", srcId, err)
+	}
+
+	return nil
 }
 
 // LoadConfig loads the configuration from the configuration file into the database.
@@ -880,32 +915,37 @@ func (d *Database) checkUpsert(ctx context.Context, tx *sql.Tx, principal, resou
 
 	var a authz.Access
 
-	if d.resourceExists(ctx, tx, resource, id) {
+	if err := d.resourceExists(ctx, tx, resource, id); err == nil {
 		a = authz.Access{
 			Principal:  principal,
 			Resource:   resource,
 			Permission: permUpdate,
 			Id:         id,
 		}
-	} else {
+	} else if err == ErrNotFound {
 		a = authz.Access{
 			Principal:  principal,
 			Resource:   resource,
 			Permission: permCreate,
 		}
+	} else {
+		return err
 	}
 
 	if !authz.Check(ctx, tx, a) {
-		return fmt.Errorf("unauthorized")
+		return ErrNotAuthorized
 	}
 
 	return nil
 }
 
-func (d *Database) resourceExists(ctx context.Context, tx *sql.Tx, table string, id string) bool {
+func (d *Database) resourceExists(ctx context.Context, tx *sql.Tx, table string, id string) error {
 	var exists any
 	if err := tx.QueryRowContext(ctx, fmt.Sprintf("SELECT 1 FROM %v as T WHERE T.id = ?", table), id).Scan(&exists); err != nil {
-		return false
+		if err == sql.ErrNoRows {
+			return ErrNotFound
+		}
+		return err
 	}
-	return true
+	return nil
 }

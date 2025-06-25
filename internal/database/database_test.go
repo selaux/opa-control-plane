@@ -6,6 +6,7 @@ import (
 	"reflect"
 	"testing"
 
+	"github.com/tsandall/lighthouse/internal/config"
 	"github.com/tsandall/lighthouse/internal/database"
 	"github.com/tsandall/lighthouse/internal/service"
 )
@@ -20,6 +21,10 @@ func TestDatabaseSourcesData(t *testing.T) {
 	}
 
 	if err := database.UpsertPrincipal(ctx, db, database.Principal{Id: "admin", Role: "administrator"}); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := db.UpsertSource(ctx, "admin", &config.Source{Name: "system1"}); err != nil {
 		t.Fatal(err)
 	}
 
