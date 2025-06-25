@@ -35,6 +35,7 @@ func (s *Server) Init() *Server {
 	s.router.Handle("/v1/sources/{source:.+}/{path:.+}", http.HandlerFunc(s.v1SourcesDataGet)).Methods(http.MethodGet)
 	s.router.Handle("/v1/sources/{source:.+}/{path:.+}", http.HandlerFunc(s.v1SourcesDataPut)).Methods(http.MethodPost, http.MethodPut)
 	s.router.Handle("/v1/sources/{source:.+}/{path:.+}", http.HandlerFunc(s.v1SourcesDataDelete)).Methods(http.MethodDelete)
+	s.router.Handle("/v1/sources/{source:.+}", http.HandlerFunc(s.v1SourcesPut)).Methods(http.MethodPut)
 	s.router.Use(authenticationMiddleware(s.db))
 
 	return s
@@ -54,7 +55,6 @@ func (s *Server) ListenAndServe(addr string) error {
 	return http.ListenAndServe(addr, s.router)
 }
 
-// v1SourcesList handles GET requests to list sources.
 func (s *Server) v1SourcesList(w http.ResponseWriter, r *http.Request) {
 
 	ctx := r.Context()
@@ -71,10 +71,24 @@ func (s *Server) v1SourcesList(w http.ResponseWriter, r *http.Request) {
 func (s *Server) v1SourcesPut(w http.ResponseWriter, r *http.Request) {
 
 	ctx := r.Context()
+	vars := mux.Vars(r)
+
+	srcId, err := url.PathUnescape(vars["source"])
+	if err != nil {
+		ErrorString(w, http.StatusBadRequest, types.CodeInvalidParameter, err)
+		return
+	}
 
 	var src config.Source
 	if err := newJSONDecoder(r.Body).Decode(&src); err != nil {
 		writer.ErrorString(w, http.StatusBadRequest, types.CodeInvalidParameter, err)
+		return
+	}
+
+	if src.Name == "" {
+		src.Name = srcId
+	} else if src.Name != srcId {
+		writer.ErrorString(w, http.StatusBadRequest, types.CodeInvalidParameter, fmt.Errorf("source name must match path"))
 		return
 	}
 

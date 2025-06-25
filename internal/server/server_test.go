@@ -11,7 +11,7 @@ import (
 	"github.com/tsandall/lighthouse/internal/database"
 )
 
-func TestServer(t *testing.T) {
+func TestServerSourcesData(t *testing.T) {
 	router := mux.NewRouter()
 	var db database.Database
 
@@ -24,7 +24,9 @@ func TestServer(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := db.UpsertToken(ctx, "internaladmin", &config.Token{Name: "admin", APIKey: "testapikey", Scopes: []config.Scope{{Role: "administrator"}}}); err != nil {
+	const adminKey = "test-admin-apikey"
+
+	if err := db.UpsertToken(ctx, "internaladmin", &config.Token{Name: "admin", APIKey: adminKey, Scopes: []config.Scope{{Role: "administrator"}}}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -37,6 +39,7 @@ func TestServer(t *testing.T) {
 		method     string
 		path       string
 		body       string
+		apikey     string
 		statusCode int
 		result     string
 	}{
@@ -45,6 +48,7 @@ func TestServer(t *testing.T) {
 			method:     "GET",
 			path:       "/v1/sources/system1/foo",
 			body:       "",
+			apikey:     adminKey,
 			statusCode: 200,
 			result:     "{}\n",
 		},
@@ -53,6 +57,7 @@ func TestServer(t *testing.T) {
 			method:     "PUT",
 			path:       "/v1/sources/system1/foo",
 			body:       `{"key": "value"}`,
+			apikey:     adminKey,
 			statusCode: 200,
 			result:     "{}\n",
 		},
@@ -61,6 +66,7 @@ func TestServer(t *testing.T) {
 			method:     "GET",
 			path:       "/v1/sources/system1/foo",
 			body:       "",
+			apikey:     adminKey,
 			statusCode: 200,
 			result: `{"result":{"key":"value"}}
 `,
@@ -70,6 +76,7 @@ func TestServer(t *testing.T) {
 			method:     "POST",
 			path:       "/v1/sources/system1/foo",
 			body:       `{"key": "value2"}`,
+			apikey:     adminKey,
 			statusCode: 200,
 			result:     "{}\n",
 		},
@@ -78,6 +85,7 @@ func TestServer(t *testing.T) {
 			method:     "GET",
 			path:       "/v1/sources/system1/foo",
 			body:       "",
+			apikey:     adminKey,
 			statusCode: 200,
 			result: `{"result":{"key":"value2"}}
 `,
@@ -87,6 +95,7 @@ func TestServer(t *testing.T) {
 			method:     "DELETE",
 			path:       "/v1/sources/system1/foo",
 			body:       "",
+			apikey:     adminKey,
 			statusCode: 200,
 			result:     "{}\n",
 		},
@@ -95,6 +104,7 @@ func TestServer(t *testing.T) {
 			method:     "GET",
 			path:       "/v1/sources/system1/foo",
 			body:       "",
+			apikey:     adminKey,
 			statusCode: 200,
 			result:     "{}\n",
 		},
@@ -110,7 +120,7 @@ func TestServer(t *testing.T) {
 				}
 			}
 			req := httptest.NewRequest(test.method, s.URL+test.path, bytes.NewBuffer(body))
-			req.Header.Add("authorization", "Bearer testapikey")
+			req.Header.Add("authorization", "Bearer "+test.apikey)
 			w := httptest.NewRecorder()
 			router.ServeHTTP(w, req)
 
