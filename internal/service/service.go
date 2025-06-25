@@ -82,7 +82,7 @@ func (s *Service) Run(ctx context.Context) error {
 
 	defer s.database.CloseDB()
 
-	if err := s.database.LoadConfig(ctx, s.config); err != nil {
+	if err := s.database.LoadConfig(ctx, internalPrincipal, s.config); err != nil {
 		return err
 	}
 

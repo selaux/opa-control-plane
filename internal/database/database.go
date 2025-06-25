@@ -281,31 +281,40 @@ func (d *Database) SourcesDataDelete(ctx context.Context, srcId, path string, pr
 }
 
 // LoadConfig loads the configuration from the configuration file into the database.
-func (d *Database) LoadConfig(ctx context.Context, bs []byte) error {
+func (d *Database) LoadConfig(ctx context.Context, _ string, bs []byte) error {
 
 	root, err := config.Parse(bytes.NewBuffer(bs))
 	if err != nil {
 		return err
 	}
 
-	if err := d.loadSecrets(ctx, root); err != nil {
-		return err
+	for _, secret := range root.SortedSecrets() {
+		if err := d.UpsertSecret(ctx, secret); err != nil {
+			return err
+		}
 	}
 
-	if err := d.loadBundles(ctx, root); err != nil {
-		return err
+	for _, b := range root.SortedBundles() {
+		if err := d.UpsertBundle(ctx, b); err != nil {
+			return err
+		}
 	}
 
-	if err := d.loadSources(ctx, root); err != nil {
-		return err
+	for _, src := range root.SortedSources() {
+		if err := d.UpsertSource(ctx, src); err != nil {
+			return err
+		}
 	}
 
-	if err := d.loadStacks(ctx, root); err != nil {
-		return err
+	for _, stack := range root.SortedStacks() {
+		if err := d.UpsertStack(ctx, stack); err != nil {
+			return err
+		}
 	}
-
-	if err := d.loadTokens(ctx, root); err != nil {
-		return err
+	for _, token := range root.Tokens {
+		if err := d.UpsertToken(ctx, token); err != nil {
+			return err
+		}
 	}
 
 	return nil
@@ -645,54 +654,6 @@ func (c *DataCursor) Value() (Data, error) {
 	}
 
 	return Data{Path: path, Data: data}, nil
-}
-
-func (d *Database) loadBundles(ctx context.Context, root *config.Root) error {
-	for _, b := range root.SortedBundles() {
-		if err := d.UpsertBundle(ctx, b); err != nil {
-			return err
-		}
-	}
-
-	return nil
-}
-
-func (d *Database) loadSources(ctx context.Context, root *config.Root) error {
-	for _, src := range root.SortedSources() {
-		if err := d.UpsertSource(ctx, src); err != nil {
-			return err
-		}
-	}
-
-	return nil
-}
-
-func (d *Database) loadSecrets(ctx context.Context, root *config.Root) error {
-	for _, secret := range root.SortedSecrets() {
-		if err := d.UpsertSecret(ctx, secret); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func (d *Database) loadStacks(ctx context.Context, root *config.Root) error {
-	for _, stack := range root.SortedStacks() {
-		if err := d.UpsertStack(ctx, stack); err != nil {
-			return err
-		}
-	}
-
-	return nil
-}
-
-func (d *Database) loadTokens(ctx context.Context, root *config.Root) error {
-	for _, token := range root.Tokens {
-		if err := d.UpsertToken(ctx, token); err != nil {
-			return err
-		}
-	}
-	return nil
 }
 
 func (d *Database) UpsertBundle(ctx context.Context, b *config.Bundle) error {
