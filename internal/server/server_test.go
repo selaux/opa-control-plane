@@ -20,7 +20,11 @@ func TestServer(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := db.UpsertToken(ctx, &config.Token{Name: "admin", APIKey: "testapikey", Scopes: []config.Scope{{Role: "administrator"}}}); err != nil {
+	if err := database.UpsertPrincipal(ctx, &db, database.Principal{Id: "internaladmin", Role: "administrator"}); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := db.UpsertToken(ctx, "internaladmin", &config.Token{Name: "admin", APIKey: "testapikey", Scopes: []config.Scope{{Role: "administrator"}}}); err != nil {
 		t.Fatal(err)
 	}
 

@@ -23,6 +23,8 @@ type SourcesListResponseV1 struct {
 	Result []*config.Source `json:"result,omitempty"`
 }
 
+type SourcesPutResponseV1 struct{}
+
 type SourcesDeleteDataResponseV1 struct{}
 
 type SourcesPutDataResponseV1 struct{}

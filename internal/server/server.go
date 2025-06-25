@@ -12,6 +12,7 @@ import (
 
 	"github.com/gorilla/mux"
 	"github.com/open-policy-agent/opa/server/writer"
+	"github.com/tsandall/lighthouse/internal/config"
 	"github.com/tsandall/lighthouse/internal/database"
 	"github.com/tsandall/lighthouse/internal/server/types"
 )
@@ -64,6 +65,25 @@ func (s *Server) v1SourcesList(w http.ResponseWriter, r *http.Request) {
 	}
 
 	resp := types.SourcesListResponseV1{Result: sources}
+	JSONOK(w, resp, pretty(r))
+}
+
+func (s *Server) v1SourcesPut(w http.ResponseWriter, r *http.Request) {
+
+	ctx := r.Context()
+
+	var src config.Source
+	if err := newJSONDecoder(r.Body).Decode(&src); err != nil {
+		writer.ErrorString(w, http.StatusBadRequest, types.CodeInvalidParameter, err)
+		return
+	}
+
+	if err := s.db.UpsertSource(ctx, s.auth(r), &src); err != nil {
+		errorAuto(w, err)
+		return
+	}
+
+	resp := types.SourcesPutResponseV1{}
 	JSONOK(w, resp, pretty(r))
 }
 

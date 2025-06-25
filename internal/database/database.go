@@ -281,7 +281,7 @@ func (d *Database) SourcesDataDelete(ctx context.Context, srcId, path string, pr
 }
 
 // LoadConfig loads the configuration from the configuration file into the database.
-func (d *Database) LoadConfig(ctx context.Context, _ string, bs []byte) error {
+func (d *Database) LoadConfig(ctx context.Context, principal string, bs []byte) error {
 
 	root, err := config.Parse(bytes.NewBuffer(bs))
 	if err != nil {
@@ -289,30 +289,30 @@ func (d *Database) LoadConfig(ctx context.Context, _ string, bs []byte) error {
 	}
 
 	for _, secret := range root.SortedSecrets() {
-		if err := d.UpsertSecret(ctx, secret); err != nil {
+		if err := d.UpsertSecret(ctx, principal, secret); err != nil {
 			return err
 		}
 	}
 
 	for _, b := range root.SortedBundles() {
-		if err := d.UpsertBundle(ctx, b); err != nil {
+		if err := d.UpsertBundle(ctx, principal, b); err != nil {
 			return err
 		}
 	}
 
 	for _, src := range root.SortedSources() {
-		if err := d.UpsertSource(ctx, src); err != nil {
+		if err := d.UpsertSource(ctx, principal, src); err != nil {
 			return err
 		}
 	}
 
 	for _, stack := range root.SortedStacks() {
-		if err := d.UpsertStack(ctx, stack); err != nil {
+		if err := d.UpsertStack(ctx, principal, stack); err != nil {
 			return err
 		}
 	}
 	for _, token := range root.Tokens {
-		if err := d.UpsertToken(ctx, token); err != nil {
+		if err := d.UpsertToken(ctx, principal, token); err != nil {
 			return err
 		}
 	}
@@ -656,7 +656,7 @@ func (c *DataCursor) Value() (Data, error) {
 	return Data{Path: path, Data: data}, nil
 }
 
-func (d *Database) UpsertBundle(ctx context.Context, b *config.Bundle) error {
+func (d *Database) UpsertBundle(ctx context.Context, principal string, bundle *config.Bundle) error {
 
 	tx, err := d.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -665,52 +665,56 @@ func (d *Database) UpsertBundle(ctx context.Context, b *config.Bundle) error {
 
 	defer tx.Rollback()
 
-	var s3url, s3region, s3bucket, s3key *string
-	if b.ObjectStorage.AmazonS3 != nil {
-		s3url = &b.ObjectStorage.AmazonS3.URL
-		s3region = &b.ObjectStorage.AmazonS3.Region
-		s3bucket = &b.ObjectStorage.AmazonS3.Bucket
-		s3key = &b.ObjectStorage.AmazonS3.Key
+	if err := d.checkUpsert(ctx, tx, principal, "bundles", bundle.Name, "bundles.create", "bundles.manage"); err != nil {
+		return err
 	}
 
-	labels, err := json.Marshal(b.Labels)
+	var s3url, s3region, s3bucket, s3key *string
+	if bundle.ObjectStorage.AmazonS3 != nil {
+		s3url = &bundle.ObjectStorage.AmazonS3.URL
+		s3region = &bundle.ObjectStorage.AmazonS3.Region
+		s3bucket = &bundle.ObjectStorage.AmazonS3.Bucket
+		s3key = &bundle.ObjectStorage.AmazonS3.Key
+	}
+
+	labels, err := json.Marshal(bundle.Labels)
 	if err != nil {
 		return err
 	}
 
-	excluded, err := json.Marshal(b.ExcludedFiles)
+	excluded, err := json.Marshal(bundle.ExcludedFiles)
 	if err != nil {
 		return err
 	}
 
 	if _, err := tx.Exec(`INSERT OR REPLACE INTO bundles (id, labels, s3url, s3region, s3bucket, s3key, excluded) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-		b.Name, string(labels), s3url, s3region, s3bucket, s3key, string(excluded)); err != nil {
+		bundle.Name, string(labels), s3url, s3region, s3bucket, s3key, string(excluded)); err != nil {
 		return err
 	}
 
-	if b.ObjectStorage.AmazonS3 != nil {
-		if b.ObjectStorage.AmazonS3.Credentials != nil {
-			tx.Exec(`INSERT OR REPLACE INTO bundles_secrets (bundle_id, secret_id, ref_type) VALUES (?, ?, ?)`, b.Name, b.ObjectStorage.AmazonS3.Credentials.Name, "aws")
+	if bundle.ObjectStorage.AmazonS3 != nil {
+		if bundle.ObjectStorage.AmazonS3.Credentials != nil {
+			tx.Exec(`INSERT OR REPLACE INTO bundles_secrets (bundle_id, secret_id, ref_type) VALUES (?, ?, ?)`, bundle.Name, bundle.ObjectStorage.AmazonS3.Credentials.Name, "aws")
 		}
 	}
 
-	for _, src := range b.Requirements {
+	for _, src := range bundle.Requirements {
 		if src.Source != nil {
 			// TODO: add support for mounts on requirements; currently that is only used internally for stacks.
-			if _, err := tx.Exec(`INSERT OR REPLACE INTO bundles_requirements (bundle_id, source_id) VALUES (?, ?)`, b.Name, src.Source); err != nil {
+			if _, err := tx.Exec(`INSERT OR REPLACE INTO bundles_requirements (bundle_id, source_id) VALUES (?, ?)`, bundle.Name, src.Source); err != nil {
 				return err
 			}
 		}
 	}
 
 	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("failed to commit txn for bundle %q: %w", b.Name, err)
+		return fmt.Errorf("failed to commit txn for bundle %q: %w", bundle.Name, err)
 	}
 
 	return nil
 }
 
-func (d *Database) UpsertSource(ctx context.Context, src *config.Source) error {
+func (d *Database) UpsertSource(ctx context.Context, principal string, source *config.Source) error {
 
 	tx, err := d.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -719,69 +723,56 @@ func (d *Database) UpsertSource(ctx context.Context, src *config.Source) error {
 
 	defer tx.Rollback()
 
-	includedFiles, err := json.Marshal(src.Git.IncludedFiles)
+	if err := d.checkUpsert(ctx, tx, principal, "sources", source.Name, "sources.create", "sources.manage"); err != nil {
+		return err
+	}
+
+	includedFiles, err := json.Marshal(source.Git.IncludedFiles)
 	if err != nil {
 		return err
 	}
 
-	if _, err := tx.Exec(`INSERT OR REPLACE INTO sources (id, builtin, repo, ref, gitcommit, path, git_included_files) VALUES (?, ?, ?, ?, ?, ?, ?)`, src.Name, src.Builtin, src.Git.Repo, src.Git.Reference, src.Git.Commit, src.Git.Path, string(includedFiles)); err != nil {
+	if _, err := tx.Exec(`INSERT OR REPLACE INTO sources (id, builtin, repo, ref, gitcommit, path, git_included_files) VALUES (?, ?, ?, ?, ?, ?, ?)`, source.Name, source.Builtin, source.Git.Repo, source.Git.Reference, source.Git.Commit, source.Git.Path, string(includedFiles)); err != nil {
 		return err
 	}
 
-	if src.Git.Credentials != nil {
-		tx.Exec(`INSERT OR REPLACE INTO sources_secrets (source_id, secret_id, ref_type) VALUES (?, ?, ?)`, src.Name, src.Git.Credentials.Name, "git_credentials")
+	if source.Git.Credentials != nil {
+		tx.Exec(`INSERT OR REPLACE INTO sources_secrets (source_id, secret_id, ref_type) VALUES (?, ?, ?)`, source.Name, source.Git.Credentials.Name, "git_credentials")
 	}
 
-	for _, datasource := range src.Datasources {
+	for _, datasource := range source.Datasources {
 		bs, err := json.Marshal(datasource.Config)
 		if err != nil {
 			return err
 		}
 		if _, err := tx.Exec(`INSERT OR REPLACE INTO sources_datasources (name, source_id, type, path, config, transform_query) VALUES (?, ?, ?, ?, ?, ?)`,
-			datasource.Name, src.Name, datasource.Type, datasource.Path, string(bs), datasource.TransformQuery); err != nil {
+			datasource.Name, source.Name, datasource.Type, datasource.Path, string(bs), datasource.TransformQuery); err != nil {
 			return err
 		}
 	}
 
-	for path, data := range src.Files() {
-		if _, err := tx.Exec(`INSERT OR REPLACE INTO sources_data (source_id, path, data) VALUES (?, ?, ?)`, src.Name, path, data); err != nil {
+	for path, data := range source.Files() {
+		if _, err := tx.Exec(`INSERT OR REPLACE INTO sources_data (source_id, path, data) VALUES (?, ?, ?)`, source.Name, path, data); err != nil {
 			return err
 		}
 	}
 
-	for _, r := range src.Requirements {
+	for _, r := range source.Requirements {
 		if r.Source != nil {
-			if _, err := tx.Exec(`INSERT OR REPLACE INTO sources_requirements (source_id, requirement_id) VALUES (?, ?)`, src.Name, r.Source); err != nil {
+			if _, err := tx.Exec(`INSERT OR REPLACE INTO sources_requirements (source_id, requirement_id) VALUES (?, ?)`, source.Name, r.Source); err != nil {
 				return err
 			}
 		}
 	}
 
 	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("failed to commit txn for source %q: %w", src.Name, err)
+		return fmt.Errorf("failed to commit txn for source %q: %w", source.Name, err)
 	}
 
 	return nil
 }
 
-func (d *Database) UpsertSecret(ctx context.Context, secret *config.Secret) error {
-	if len(secret.Value) > 0 {
-		bs, err := json.Marshal(secret.Value)
-		if err != nil {
-			return err
-		}
-		if _, err := d.db.Exec(`INSERT OR REPLACE INTO secrets (id, value) VALUES (?, ?)`, secret.Name, string(bs)); err != nil {
-			return err
-		}
-	} else {
-		if _, err := d.db.Exec(`INSERT OR REPLACE INTO secrets (id) VALUES (?)`, secret.Name); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func (d *Database) UpsertStack(ctx context.Context, stack *config.Stack) error {
+func (d *Database) UpsertSecret(ctx context.Context, principal string, secret *config.Secret) error {
 
 	tx, err := d.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -789,6 +780,44 @@ func (d *Database) UpsertStack(ctx context.Context, stack *config.Stack) error {
 	}
 
 	defer tx.Rollback()
+
+	if err := d.checkUpsert(ctx, tx, principal, "secrets", secret.Name, "secrets.create", "secrets.manage"); err != nil {
+		return err
+	}
+
+	if len(secret.Value) > 0 {
+		bs, err := json.Marshal(secret.Value)
+		if err != nil {
+			return err
+		}
+		if _, err := tx.Exec(`INSERT OR REPLACE INTO secrets (id, value) VALUES (?, ?)`, secret.Name, string(bs)); err != nil {
+			return err
+		}
+	} else {
+		if _, err := tx.Exec(`INSERT OR REPLACE INTO secrets (id) VALUES (?)`, secret.Name); err != nil {
+			return err
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("failed to commit txn for secret %q: %v", secret.Name, err)
+	}
+
+	return nil
+}
+
+func (d *Database) UpsertStack(ctx context.Context, principal string, stack *config.Stack) error {
+
+	tx, err := d.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+
+	defer tx.Rollback()
+
+	if err := d.checkUpsert(ctx, tx, principal, "stacks", stack.Name, "stacks.create", "stacks.manage"); err != nil {
+		return err
+	}
 
 	bs, err := json.Marshal(stack.Selector)
 	if err != nil {
@@ -815,12 +844,68 @@ func (d *Database) UpsertStack(ctx context.Context, stack *config.Stack) error {
 	return nil
 }
 
-func (d *Database) UpsertToken(ctx context.Context, token *config.Token) error {
-	if _, err := d.db.Exec(`INSERT OR REPLACE INTO tokens (id, api_key) VALUES (?, ?)`, token.Name, token.APIKey); err != nil {
+func (d *Database) UpsertToken(ctx context.Context, principal string, token *config.Token) error {
+
+	tx, err := d.db.BeginTx(ctx, nil)
+	if err != nil {
 		return err
 	}
+
+	defer tx.Rollback()
+
+	if err := d.checkUpsert(ctx, tx, principal, "tokens", token.Name, "tokens.create", "tokens.manage"); err != nil {
+		return err
+	}
+
+	if _, err := tx.Exec(`INSERT OR REPLACE INTO tokens (id, api_key) VALUES (?, ?)`, token.Name, token.APIKey); err != nil {
+		return err
+	}
+
 	if len(token.Scopes) != 1 {
 		return fmt.Errorf("exactly one scope must be provided for token %q", token.Name)
 	}
-	return UpsertPrincipal(ctx, d, Principal{Id: token.Name, Role: token.Scopes[0].Role})
+
+	if err := UpsertPrincipalTx(ctx, tx, Principal{Id: token.Name, Role: token.Scopes[0].Role}); err != nil {
+		return err
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("failed to commit txn for token %q: %w", token.Name, err)
+	}
+
+	return nil
+}
+
+func (d *Database) checkUpsert(ctx context.Context, tx *sql.Tx, principal, resource, id string, permCreate, permUpdate string) error {
+
+	var a authz.Access
+
+	if d.resourceExists(ctx, tx, resource, id) {
+		a = authz.Access{
+			Principal:  principal,
+			Resource:   resource,
+			Permission: permUpdate,
+			Id:         id,
+		}
+	} else {
+		a = authz.Access{
+			Principal:  principal,
+			Resource:   resource,
+			Permission: permCreate,
+		}
+	}
+
+	if !authz.Check(ctx, tx, a) {
+		return fmt.Errorf("unauthorized")
+	}
+
+	return nil
+}
+
+func (d *Database) resourceExists(ctx context.Context, tx *sql.Tx, table string, id string) bool {
+	var exists any
+	if err := tx.QueryRowContext(ctx, fmt.Sprintf("SELECT 1 FROM %v as T WHERE T.id = ?", table), id).Scan(&exists); err != nil {
+		return false
+	}
+	return true
 }
