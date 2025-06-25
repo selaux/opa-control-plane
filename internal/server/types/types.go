@@ -8,6 +8,8 @@ import (
 
 const (
 	CodeInternal         = "internal_error"
+	CodeNotAuthorized    = "not_authorized"
+	CodeNotFound         = "not_found"
 	CodeInvalidParameter = "invalid_parameter"
 )
 
@@ -21,6 +23,10 @@ type SourcesGetDataResponseV1 struct {
 
 type SourcesListResponseV1 struct {
 	Result []*config.Source `json:"result,omitempty"`
+}
+
+type SourcesGetResponseV1 struct {
+	Result *config.Source `json:"result,omitempty"`
 }
 
 type SourcesPutResponseV1 struct{}

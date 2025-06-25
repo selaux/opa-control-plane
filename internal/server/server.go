@@ -36,6 +36,7 @@ func (s *Server) Init() *Server {
 	s.router.Handle("/v1/sources/{source:.+}/{path:.+}", http.HandlerFunc(s.v1SourcesDataPut)).Methods(http.MethodPost, http.MethodPut)
 	s.router.Handle("/v1/sources/{source:.+}/{path:.+}", http.HandlerFunc(s.v1SourcesDataDelete)).Methods(http.MethodDelete)
 	s.router.Handle("/v1/sources/{source:.+}", http.HandlerFunc(s.v1SourcesPut)).Methods(http.MethodPut)
+	s.router.Handle("/v1/sources/{source:.+}", http.HandlerFunc(s.v1SourcesGet)).Methods(http.MethodGet)
 	s.router.Use(authenticationMiddleware(s.db))
 
 	return s
@@ -98,6 +99,26 @@ func (s *Server) v1SourcesPut(w http.ResponseWriter, r *http.Request) {
 	}
 
 	resp := types.SourcesPutResponseV1{}
+	JSONOK(w, resp, pretty(r))
+}
+
+func (s *Server) v1SourcesGet(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	vars := mux.Vars(r)
+
+	srcId, err := url.PathUnescape(vars["source"])
+	if err != nil {
+		ErrorString(w, http.StatusBadRequest, types.CodeInvalidParameter, err)
+		return
+	}
+
+	src, err := s.db.GetSource(ctx, s.auth(r), srcId)
+	if err != nil {
+		errorAuto(w, err)
+		return
+	}
+
+	resp := types.SourcesGetResponseV1{Result: src}
 	JSONOK(w, resp, pretty(r))
 }
 
@@ -190,7 +211,9 @@ func (s *Server) auth(r *http.Request) string {
 func errorAuto(w http.ResponseWriter, err error) {
 	switch err {
 	case database.ErrNotAuthorized:
-		ErrorString(w, http.StatusForbidden, types.CodeInvalidParameter, err)
+		ErrorString(w, http.StatusForbidden, types.CodeNotAuthorized, err)
+	case database.ErrNotFound:
+		ErrorString(w, http.StatusNotFound, types.CodeNotFound, err)
 	default:
 		ErrorString(w, http.StatusInternalServerError, types.CodeInternal, err)
 	}

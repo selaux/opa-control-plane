@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"sort"
 
 	"github.com/aws/aws-sdk-go-v2/feature/rds/auth"
 	_ "github.com/go-sql-driver/mysql"
@@ -456,7 +457,28 @@ func (d *Database) ListBundlesToBuild() ([]*config.Bundle, error) {
 	return slices.Collect(maps.Values(bundleMap)), nil
 }
 
+func (d *Database) GetSource(ctx context.Context, principal string, srcId string) (*config.Source, error) {
+	sources, err := d.ListSourcesFilter(ctx, principal, Filter{Id: srcId})
+	if err != nil {
+		return nil, err
+	}
+
+	if len(sources) == 0 {
+		return nil, ErrNotFound
+	}
+
+	return sources[0], nil
+}
+
+type Filter struct {
+	Id string
+}
+
 func (d *Database) ListSourcesWithGitCredentials(ctx context.Context, principal string) ([]*config.Source, error) {
+	return d.ListSourcesFilter(ctx, principal, Filter{})
+}
+
+func (d *Database) ListSourcesFilter(ctx context.Context, principal string, filter Filter) ([]*config.Source, error) {
 	txn, err := d.db.Begin()
 	if err != nil {
 		return nil, err
@@ -494,9 +516,16 @@ LEFT JOIN
 	secrets ON sources_secrets.secret_id = secrets.id
 LEFT JOIN
 	sources_requirements ON sources.id = sources_requirements.source_id
-WHERE ((sources_secrets.ref_type = 'git_credentials' AND secrets.value IS NOT NULL) OR sources_secrets.ref_type IS NULL) AND ` + expr.SQL()
+WHERE ((sources_secrets.ref_type = 'git_credentials' AND secrets.value IS NOT NULL) OR sources_secrets.ref_type IS NULL) AND (` + expr.SQL() + ")"
 
-	rows, err := txn.Query(query)
+	var args []any
+
+	if filter.Id != "" {
+		query += " AND sources.id = ?"
+		args = append(args, filter.Id)
+	}
+
+	rows, err := txn.Query(query, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -599,7 +628,12 @@ WHERE ((sources_secrets.ref_type = 'git_credentials' AND secrets.value IS NOT NU
 		}
 	}
 
-	return slices.Collect(maps.Values(srcMap)), nil
+	sl := slices.Collect(maps.Values(srcMap))
+	sort.Slice(sl, func(i, j int) bool {
+		return sl[i].Name < sl[j].Name
+	})
+
+	return sl, nil
 }
 
 func (d *Database) ListStacks() ([]*config.Stack, error) {

@@ -155,6 +155,8 @@ func TestServerSourceOwners(t *testing.T) {
 		t.Fatal("expected exactly one source")
 	}
 
+	ts.Request("GET", "/v1/sources/testsrc", "", ownerKey).ExpectStatus(200)
+
 	// TODO(tsandall): check details
 
 	var ownerList2 types.SourcesListResponseV1
@@ -164,6 +166,7 @@ func TestServerSourceOwners(t *testing.T) {
 	}
 
 	ts.Request("PUT", "/v1/sources/testsrc", "{}", ownerKey2).ExpectStatus(403)
+	ts.Request("GET", "/v1/sources/testsrc", "", ownerKey2).ExpectStatus(404)
 	ts.Request("PUT", "/v1/sources/testsrc", "{}", ownerKey).ExpectStatus(200)
 }
 
