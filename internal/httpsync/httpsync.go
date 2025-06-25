@@ -79,7 +79,7 @@ func setAuthHeaders(ctx context.Context, credentials *config.SecretRef, req *htt
 		username, _ := value["username"].(string)
 		password, _ := value["password"].(string)
 		req.SetBasicAuth(username, password)
-	case "token":
+	case "token_auth":
 		token, _ := value["token"].(string)
 		req.Header.Set("Authorization", "Bearer "+token)
 	default:
