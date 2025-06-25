@@ -188,7 +188,9 @@ func (s *Server) auth(r *http.Request) string {
 }
 
 func errorAuto(w http.ResponseWriter, err error) {
-	switch {
+	switch err {
+	case database.ErrNotAuthorized:
+		ErrorString(w, http.StatusForbidden, types.CodeInvalidParameter, err)
 	default:
 		ErrorString(w, http.StatusInternalServerError, types.CodeInternal, err)
 	}

@@ -700,7 +700,7 @@ func (d *Database) UpsertBundle(ctx context.Context, principal string, bundle *c
 
 	defer tx.Rollback()
 
-	if err := d.checkUpsert(ctx, tx, principal, "bundles", bundle.Name, "bundles.create", "bundles.manage"); err != nil {
+	if err := d.prepareUpsert(ctx, tx, principal, "bundles", bundle.Name, "bundles.create", "bundles.manage"); err != nil {
 		return err
 	}
 
@@ -758,7 +758,7 @@ func (d *Database) UpsertSource(ctx context.Context, principal string, source *c
 
 	defer tx.Rollback()
 
-	if err := d.checkUpsert(ctx, tx, principal, "sources", source.Name, "sources.create", "sources.manage"); err != nil {
+	if err := d.prepareUpsert(ctx, tx, principal, "sources", source.Name, "sources.create", "sources.manage"); err != nil {
 		return err
 	}
 
@@ -816,7 +816,7 @@ func (d *Database) UpsertSecret(ctx context.Context, principal string, secret *c
 
 	defer tx.Rollback()
 
-	if err := d.checkUpsert(ctx, tx, principal, "secrets", secret.Name, "secrets.create", "secrets.manage"); err != nil {
+	if err := d.prepareUpsert(ctx, tx, principal, "secrets", secret.Name, "secrets.create", "secrets.manage"); err != nil {
 		return err
 	}
 
@@ -850,7 +850,7 @@ func (d *Database) UpsertStack(ctx context.Context, principal string, stack *con
 
 	defer tx.Rollback()
 
-	if err := d.checkUpsert(ctx, tx, principal, "stacks", stack.Name, "stacks.create", "stacks.manage"); err != nil {
+	if err := d.prepareUpsert(ctx, tx, principal, "stacks", stack.Name, "stacks.create", "stacks.manage"); err != nil {
 		return err
 	}
 
@@ -888,7 +888,7 @@ func (d *Database) UpsertToken(ctx context.Context, principal string, token *con
 
 	defer tx.Rollback()
 
-	if err := d.checkUpsert(ctx, tx, principal, "tokens", token.Name, "tokens.create", "tokens.manage"); err != nil {
+	if err := d.prepareUpsert(ctx, tx, principal, "tokens", token.Name, "tokens.create", "tokens.manage"); err != nil {
 		return err
 	}
 
@@ -911,7 +911,7 @@ func (d *Database) UpsertToken(ctx context.Context, principal string, token *con
 	return nil
 }
 
-func (d *Database) checkUpsert(ctx context.Context, tx *sql.Tx, principal, resource, id string, permCreate, permUpdate string) error {
+func (d *Database) prepareUpsert(ctx context.Context, tx *sql.Tx, principal, resource, id string, permCreate, permUpdate string) error {
 
 	var a authz.Access
 
@@ -927,6 +927,9 @@ func (d *Database) checkUpsert(ctx context.Context, tx *sql.Tx, principal, resou
 			Principal:  principal,
 			Resource:   resource,
 			Permission: permCreate,
+		}
+		if _, err := tx.Exec(`INSERT OR REPLACE INTO resource_permissions (id, resource, principal_id, role) VALUES (?, ?, ?, ?)`, id, resource, principal, "owner"); err != nil {
+			return err
 		}
 	} else {
 		return err
