@@ -534,6 +534,36 @@ func (s *SecretRef) Equal(other *SecretRef) bool {
 
 // Secret defines the configuration for secrets/tokens used by Lighthouse
 // for Git synchronization, datasources, etc.
+//
+// Each secret is stored as a map of key-value pairs, where the keys and values are strings. Secret type is also declared in the config.
+// For example, a secret for basic HTTP authentication might look like this (in YAML):
+//
+// my_secret:
+//
+//	type: basic_auth
+//	username: myuser
+//	password: mypassword
+//
+// Secrets may also refer to environment variables using the ${VAR_NAME} syntax. For example:
+//
+// my_secret:
+//
+//	type: aws_auth
+//	access_key_id: ${AWS_ACCESS_KEY_ID}
+//	secret_access_key: ${AWS_SECRET_ACCESS_KEY}
+//	session_token: ${AWS_SESSION_TOKEN}
+//
+// In this case, the actual values for username and password will be read from the environment variables AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY,
+// and AWS_SESSION_TOKEN.
+//
+// Currently the following secret types are supported:
+//
+// * "aws_auth" for AWS authentication. Values for keys "access_key_id", "secret_access_key", and optional "session_token" are expected.
+// * "azure_auth" for Azure authentication. Values for keys "account_name" and "account_key" are expected.
+// * "basic_auth" for HTTP basic authentication. Values for keys "username" and "password" are expected.
+// * "gcp_auth" for Google Cloud authentication. Value for a key "api_key" or "credentials" is expected.
+// * "github_app_auth" for GitHub App authentication. Values for keys "integration_id", "installation_id", and "private_key" are expected.
+// * "token_auth" for HTTP bearer token authentication. Value for a key "token" is expected.
 type Secret struct {
 	Name  string                 `json:"-" yaml:"-"`
 	Value map[string]interface{} `json:"-" yaml:"-"`
@@ -678,8 +708,9 @@ type AmazonS3 struct {
 	Bucket      string     `json:"bucket" yaml:"bucket"`
 	Key         string     `json:"key" yaml:"key"`
 	Region      string     `json:"region,omitempty" yaml:"region,omitempty"`
-	Credentials *SecretRef `json:"credentials,omitempty" yaml:"credentials,omitempty"`
-	URL         string     `json:"url,omitempty" yaml:"url,omitempty"` // for test purposes
+	Credentials *SecretRef `json:"credentials,omitempty" yaml:"credentials,omitempty"` // If nil, use default credentials chain: environment variables,
+	// shared credentials file, ECS or EC2 instance role. More details in s3.go.
+	URL string `json:"url,omitempty" yaml:"url,omitempty"` // for test purposes
 }
 
 // GCPCloudStorage defines the configuration for a Google Cloud Storage bucket.
@@ -687,7 +718,8 @@ type GCPCloudStorage struct {
 	Project     string     `json:"project" yaml:"project"`
 	Bucket      string     `json:"bucket" yaml:"bucket"`
 	Object      string     `json:"object" yaml:"object"`
-	Credentials *SecretRef `json:"credentials,omitempty" yaml:"credentials,omitempty"`
+	Credentials *SecretRef `json:"credentials,omitempty" yaml:"credentials,omitempty"` // If nil, use default credentials chain: environment variables,
+	// file created by gcloud auth application-default login, GCE/GKE metadata server. More details in s3.go.
 }
 
 // AzureBlobStorage defines the configuration for an Azure Blob Storage container.
@@ -695,7 +727,8 @@ type AzureBlobStorage struct {
 	AccountURL  string     `json:"account_url" yaml:"account_url"`
 	Container   string     `json:"container" yaml:"container"`
 	Path        string     `json:"path" yaml:"path"`
-	Credentials *SecretRef `json:"credentials,omitempty" yaml:"credentials,omitempty"`
+	Credentials *SecretRef `json:"credentials,omitempty" yaml:"credentials,omitempty"` // If nil, use default credentials chain: environment variables,
+	// managed identity, Azure CLI login. More details in s3.go.
 }
 
 func (a *AmazonS3) Equal(other *AmazonS3) bool {

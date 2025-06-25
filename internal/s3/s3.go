@@ -119,6 +119,10 @@ func New(ctx context.Context, config config.ObjectStorage) (ObjectStorage, error
 				return nil, err
 			}
 
+			if value["type"] != "gcp_auth" {
+				return nil, errors.New("invalid GCP secret type")
+			}
+
 			apiKey, _ := value["api_key"].(string)
 			credentials, _ := value["credentials"].(string)
 
@@ -168,6 +172,10 @@ func New(ctx context.Context, config config.ObjectStorage) (ObjectStorage, error
 			value, err := secret.Get(ctx)
 			if err != nil {
 				return nil, err
+			}
+
+			if value["type"] != "azure_auth" {
+				return nil, errors.New("invalid Azure secret type")
 			}
 
 			accountName, _ := value["account_name"].(string)
