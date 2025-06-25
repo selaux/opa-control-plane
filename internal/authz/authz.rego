@@ -16,7 +16,7 @@ allow if {
 		"secrets.view",
 		"stacks.view",
 		"tokens.view",
-		"source.data.read",
+		"sources.data.read",
 	]
 }
 

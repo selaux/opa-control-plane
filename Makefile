@@ -22,7 +22,7 @@ generate:
 build: go-build
 
 .PHONY: test
-test: go-test library-test
+test: go-test library-test authz-test
 
 .PHONY: go-build
 go-build: generate
@@ -32,9 +32,11 @@ go-build: generate
 go-test: generate
 	$(GO) test -timeout=5s $(GO_TAGS) ./...
 
+.PHONY: go-e2e-migrate-test
 go-e2e-migrate-test: generate
 	$(GO) test -tags=migration_e2e ./e2e -v -run '^TestMigration/'
 
+.PHONY: libary-test
 library-test:
 	make -C libraries/entitlements-v1 test
 	make -C libraries/envoy-v2.0 test
@@ -43,6 +45,9 @@ library-test:
 	make -C libraries/kubernetes-v2 test
 	make -C libraries/terraform-v2.0 test
 
+.PHONY: authz-test
+authz-test:
+	opa test -b ./internal/authz
 
 .PHONY: clean
 clean:
