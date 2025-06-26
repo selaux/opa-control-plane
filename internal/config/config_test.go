@@ -271,7 +271,7 @@ func TestTopoSortSourcesCycle(t *testing.T) {
 
 	_, err = config.TopologicalSortedSources()
 	if err == nil || err.Error() != "cycle found on source \"A\"" {
-		t.Fatal("expected cycle error on source A")
+		t.Fatal("expected cycle error on source A but got:", err)
 	}
 
 }

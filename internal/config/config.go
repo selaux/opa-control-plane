@@ -125,7 +125,9 @@ func (r *Root) TopologicalSortedSources() ([]*Source, error) {
 		inprogress: make(map[string]struct{}),
 		done:       make(map[string]struct{}),
 	}
-	for _, src := range r.Sources {
+
+	for _, name := range slices.Sorted(maps.Keys(r.Sources)) {
+		src := r.Sources[name]
 		if err := sorter.Visit(src); err != nil {
 			return nil, err
 		}
