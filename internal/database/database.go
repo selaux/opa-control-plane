@@ -458,7 +458,7 @@ func (d *Database) ListBundlesToBuild() ([]*config.Bundle, error) {
 }
 
 func (d *Database) GetSource(ctx context.Context, principal string, srcId string) (*config.Source, error) {
-	sources, err := d.ListSourcesFilter(ctx, principal, Filter{Id: srcId})
+	sources, err := d.ListSources(ctx, principal, Filter{Id: srcId})
 	if err != nil {
 		return nil, err
 	}
@@ -474,11 +474,7 @@ type Filter struct {
 	Id string
 }
 
-func (d *Database) ListSourcesWithGitCredentials(ctx context.Context, principal string) ([]*config.Source, error) {
-	return d.ListSourcesFilter(ctx, principal, Filter{})
-}
-
-func (d *Database) ListSourcesFilter(ctx context.Context, principal string, filter Filter) ([]*config.Source, error) {
+func (d *Database) ListSources(ctx context.Context, principal string, filter Filter) ([]*config.Source, error) {
 	txn, err := d.db.Begin()
 	if err != nil {
 		return nil, err

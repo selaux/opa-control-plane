@@ -59,7 +59,7 @@ func (s *Server) ListenAndServe(addr string) error {
 func (s *Server) v1SourcesList(w http.ResponseWriter, r *http.Request) {
 
 	ctx := r.Context()
-	sources, err := s.db.ListSourcesWithGitCredentials(ctx, s.auth(r))
+	sources, err := s.db.ListSources(ctx, s.auth(r), database.Filter{})
 	if err != nil {
 		errorAuto(w, err)
 		return

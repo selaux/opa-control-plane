@@ -118,7 +118,7 @@ func (s *Service) launchWorkers(ctx context.Context) {
 		return
 	}
 
-	sourceDefs, err := s.database.ListSourcesWithGitCredentials(ctx, internalPrincipal)
+	sourceDefs, err := s.database.ListSources(ctx, internalPrincipal, database.Filter{})
 	if err != nil {
 		s.log.Errorf("error listing sources: %s", err.Error())
 		return
