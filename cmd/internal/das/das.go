@@ -114,9 +114,10 @@ type V1Policy struct {
 }
 
 type Client struct {
-	URL    string
-	Token  string
-	Client *http.Client
+	URL     string
+	Token   string
+	Headers []string
+	Client  *http.Client
 }
 
 type Response struct {
@@ -157,7 +158,16 @@ func (c *Client) Get(path string, params ...Params) (*http.Response, error) {
 		return nil, err
 	}
 
-	req.Header.Add("authorization", fmt.Sprintf("Bearer %v", c.Token))
+	for _, h := range c.Headers {
+		parts := strings.Split(h, ":")
+		name := parts[0]
+		value := parts[1]
+		req.Header.Add(name, value)
+	}
+
+	if c.Token != "" {
+		req.Header.Add("authorization", fmt.Sprintf("Bearer %v", c.Token))
+	}
 
 	resp, err := c.Client.Do(req)
 	if err != nil {

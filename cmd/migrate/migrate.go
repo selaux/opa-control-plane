@@ -366,6 +366,7 @@ var baseLibPackageIndex = func() map[string]*libraryPackageIndex {
 type Options struct {
 	Token          string
 	URL            string
+	Headers        []string
 	SystemId       string
 	Prune          bool
 	Datasources    bool
@@ -410,6 +411,7 @@ func init() {
 	}
 
 	migrate.Flags().StringVarP(&params.URL, "url", "u", "", "Styra tenant URL (e.g., https://expo.styra.com)")
+	migrate.Flags().StringSliceVarP(&params.Headers, "header", "", nil, "Set additional HTTP headers for requests to Styra API")
 	migrate.Flags().StringVarP(&params.SystemId, "system-id", "", "", "Scope migraton to a specific system (id)")
 	migrate.Flags().BoolVarP(&params.Prune, "prune", "", false, "Prune unused resources")
 	migrate.Flags().BoolVarP(&params.Datasources, "datasources", "", false, "Copy datasource content")
@@ -434,13 +436,14 @@ func Run(params Options) error {
 	}
 
 	if params.Token == "" {
-		return errors.New("please set STYRA_TOKEN environment variable to token with WorkspaceViewer permission")
+		log.Info("STYRA_TOKEN is not set, make sure to grant token WorkspaceViewer role")
 	}
 
 	c := das.Client{
-		URL:    params.URL,
-		Token:  params.Token,
-		Client: http.DefaultClient,
+		URL:     params.URL,
+		Headers: params.Headers,
+		Token:   params.Token,
+		Client:  http.DefaultClient,
 	}
 
 	output := config.Root{
