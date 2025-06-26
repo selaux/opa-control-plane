@@ -326,30 +326,30 @@ func (d *Database) LoadConfig(ctx context.Context, principal string, bs []byte) 
 
 	for _, secret := range root.SortedSecrets() {
 		if err := d.UpsertSecret(ctx, principal, secret); err != nil {
-			return err
+			return fmt.Errorf("upsert secret %q failed: %w", secret.Name, err)
 		}
 	}
 
 	for _, b := range root.SortedBundles() {
 		if err := d.UpsertBundle(ctx, principal, b); err != nil {
-			return err
+			return fmt.Errorf("upsert bundle %q failed: %w", b.Name, err)
 		}
 	}
 
 	for _, src := range root.SortedSources() {
 		if err := d.UpsertSource(ctx, principal, src); err != nil {
-			return err
+			return fmt.Errorf("upsert source %q failed: %w", src.Name, err)
 		}
 	}
 
 	for _, stack := range root.SortedStacks() {
 		if err := d.UpsertStack(ctx, principal, stack); err != nil {
-			return err
+			return fmt.Errorf("upsert stack %q failed: %w", stack.Name, err)
 		}
 	}
 	for _, token := range root.Tokens {
 		if err := d.UpsertToken(ctx, principal, token); err != nil {
-			return err
+			return fmt.Errorf("upsert token %q failed: %w", token.Name, err)
 		}
 	}
 
@@ -759,7 +759,9 @@ func (d *Database) UpsertBundle(ctx context.Context, principal string, bundle *c
 
 	if bundle.ObjectStorage.AmazonS3 != nil {
 		if bundle.ObjectStorage.AmazonS3.Credentials != nil {
-			tx.Exec(`INSERT OR REPLACE INTO bundles_secrets (bundle_id, secret_id, ref_type) VALUES (?, ?, ?)`, bundle.Name, bundle.ObjectStorage.AmazonS3.Credentials.Name, "aws")
+			if _, err := tx.Exec(`INSERT OR REPLACE INTO bundles_secrets (bundle_id, secret_id, ref_type) VALUES (?, ?, ?)`, bundle.Name, bundle.ObjectStorage.AmazonS3.Credentials.Name, "aws"); err != nil {
+				return err
+			}
 		}
 	}
 
@@ -773,7 +775,7 @@ func (d *Database) UpsertBundle(ctx context.Context, principal string, bundle *c
 	}
 
 	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("failed to commit txn for bundle %q: %w", bundle.Name, err)
+		return err
 	}
 
 	return nil
@@ -802,7 +804,9 @@ func (d *Database) UpsertSource(ctx context.Context, principal string, source *c
 	}
 
 	if source.Git.Credentials != nil {
-		tx.Exec(`INSERT OR REPLACE INTO sources_secrets (source_id, secret_id, ref_type) VALUES (?, ?, ?)`, source.Name, source.Git.Credentials.Name, "git_credentials")
+		if _, err := tx.Exec(`INSERT OR REPLACE INTO sources_secrets (source_id, secret_id, ref_type) VALUES (?, ?, ?)`, source.Name, source.Git.Credentials.Name, "git_credentials"); err != nil {
+			return err
+		}
 	}
 
 	for _, datasource := range source.Datasources {
@@ -831,7 +835,7 @@ func (d *Database) UpsertSource(ctx context.Context, principal string, source *c
 	}
 
 	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("failed to commit txn for source %q: %w", source.Name, err)
+		return err
 	}
 
 	return nil
@@ -865,7 +869,7 @@ func (d *Database) UpsertSecret(ctx context.Context, principal string, secret *c
 	}
 
 	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("failed to commit txn for secret %q: %v", secret.Name, err)
+		return err
 	}
 
 	return nil
@@ -886,24 +890,24 @@ func (d *Database) UpsertStack(ctx context.Context, principal string, stack *con
 
 	bs, err := json.Marshal(stack.Selector)
 	if err != nil {
-		return fmt.Errorf("failed to marshal selector for stack %q: %w", stack.Name, err)
+		return err
 	}
 
-	if _, err = tx.Exec(`INSERT OR REPLACE INTO stacks (id, selector) VALUES (?, ?)`, stack.Name, string(bs)); err != nil {
-		return fmt.Errorf("failed to insert stack %q: %w", stack.Name, err)
+	if _, err := tx.Exec(`INSERT OR REPLACE INTO stacks (id, selector) VALUES (?, ?)`, stack.Name, string(bs)); err != nil {
+		return err
 	}
 
 	for _, r := range stack.Requirements {
 		if r.Source != nil {
 			// TODO: add support for mounts on requirements; currently that is only used internally for stacks.
-			if _, err = tx.Exec(`INSERT OR REPLACE INTO stacks_requirements (stack_id, source_id) VALUES (?, ?)`, stack.Name, r.Source); err != nil {
-				return fmt.Errorf("failed to insert stack requirement %q: %w", stack.Name, err)
+			if _, err := tx.Exec(`INSERT OR REPLACE INTO stacks_requirements (stack_id, source_id) VALUES (?, ?)`, stack.Name, r.Source); err != nil {
+				return err
 			}
 		}
 	}
 
-	if err = tx.Commit(); err != nil {
-		return fmt.Errorf("failed to commit txn for stack %q: %w", stack.Name, err)
+	if err := tx.Commit(); err != nil {
+		return err
 	}
 
 	return nil
@@ -935,7 +939,7 @@ func (d *Database) UpsertToken(ctx context.Context, principal string, token *con
 	}
 
 	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("failed to commit txn for token %q: %w", token.Name, err)
+		return err
 	}
 
 	return nil

@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/md5"
 	"encoding/hex"
+	"fmt"
 	"io/fs"
 	"path"
 	"time"
@@ -83,7 +84,7 @@ func (s *Service) Run(ctx context.Context) error {
 	defer s.database.CloseDB()
 
 	if err := s.database.LoadConfig(ctx, internalPrincipal, s.config); err != nil {
-		return err
+		return fmt.Errorf("load config failed: %w", err)
 	}
 
 	// Launch new workers for new bundles and bundles with updated configuration until it is time to shutdown.
