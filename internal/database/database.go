@@ -334,15 +334,20 @@ func (d *Database) LoadConfig(ctx context.Context, principal string, bs []byte) 
 		}
 	}
 
-	for _, b := range root.SortedBundles() {
-		if err := d.UpsertBundle(ctx, principal, b); err != nil {
-			return fmt.Errorf("upsert bundle %q failed: %w", b.Name, err)
+	sources, err := root.TopologicalSortedSources()
+	if err != nil {
+		return err
+	}
+
+	for _, src := range sources {
+		if err := d.UpsertSource(ctx, principal, src); err != nil {
+			return fmt.Errorf("upsert source %q failed: %w", src.Name, err)
 		}
 	}
 
-	for _, src := range root.SortedSources() {
-		if err := d.UpsertSource(ctx, principal, src); err != nil {
-			return fmt.Errorf("upsert source %q failed: %w", src.Name, err)
+	for _, b := range root.SortedBundles() {
+		if err := d.UpsertBundle(ctx, principal, b); err != nil {
+			return fmt.Errorf("upsert bundle %q failed: %w", b.Name, err)
 		}
 	}
 

@@ -203,3 +203,75 @@ func TestValidateRoleEnum(t *testing.T) {
 	}
 
 }
+
+func TestTopoSortSources(t *testing.T) {
+
+	config, err := config.Parse(bytes.NewBufferString(`{
+		sources: {
+			A: {
+				requirements: [{source: B}]
+			},
+			B: {
+				requirements: [{source: C}, {source: D}]
+			},
+			C: {
+				requirements: [{source: nonexistent}]
+			},
+			D: {
+				requirements: [{source: C}]
+			}
+		}
+	}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	sorted, err := config.TopologicalSortedSources()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	exp := []string{"C", "D", "B", "A"}
+	if len(sorted) != len(exp) {
+		t.Fatal("unexpected number of sources")
+	}
+
+	for i := range exp {
+		if exp[i] != sorted[i].Name {
+			t.Fatalf("expected %v but got %v", exp, sorted)
+		}
+	}
+
+}
+
+func TestTopoSortSourcesCycle(t *testing.T) {
+
+	config, err := config.Parse(bytes.NewBufferString(`{
+		sources: {
+			A: {
+				requirements: [{source: B}]
+			},
+			B: {
+				requirements: [{source: C}, {source: D}]
+			},
+			C: {
+				requirements: [{source: E}]
+			},
+			D: {
+				requirements: [{source: C}]
+			},
+			E: {
+				requirements: [{source: A}]
+			}
+		}
+	}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = config.TopologicalSortedSources()
+	if err == nil || err.Error() != "cycle found on source \"A\"" {
+		t.Fatal("expected cycle error on source A")
+	}
+
+}

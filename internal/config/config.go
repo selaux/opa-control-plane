@@ -117,6 +117,52 @@ func (r *Root) SortedSources() iter.Seq2[int, *Source] {
 	return iterator(r.Sources, func(s *Source) string { return s.Name })
 }
 
+// Returns sources from the configuration ordered by requirements. Cycles are
+// treated as errors. Missing requirements are ignored.
+func (r *Root) TopologicalSortedSources() ([]*Source, error) {
+	sorter := topologicalSortSources{
+		sources:    r.Sources,
+		inprogress: make(map[string]struct{}),
+		done:       make(map[string]struct{}),
+	}
+	for _, src := range r.Sources {
+		if err := sorter.Visit(src); err != nil {
+			return nil, err
+		}
+	}
+	return sorter.sorted, nil
+}
+
+type topologicalSortSources struct {
+	sources    map[string]*Source
+	inprogress map[string]struct{}
+	done       map[string]struct{}
+	sorted     []*Source
+}
+
+func (s *topologicalSortSources) Visit(src *Source) error {
+	if _, ok := s.inprogress[src.Name]; ok {
+		return fmt.Errorf("cycle found on source %q", src.Name)
+	}
+	if _, ok := s.done[src.Name]; ok {
+		return nil
+	}
+	s.inprogress[src.Name] = struct{}{}
+	for _, r := range src.Requirements {
+		if r.Source != nil {
+			if other, ok := s.sources[*r.Source]; ok {
+				if err := s.Visit(other); err != nil {
+					return err
+				}
+			}
+		}
+	}
+	s.done[src.Name] = struct{}{}
+	delete(s.inprogress, src.Name)
+	s.sorted = append(s.sorted, src)
+	return nil
+}
+
 func (r *Root) SortedStacks() iter.Seq2[int, *Stack] {
 	return iterator(r.Stacks, func(s *Stack) string { return s.Name })
 }
