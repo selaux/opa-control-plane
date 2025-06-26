@@ -73,6 +73,10 @@ func (d *Database) InitDB(ctx context.Context, persistenceDir string) error {
 		if err != nil {
 			return err
 		}
+
+		if _, err := d.db.ExecContext(ctx, "PRAGMA foreign_keys = ON"); err != nil {
+			return err
+		}
 	default:
 		return errors.New("unsupported database connection type")
 	}
@@ -175,7 +179,7 @@ func (d *Database) InitDB(ctx context.Context, persistenceDir string) error {
 			permission TEXT,
 			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 			PRIMARY KEY (id, resource),
-			FOREIGN KEY (principal_id) REFERENCES principals(id) ON DELETE CASCADE -- TODO(tsandall): e2e test
+			FOREIGN KEY (principal_id) REFERENCES principals(id) ON DELETE CASCADE
 		);`,
 	}
 
