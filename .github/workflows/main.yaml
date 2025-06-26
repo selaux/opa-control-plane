@@ -22,6 +22,9 @@ jobs:
       - name: Run Makefile target `go-test`
         run: make go-test
 
+      - name: Run Makefile target `authz-test`
+        run: make authz-test
+
       - name: Run Makefile target `library-test`
         run: make library-test
 

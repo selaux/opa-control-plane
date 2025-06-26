@@ -12,7 +12,7 @@ BIN := lighthouse_$(GOOS)_$(GOARCH)
 LDFLAGS := ""
 
 .PHONY: all
-all: build test library-test
+all: build test
 
 .PHONY: generate
 generate:
