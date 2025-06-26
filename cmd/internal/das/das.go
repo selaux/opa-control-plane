@@ -159,9 +159,11 @@ func (c *Client) Get(path string, params ...Params) (*http.Response, error) {
 	}
 
 	for _, h := range c.Headers {
-		parts := strings.Split(h, ":")
-		name := parts[0]
-		value := parts[1]
+		name, value, found := strings.Cut(h, ":")
+		if !found {
+			return nil, fmt.Errorf("invalid header format, expected 'name:value': %v", h)
+		}
+
 		req.Header.Add(name, value)
 	}
 
