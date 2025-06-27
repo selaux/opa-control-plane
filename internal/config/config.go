@@ -741,9 +741,10 @@ func Parse(r io.Reader) (root *Root, err error) {
 }
 
 type ObjectStorage struct {
-	AmazonS3         *AmazonS3         `json:"aws,omitempty" yaml:"aws,omitempty"`
-	GCPCloudStorage  *GCPCloudStorage  `json:"gcp,omitempty" yaml:"gcp,omitempty"`
-	AzureBlobStorage *AzureBlobStorage `json:"azure,omitempty" yaml:"azure,omitempty"`
+	AmazonS3          *AmazonS3          `json:"aws,omitempty" yaml:"aws,omitempty"`
+	GCPCloudStorage   *GCPCloudStorage   `json:"gcp,omitempty" yaml:"gcp,omitempty"`
+	AzureBlobStorage  *AzureBlobStorage  `json:"azure,omitempty" yaml:"azure,omitempty"`
+	FileSystemStorage *FileSystemStorage `json:"filesystem,omitempty" yaml:"filesystem,omitempty"`
 }
 
 func (o *ObjectStorage) Equal(other *ObjectStorage) bool {
@@ -778,6 +779,11 @@ type AzureBlobStorage struct {
 	Path        string     `json:"path" yaml:"path"`
 	Credentials *SecretRef `json:"credentials,omitempty" yaml:"credentials,omitempty"` // If nil, use default credentials chain: environment variables,
 	// managed identity, Azure CLI login. More details in s3.go.
+}
+
+// FileSystemStorage defines the configuration for a local filesystem storage.
+type FileSystemStorage struct {
+	Path string `json:"path" yaml:"path"` // Path to the bundle on the local filesystem.
 }
 
 func (a *AmazonS3) Equal(other *AmazonS3) bool {

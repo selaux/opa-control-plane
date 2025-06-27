@@ -8,6 +8,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
+	"path/filepath"
 
 	"cloud.google.com/go/storage"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
@@ -27,6 +29,7 @@ var (
 	_ ObjectStorage = (*AmazonS3)(nil)
 	_ ObjectStorage = (*GCPCloudStorage)(nil)
 	_ ObjectStorage = (*AzureBlobStorage)(nil)
+	_ ObjectStorage = (*FileSystemStorage)(nil)
 )
 
 type (
@@ -53,6 +56,10 @@ type (
 		container string
 		path      string
 		client    *azblob.Client
+	}
+
+	FileSystemStorage struct {
+		path string
 	}
 )
 
@@ -197,6 +204,8 @@ func New(ctx context.Context, config config.ObjectStorage) (ObjectStorage, error
 		}
 
 		return &AzureBlobStorage{container: config.AzureBlobStorage.Container, path: config.AzureBlobStorage.Path, client: client}, nil
+	case config.FileSystemStorage != nil:
+		return &FileSystemStorage{path: config.FileSystemStorage.Path}, nil
 	default:
 		return nil, ErrUnsupportedProvider
 	}
@@ -313,4 +322,30 @@ func (s *AzureBlobStorage) Upload(ctx context.Context, body io.ReadSeeker) error
 
 func (s *AzureBlobStorage) Download(ctx context.Context) (io.Reader, error) {
 	return nil, fmt.Errorf("not implemented")
+}
+
+func (s *FileSystemStorage) Upload(ctx context.Context, body io.ReadSeeker) error {
+	if err := os.MkdirAll(filepath.Dir(s.path), 0755); err != nil {
+		return fmt.Errorf("failed to create directory: %w", err)
+	}
+
+	file, err := os.Create(s.path)
+	if err != nil {
+		return fmt.Errorf("failed to create file: %w", err)
+	}
+	defer file.Close()
+
+	if _, err := io.Copy(file, body); err != nil {
+		return fmt.Errorf("failed to write to file: %w", err)
+	}
+	return nil
+}
+
+func (s *FileSystemStorage) Download(ctx context.Context) (io.Reader, error) {
+	file, err := os.Open(s.path)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open file: %w", err)
+	}
+
+	return file, nil
 }
