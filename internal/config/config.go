@@ -10,6 +10,7 @@ import (
 	"iter"
 	"maps"
 	"os"
+	"path/filepath"
 	"reflect"
 	"slices"
 	"sort"
@@ -329,6 +330,8 @@ type Source struct {
 	Git           Git          `json:"git,omitempty" yaml:"git,omitempty"`
 	Datasources   Datasources  `json:"datasources,omitempty" yaml:"datasources,omitempty"`
 	EmbeddedFiles Files        `json:"files,omitempty" yaml:"files,omitempty"`
+	Directory     string       `json:"directory,omitempty" yaml:"directory,omitempty"` // Root directory for the source files, used to resolve file paths below.
+	Paths         StringSet    `json:"paths,omitempty" yaml:"paths,omitempty"`
 	Requirements  Requirements `json:"requirements,omitempty" yaml:"requirements,omitempty"`
 }
 
@@ -347,8 +350,20 @@ func (s *Source) Requirement() Requirement {
 	return Requirement{Source: &s.Name}
 }
 
-func (s *Source) Files() map[string]string {
-	return s.EmbeddedFiles
+func (s *Source) Files() (map[string]string, error) {
+	m := make(map[string]string)
+	maps.Copy(m, s.EmbeddedFiles)
+
+	for _, path := range s.Paths {
+		data, err := os.ReadFile(filepath.Join(s.Directory, path))
+		if err != nil {
+			return nil, fmt.Errorf("failed to read file %q for source %q: %w", path, s.Name, err)
+		}
+
+		m[path] = string(data)
+	}
+
+	return m, nil
 }
 
 func (s *Source) SetEmbeddedFile(path string, content string) {
@@ -363,6 +378,20 @@ func (s *Source) SetEmbeddedFiles(files map[string]string) {
 	for path, content := range files {
 		s.SetEmbeddedFile(path, content)
 	}
+}
+
+func (s *Source) SetPath(path string) {
+	for _, p := range s.Paths {
+		if p == path {
+			return
+		}
+	}
+
+	s.Paths = append(s.Paths, path)
+}
+
+func (s *Source) SetDirectory(directory string) {
+	s.Directory = directory
 }
 
 type Sources []*Source
@@ -503,6 +532,15 @@ type StringSet []string
 
 func (a StringSet) Equal(b StringSet) bool {
 	return setEqual(a, b, func(s string) string { return s }, func(a, b string) bool { return a == b })
+}
+
+func (a StringSet) Add(value string) StringSet {
+	i := sort.Search(len(a), func(i int) bool { return a[i] >= value })
+	if i < len(a) && a[i] == value {
+		return a
+	}
+
+	return StringSet(slices.Insert(a, i, value))
 }
 
 // Git defines the Git synchronization configuration used by Lighthouse Sources.

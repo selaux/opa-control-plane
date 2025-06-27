@@ -542,8 +542,18 @@ func Run(params Options) error {
 	files := make(map[string]string)
 
 	for _, src := range output.Sources {
-		for path, content := range src.Files() {
+		srcFiles, err := src.Files()
+		if err != nil {
+			return err
+		}
+
+		for path, content := range srcFiles {
 			files[filepath.Join(append([]string{"sources", src.Name}, filepath.SplitList(path)...)...)] = content
+
+			if !params.EmbedFiles && params.FilesPath != "" {
+				src.SetDirectory(filepath.Join(params.FilesPath, "sources", src.Name))
+				src.SetPath(path)
+			}
 		}
 		if !params.EmbedFiles {
 			src.SetEmbeddedFiles(nil)
@@ -674,9 +684,14 @@ func splitConfig(outputDir string, output config.Root) (map[string][]byte, error
 
 	testFiles := make(map[string]*config.Source)
 	for name, original := range output.Sources {
-		if len(original.Files()) > 0 {
+		files, err := original.Files()
+		if err != nil {
+			return nil, err
+		}
+
+		if len(files) > 0 {
 			cpy := &config.Source{Name: name}
-			cpy.SetEmbeddedFiles(original.Files())
+			cpy.SetEmbeddedFiles(files)
 			testFiles[name] = cpy
 			original.SetEmbeddedFiles(nil)
 		}

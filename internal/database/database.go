@@ -829,7 +829,12 @@ func (d *Database) UpsertSource(ctx context.Context, principal string, source *c
 		}
 	}
 
-	for path, data := range source.Files() {
+	files, err := source.Files()
+	if err != nil {
+		return err
+	}
+
+	for path, data := range files {
 		if _, err := tx.Exec(`INSERT OR REPLACE INTO sources_data (source_id, path, data) VALUES (?, ?, ?)`, source.Name, path, data); err != nil {
 			return err
 		}
