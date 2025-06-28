@@ -47,7 +47,7 @@ library-test:
 
 .PHONY: authz-test
 authz-test:
-	opa test -b ./internal/authz
+	$(GO) run github.com/open-policy-agent/opa test -b ./internal/authz
 
 .PHONY: clean
 clean:
