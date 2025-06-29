@@ -22,7 +22,7 @@ generate:
 build: go-build
 
 .PHONY: test
-test: go-test library-test authz-test
+test: go-test go-bench library-test authz-test
 
 .PHONY: go-build
 go-build: generate
@@ -31,6 +31,10 @@ go-build: generate
 .PHONY: go-test
 go-test: generate
 	$(GO) test -timeout=5s $(GO_TAGS) ./...
+
+.PHONY: go-bench
+go-bench: generate
+	$(GO) test -benchmem -run=- -bench=. $(GO_TAGS) ./...
 
 .PHONY: go-e2e-migrate-test
 go-e2e-migrate-test: generate
