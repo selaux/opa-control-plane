@@ -28,7 +28,7 @@ func TestCascadingDeletesForPrincipalsAndResourcePermissions(t *testing.T) {
 	}
 
 	for i := 0; i < 100; i++ { // arbitrary number of perms
-		if _, err := db.db.ExecContext(ctx, "INSERT INTO resource_permissions (id, resource, principal_id, role) VALUES (?, ?, ?, ?)", "xyz"+fmt.Sprint(i), "bundles", "test", "owner"); err != nil {
+		if _, err := db.db.ExecContext(ctx, "INSERT INTO resource_permissions (name, resource, principal_id, role) VALUES (?, ?, ?, ?)", "xyz"+fmt.Sprint(i), "bundles", "test", "owner"); err != nil {
 			t.Fatal(err)
 		}
 	}

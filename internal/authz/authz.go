@@ -175,7 +175,7 @@ type Access struct {
 	Principal  string `json:"principal"`
 	Resource   string `json:"resource"`
 	Permission string `json:"permission"`
-	Id         string `json:"id,omitempty"`
+	Name       string `json:"name,omitempty"`
 }
 
 func Check(ctx context.Context, tx *sql.Tx, access Access) bool {

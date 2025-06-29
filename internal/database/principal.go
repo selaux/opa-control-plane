@@ -47,7 +47,7 @@ func UpsertPrincipalTx(ctx context.Context, tx *sql.Tx, principal Principal) err
 func GetPrincipalId(ctx context.Context, db *Database, apiKey string) (string, error) {
 
 	query := `
-		SELECT principals.id FROM principals JOIN tokens ON tokens.id = principals.id WHERE tokens.api_key = ?
+		SELECT principals.id FROM principals JOIN tokens ON tokens.name = principals.id WHERE tokens.api_key = ?
 	`
 
 	row := db.db.QueryRowContext(ctx, query, apiKey)

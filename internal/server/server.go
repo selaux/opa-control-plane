@@ -74,7 +74,7 @@ func (s *Server) v1SourcesPut(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	vars := mux.Vars(r)
 
-	srcId, err := url.PathUnescape(vars["source"])
+	name, err := url.PathUnescape(vars["source"])
 	if err != nil {
 		ErrorString(w, http.StatusBadRequest, types.CodeInvalidParameter, err)
 		return
@@ -87,8 +87,8 @@ func (s *Server) v1SourcesPut(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if src.Name == "" {
-		src.Name = srcId
-	} else if src.Name != srcId {
+		src.Name = name
+	} else if src.Name != name {
 		writer.ErrorString(w, http.StatusBadRequest, types.CodeInvalidParameter, fmt.Errorf("source name must match path"))
 		return
 	}
@@ -106,13 +106,13 @@ func (s *Server) v1SourcesGet(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	vars := mux.Vars(r)
 
-	srcId, err := url.PathUnescape(vars["source"])
+	name, err := url.PathUnescape(vars["source"])
 	if err != nil {
 		ErrorString(w, http.StatusBadRequest, types.CodeInvalidParameter, err)
 		return
 	}
 
-	src, err := s.db.GetSource(ctx, s.auth(r), srcId)
+	src, err := s.db.GetSource(ctx, s.auth(r), name)
 	if err != nil {
 		errorAuto(w, err)
 		return
@@ -127,13 +127,13 @@ func (s *Server) v1SourcesDataGet(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	vars := mux.Vars(r)
 
-	srcId, err := url.PathUnescape(vars["source"])
+	name, err := url.PathUnescape(vars["source"])
 	if err != nil {
 		ErrorString(w, http.StatusBadRequest, types.CodeInvalidParameter, err)
 		return
 	}
 
-	data, ok, err := s.db.SourcesDataGet(ctx, srcId, path.Join(vars["path"], "data.json"), s.auth(r))
+	data, ok, err := s.db.SourcesDataGet(ctx, name, path.Join(vars["path"], "data.json"), s.auth(r))
 	if err != nil {
 		errorAuto(w, err)
 		return
@@ -153,7 +153,7 @@ func (s *Server) v1SourcesDataPut(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	vars := mux.Vars(r)
 
-	sourceId, err := url.PathUnescape(vars["source"])
+	name, err := url.PathUnescape(vars["source"])
 	if err != nil {
 		ErrorString(w, http.StatusBadRequest, types.CodeInvalidParameter, err)
 		return
@@ -165,7 +165,7 @@ func (s *Server) v1SourcesDataPut(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err = s.db.SourcesDataPut(ctx, sourceId, path.Join(vars["path"], "data.json"), value, s.auth(r))
+	err = s.db.SourcesDataPut(ctx, name, path.Join(vars["path"], "data.json"), value, s.auth(r))
 	if err != nil {
 		errorAuto(w, err)
 		return
@@ -180,13 +180,13 @@ func (s *Server) v1SourcesDataDelete(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	vars := mux.Vars(r)
 
-	sourceId, err := url.PathUnescape(vars["source"])
+	name, err := url.PathUnescape(vars["source"])
 	if err != nil {
 		ErrorString(w, http.StatusBadRequest, types.CodeInvalidParameter, err)
 		return
 	}
 
-	err = s.db.SourcesDataDelete(ctx, sourceId, path.Join(vars["path"], "data.json"), s.auth(r))
+	err = s.db.SourcesDataDelete(ctx, name, path.Join(vars["path"], "data.json"), s.auth(r))
 	if err != nil {
 		errorAuto(w, err)
 		return

@@ -73,23 +73,23 @@ test_owners_can_edit_bundles if {
 	data.authz.allow with input.principal as "testuser"
 		with data.principals.id as "testuser"
 		with data.principals.role as "owner"
-		with data.resource_permissions.id as "testbundle"
+		with data.resource_permissions.name as "testbundle"
 		with data.resource_permissions.resource as "bundles"
 		with data.resource_permissions.role as "owner"
 		with data.resource_permissions.principal_id as "testuser"
 		with input.permission as "bundles.manage"
-		with input.id as "testbundle"
+		with input.name as "testbundle"
 		with input.resource as "bundles"
 }
 
 test_explicit_permission_grant if {
     data.authz.allow with input.principal as "testuser"
 		with data.principals.id as "testuser"
-		with data.resource_permissions.id as "testsource"
+		with data.resource_permissions.name as "testsource"
 		with data.resource_permissions.resource as "sources"
 		with data.resource_permissions.permission as "sources.data.write"
 		with data.resource_permissions.principal_id as "testuser"
 		with input.permission as "sources.data.write"
-		with input.id as "testsource"
+		with input.name as "testsource"
 		with input.resource as "sources"
 }
