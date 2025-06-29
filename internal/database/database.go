@@ -30,6 +30,28 @@ type Database struct {
 	config *config.Database
 }
 
+type ListOptions struct {
+	Limit  int
+	Cursor string
+	name   string
+}
+
+func (opts ListOptions) cursor() int64 {
+	if opts.Cursor != "" {
+		decoded, err := base64.URLEncoding.DecodeString(opts.Cursor)
+		if err == nil {
+			after, _ := strconv.ParseInt(string(decoded), 10, 64)
+			return after
+		}
+	}
+	return 0
+}
+
+func encodeCursor(id int64) string {
+	cursor := strconv.FormatInt(id, 10)
+	return base64.URLEncoding.EncodeToString([]byte(cursor))
+}
+
 type Data struct {
 	Path string
 	Data []byte
@@ -85,7 +107,8 @@ func (d *Database) InitDB(ctx context.Context, persistenceDir string) error {
 
 	stmts := []string{
 		`CREATE TABLE IF NOT EXISTS bundles (
-			name TEXT PRIMARY KEY,
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			name TEXT NOT NULL UNIQUE,
 			labels TEXT,
 			s3url TEXT,
 			s3region TEXT,
@@ -104,7 +127,8 @@ func (d *Database) InitDB(ctx context.Context, persistenceDir string) error {
 			git_included_files TEXT
 		);`,
 		`CREATE TABLE IF NOT EXISTS stacks (
-			name TEXT PRIMARY KEY,
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			name TEXT NOT NULL UNIQUE,
 			selector TEXT NOT NULL
 		);`,
 		`CREATE TABLE IF NOT EXISTS secrets (
@@ -368,14 +392,40 @@ func (d *Database) LoadConfig(ctx context.Context, principal string, bs []byte) 
 	return nil
 }
 
-func (d *Database) ListBundlesToBuild() ([]*config.Bundle, error) {
-	txn, err := d.db.Begin()
+func (d *Database) GetBundle(ctx context.Context, principal string, name string) (*config.Bundle, error) {
+	bundles, _, err := d.ListBundles(ctx, principal, ListOptions{name: name})
 	if err != nil {
 		return nil, err
 	}
+
+	if len(bundles) == 0 {
+		return nil, ErrNotFound
+	}
+
+	return bundles[0], nil
+}
+
+func (d *Database) ListBundles(ctx context.Context, principal string, opts ListOptions) ([]*config.Bundle, string, error) {
+	txn, err := d.db.Begin()
+	if err != nil {
+		return nil, "", err
+	}
 	defer txn.Commit()
 
-	rows, err := txn.Query(`SELECT
+	expr, err := authz.Partial(ctx, authz.Access{
+		Principal:  principal,
+		Resource:   "bundles",
+		Permission: "bundles.view",
+	}, map[string]authz.ColumnRef{
+		"input.name": {Table: "bundles", Column: "name"},
+	})
+	if err != nil {
+		return nil, "", err
+	}
+
+	// TODO(tsandall): do we support object storage w/o credentials?
+	query := `SELECT
+		bundles.id,
         bundles.name AS bundle_name,
 		bundles.labels,
 		bundles.s3url,
@@ -396,64 +446,90 @@ func (d *Database) ListBundlesToBuild() ([]*config.Bundle, error) {
 	LEFT JOIN
 		bundles_requirements ON bundles.name = bundles_requirements.bundle_name
 	WHERE (bundles.s3bucket IS NOT NULL) AND
-		(bundles_secrets.ref_type IS NULL OR bundles_secrets.ref_type = 'aws')`) // TODO(tsandall): do we support object storage w/o credentials?
+		(bundles_secrets.ref_type IS NULL OR bundles_secrets.ref_type = 'aws')` + " AND (" + expr.SQL() + ")"
+
+	var args []any
+
+	if opts.name != "" {
+		query += " AND (bundles.name = ?)"
+		args = append(args, opts.name)
+	}
+
+	if after := opts.cursor(); after > 0 {
+		query += " AND (bundles.id > ?)"
+		args = append(args, after)
+	}
+	query += " ORDER BY bundles.id"
+	if opts.Limit > 0 {
+		query += " LIMIT ?"
+		args = append(args, opts.Limit)
+	}
+
+	rows, err := txn.Query(query, args...)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	defer rows.Close()
 
+	type bundleRow struct {
+		id                                     int64
+		bundleName                             string
+		labels                                 *string
+		s3url, s3region, s3bucket, s3key       *string
+		excluded                               *string
+		secretName, secretRefType, secretValue *string
+		reqSrc                                 *string
+	}
 	bundleMap := make(map[string]*config.Bundle)
+	idMap := make(map[string]int64)
+	var lastId int64
 
 	for rows.Next() {
-		var bundleName string
-		var labels *string
-		var secretName, secretRefType, secretValue *string
-		var s3url, s3region, s3bucket, s3key *string
-		var excluded *string
-		var reqSrc *string
-		if err := rows.Scan(&bundleName, &labels, &s3url, &s3region, &s3bucket, &s3key, &excluded, &secretName, &secretRefType, &secretValue, &reqSrc); err != nil {
-			return nil, err
+		var row bundleRow
+		if err := rows.Scan(&row.id, &row.bundleName, &row.labels, &row.s3url, &row.s3region, &row.s3bucket, &row.s3key, &row.excluded, &row.secretName, &row.secretRefType, &row.secretValue, &row.reqSrc); err != nil {
+			return nil, "", err
 		}
 
-		bundle, exists := bundleMap[bundleName]
+		bundle, exists := bundleMap[row.bundleName]
 		if !exists {
 			bundle = &config.Bundle{
-				Name: bundleName,
+				Name: row.bundleName,
 			}
 
-			if labels != nil {
-				if err := json.Unmarshal([]byte(*labels), &bundle.Labels); err != nil {
-					return nil, fmt.Errorf("failed to unmarshal labels for %q: %w", bundle.Name, err)
+			if row.labels != nil {
+				if err := json.Unmarshal([]byte(*row.labels), &bundle.Labels); err != nil {
+					return nil, "", fmt.Errorf("failed to unmarshal labels for %q: %w", bundle.Name, err)
 				}
 			}
 
-			bundleMap[bundleName] = bundle
+			bundleMap[row.bundleName] = bundle
+			idMap[row.bundleName] = row.id
 
-			if s3region != nil && s3bucket != nil && s3key != nil {
+			if row.s3region != nil && row.s3bucket != nil && row.s3key != nil {
 				bundle.ObjectStorage.AmazonS3 = &config.AmazonS3{
-					Region: *s3region,
-					Bucket: *s3bucket,
-					Key:    *s3key,
+					Region: *row.s3region,
+					Bucket: *row.s3bucket,
+					Key:    *row.s3key,
 				}
-				if s3url != nil {
-					bundle.ObjectStorage.AmazonS3.URL = *s3url
+				if row.s3url != nil {
+					bundle.ObjectStorage.AmazonS3.URL = *row.s3url
 				}
 			}
 
-			if excluded != nil {
-				if err := json.Unmarshal([]byte(*excluded), &bundle.ExcludedFiles); err != nil {
-					return nil, fmt.Errorf("failed to unmarshal excluded files for %q: %w", bundle.Name, err)
+			if row.excluded != nil {
+				if err := json.Unmarshal([]byte(*row.excluded), &bundle.ExcludedFiles); err != nil {
+					return nil, "", fmt.Errorf("failed to unmarshal excluded files for %q: %w", bundle.Name, err)
 				}
 			}
 		}
 
-		if secretName != nil {
-			s := config.Secret{Name: *secretName}
-			if err := json.Unmarshal([]byte(*secretValue), &s.Value); err != nil {
-				return nil, err
+		if row.secretName != nil {
+			s := config.Secret{Name: *row.secretName}
+			if err := json.Unmarshal([]byte(*row.secretValue), &s.Value); err != nil {
+				return nil, "", err
 			}
 
-			switch *secretRefType {
+			switch *row.secretRefType {
 			case "aws":
 				if bundle.ObjectStorage.AmazonS3 != nil {
 					bundle.ObjectStorage.AmazonS3.Credentials = s.Ref()
@@ -461,16 +537,30 @@ func (d *Database) ListBundlesToBuild() ([]*config.Bundle, error) {
 			}
 		}
 
-		if reqSrc != nil {
-			bundle.Requirements = append(bundle.Requirements, config.Requirement{Source: reqSrc})
+		if row.reqSrc != nil {
+			bundle.Requirements = append(bundle.Requirements, config.Requirement{Source: row.reqSrc})
+		}
+
+		if row.id > lastId {
+			lastId = row.id
 		}
 	}
 
-	return slices.Collect(maps.Values(bundleMap)), nil
+	sl := slices.Collect(maps.Values(bundleMap))
+	sort.Slice(sl, func(i, j int) bool {
+		return idMap[sl[i].Name] < idMap[sl[j].Name]
+	})
+
+	var nextCursor string
+	if opts.Limit > 0 && len(sl) == opts.Limit {
+		nextCursor = encodeCursor(lastId)
+	}
+
+	return sl, nextCursor, nil
 }
 
 func (d *Database) GetSource(ctx context.Context, principal string, name string) (*config.Source, error) {
-	sources, _, err := d.ListSources(ctx, ListOptions{Principal: principal, Name: name})
+	sources, _, err := d.ListSources(ctx, principal, ListOptions{name: name})
 	if err != nil {
 		return nil, err
 	}
@@ -482,14 +572,7 @@ func (d *Database) GetSource(ctx context.Context, principal string, name string)
 	return sources[0], nil
 }
 
-type ListOptions struct {
-	Principal string
-	Name      string
-	Limit     int
-	Cursor    string
-}
-
-func (d *Database) ListSources(ctx context.Context, opts ListOptions) ([]*config.Source, string, error) {
+func (d *Database) ListSources(ctx context.Context, principal string, opts ListOptions) ([]*config.Source, string, error) {
 	txn, err := d.db.Begin()
 	if err != nil {
 		return nil, "", err
@@ -497,7 +580,7 @@ func (d *Database) ListSources(ctx context.Context, opts ListOptions) ([]*config
 	defer txn.Commit()
 
 	expr, err := authz.Partial(ctx, authz.Access{
-		Principal:  opts.Principal,
+		Principal:  principal,
 		Resource:   "sources",
 		Permission: "sources.view",
 	}, map[string]authz.ColumnRef{
@@ -505,14 +588,6 @@ func (d *Database) ListSources(ctx context.Context, opts ListOptions) ([]*config
 	})
 	if err != nil {
 		return nil, "", err
-	}
-
-	var after int64
-	if opts.Cursor != "" {
-		decoded, err := base64.URLEncoding.DecodeString(opts.Cursor)
-		if err == nil {
-			after, _ = strconv.ParseInt(string(decoded), 10, 64)
-		}
 	}
 
 	query := `SELECT
@@ -540,12 +615,12 @@ WHERE ((sources_secrets.ref_type = 'git_credentials' AND secrets.value IS NOT NU
 
 	var args []any
 
-	if opts.Name != "" {
+	if opts.name != "" {
 		query += " AND (sources.name = ?)"
-		args = append(args, opts.Name)
+		args = append(args, opts.name)
 	}
 
-	if after > 0 {
+	if after := opts.cursor(); after > 0 {
 		query += " AND (sources.id > ?)"
 		args = append(args, after)
 	}
@@ -685,57 +760,125 @@ WHERE ((sources_secrets.ref_type = 'git_credentials' AND secrets.value IS NOT NU
 	return sl, nextCursor, nil
 }
 
-func (d *Database) ListStacks() ([]*config.Stack, error) {
-	txn, err := d.db.Begin()
+func (d *Database) GetStack(ctx context.Context, principal string, name string) (*config.Stack, error) {
+	stacks, _, err := d.ListStacks(ctx, principal, ListOptions{name: name})
 	if err != nil {
 		return nil, err
 	}
+
+	if len(stacks) == 0 {
+		return nil, ErrNotFound
+	}
+
+	return stacks[0], nil
+}
+
+func (d *Database) ListStacks(ctx context.Context, principal string, opts ListOptions) ([]*config.Stack, string, error) {
+	txn, err := d.db.Begin()
+	if err != nil {
+		return nil, "", err
+	}
 	defer txn.Commit()
 
-	rows, err := txn.Query(`SELECT
+	expr, err := authz.Partial(ctx, authz.Access{
+		Principal:  principal,
+		Resource:   "stacks",
+		Permission: "stacks.view",
+	}, map[string]authz.ColumnRef{
+		"input.name": {Table: "stacks", Column: "name"},
+	})
+	if err != nil {
+		return nil, "", err
+	}
+
+	query := `SELECT
+        stacks.id,
         stacks.name AS stack_name,
         stacks.selector,
         stacks_requirements.source_name
     FROM
         stacks
-	LEFT JOIN
-		stacks_requirements ON stacks.name = stacks_requirements.stack_name`)
+    LEFT JOIN
+        stacks_requirements ON stacks.name = stacks_requirements.stack_name
+    WHERE (` + expr.SQL() + ")"
+
+	var args []any
+
+	if opts.name != "" {
+		query += " AND (stacks.name = ?)"
+		args = append(args, opts.name)
+	}
+
+	if after := opts.cursor(); after > 0 {
+		query += " AND (stacks.id > ?)"
+		args = append(args, after)
+	}
+	query += " ORDER BY stacks.id"
+	if opts.Limit > 0 {
+		query += " LIMIT ?"
+		args = append(args, opts.Limit)
+	}
+
+	rows, err := txn.Query(query, args...)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	defer rows.Close()
 
-	var stacks []*config.Stack
+	type stackRow struct {
+		id         int64
+		stackName  string
+		selector   string
+		sourceName *string
+	}
+
 	stacksMap := map[string]*config.Stack{}
+	idMap := map[string]int64{}
+	var lastId int64
 
 	for rows.Next() {
-		var stackName, selectorJSON, sourceName string
-		if err := rows.Scan(&stackName, &selectorJSON, &sourceName); err != nil {
-			return nil, err
+		var row stackRow
+		if err := rows.Scan(&row.id, &row.stackName, &row.selector, &row.sourceName); err != nil {
+			return nil, "", err
 		}
 
 		var selector config.Selector
-		if err := json.Unmarshal([]byte(selectorJSON), &selector); err != nil {
-			return nil, err
+		if err := json.Unmarshal([]byte(row.selector), &selector); err != nil {
+			return nil, "", err
 		}
 
-		stack, ok := stacksMap[stackName]
+		stack, ok := stacksMap[row.stackName]
 		if !ok {
 			stack = &config.Stack{
-				Name:     stackName,
+				Name:     row.stackName,
 				Selector: selector,
 			}
-			stacksMap[stackName] = stack
+			stacksMap[row.stackName] = stack
+			idMap[row.stackName] = row.id
 		}
 
-		stack.Requirements = append(stack.Requirements, config.Requirement{
-			Source: &sourceName,
-		})
+		if row.sourceName != nil {
+			stack.Requirements = append(stack.Requirements, config.Requirement{
+				Source: row.sourceName,
+			})
+		}
 
-		stacks = append(stacks, stack)
+		if row.id > lastId {
+			lastId = row.id
+		}
 	}
 
-	return stacks, nil
+	sl := slices.Collect(maps.Values(stacksMap))
+	sort.Slice(sl, func(i, j int) bool {
+		return idMap[sl[i].Name] < idMap[sl[j].Name]
+	})
+
+	var nextCursor string
+	if opts.Limit > 0 && len(sl) == opts.Limit {
+		nextCursor = encodeCursor(lastId)
+	}
+
+	return sl, nextCursor, nil
 }
 
 func (d *Database) QuerySourceData(sourceName string) (*DataCursor, error) {

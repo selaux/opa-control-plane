@@ -26,6 +26,18 @@ type SourcesListResponseV1 struct {
 	NextCursor string           `json:"next_cursor,omitempty"`
 }
 
+type BundlesListResponseV1 struct {
+	Result     []*config.Bundle `json:"result,omitempty"`
+	NextCursor string           `json:"next_cursor,omitempty"`
+}
+
+type BundlesGetResponseV1 struct {
+	Result *config.Bundle `json:"result,omitempty"`
+}
+
+type BundlesPutResponseV1 struct {
+}
+
 type SourcesGetResponseV1 struct {
 	Result *config.Source `json:"result,omitempty"`
 }
@@ -35,6 +47,17 @@ type SourcesPutResponseV1 struct{}
 type SourcesDeleteDataResponseV1 struct{}
 
 type SourcesPutDataResponseV1 struct{}
+
+type StacksListResponseV1 struct {
+	Result     []*config.Stack `json:"result"`
+	NextCursor string          `json:"next_cursor,omitempty"`
+}
+
+type StacksGetResponseV1 struct {
+	Result *config.Stack `json:"result"`
+}
+
+type StacksPutResponseV1 struct{}
 
 type ErrorV1 struct {
 	Code    string  `json:"code"`

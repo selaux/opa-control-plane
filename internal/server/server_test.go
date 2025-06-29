@@ -126,6 +126,58 @@ func TestServerSourcesData(t *testing.T) {
 	}
 }
 
+func TestServerBundleOwners(t *testing.T) {
+	ctx := context.Background()
+
+	db := initTestDB(ctx, t)
+	ts := initTestServer(t, db)
+	defer ts.Close()
+
+	if err := database.UpsertPrincipal(ctx, db, database.Principal{Id: "internal", Role: "administrator"}); err != nil {
+		t.Fatal(err)
+	}
+
+	const ownerKey = "test-owner-key"
+	const ownerKey2 = "test-owner-key2"
+
+	if err := db.UpsertToken(ctx, "internal", &config.Token{Name: "testowner", APIKey: ownerKey, Scopes: []config.Scope{{Role: "owner"}}}); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := db.UpsertToken(ctx, "internal", &config.Token{Name: "testowner2", APIKey: ownerKey2, Scopes: []config.Scope{{Role: "owner"}}}); err != nil {
+		t.Fatal(err)
+	}
+
+	// NOTE(tsandall): currently bundles require minimal object storage
+	// configuration (otherwise they are ignored by service)
+	ts.Request("PUT", "/v1/bundles/testbundle", `{
+		"object_storage": {
+			"aws": {
+			}
+		}
+	}`, ownerKey).ExpectStatus(200)
+
+	var ownerList types.BundlesListResponseV1
+	ts.Request("GET", "/v1/bundles", "", ownerKey).ExpectStatus(200).ExpectBody(&ownerList)
+	if len(ownerList.Result) != 1 {
+		t.Fatal("expected exactly one bundle")
+	}
+
+	ts.Request("GET", "/v1/bundles/testbundle", "", ownerKey).ExpectStatus(200)
+
+	// TODO(tsandall): check details
+
+	var ownerList2 types.SourcesListResponseV1
+	ts.Request("GET", "/v1/bundles", "", ownerKey2).ExpectStatus(200).ExpectBody(&ownerList2)
+	if len(ownerList2.Result) != 0 {
+		t.Fatal("did not expect to see source")
+	}
+
+	ts.Request("PUT", "/v1/bundles/testbundle", "{}", ownerKey2).ExpectStatus(403)
+	ts.Request("GET", "/v1/bundles/testbundle", "", ownerKey2).ExpectStatus(404)
+	ts.Request("PUT", "/v1/bundles/testbundle", "{}", ownerKey).ExpectStatus(200)
+}
+
 func TestServerSourceOwners(t *testing.T) {
 	ctx := context.Background()
 
@@ -169,6 +221,49 @@ func TestServerSourceOwners(t *testing.T) {
 	ts.Request("PUT", "/v1/sources/testsrc", "{}", ownerKey2).ExpectStatus(403)
 	ts.Request("GET", "/v1/sources/testsrc", "", ownerKey2).ExpectStatus(404)
 	ts.Request("PUT", "/v1/sources/testsrc", "{}", ownerKey).ExpectStatus(200)
+}
+
+func TestServerStackOwners(t *testing.T) {
+	ctx := context.Background()
+
+	db := initTestDB(ctx, t)
+	ts := initTestServer(t, db)
+	defer ts.Close()
+
+	if err := database.UpsertPrincipal(ctx, db, database.Principal{Id: "internal", Role: "administrator"}); err != nil {
+		t.Fatal(err)
+	}
+
+	const ownerKey = "test-stack-owner-key"
+	const ownerKey2 = "test-stack-owner-key2"
+
+	if err := db.UpsertToken(ctx, "internal", &config.Token{Name: "teststackowner", APIKey: ownerKey, Scopes: []config.Scope{{Role: "stack_owner"}}}); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := db.UpsertToken(ctx, "internal", &config.Token{Name: "teststackowner2", APIKey: ownerKey2, Scopes: []config.Scope{{Role: "stack_owner"}}}); err != nil {
+		t.Fatal(err)
+	}
+
+	ts.Request("PUT", "/v1/stacks/teststack", `{}`, ownerKey).ExpectStatus(200)
+
+	var ownerList types.StacksListResponseV1
+	ts.Request("GET", "/v1/stacks", "", ownerKey).ExpectStatus(200).ExpectBody(&ownerList)
+	if len(ownerList.Result) != 1 {
+		t.Fatal("expected exactly one stack")
+	}
+
+	ts.Request("GET", "/v1/stacks/teststack", "", ownerKey).ExpectStatus(200)
+
+	var ownerList2 types.StacksListResponseV1
+	ts.Request("GET", "/v1/stacks", "", ownerKey2).ExpectStatus(200).ExpectBody(&ownerList2)
+	if len(ownerList2.Result) != 0 {
+		t.Fatal("did not expect to see stack")
+	}
+
+	ts.Request("PUT", "/v1/stacks/teststack", `{}`, ownerKey2).ExpectStatus(403)
+	ts.Request("GET", "/v1/stacks/teststack", "", ownerKey2).ExpectStatus(404)
+	ts.Request("PUT", "/v1/stacks/teststack", `{}`, ownerKey).ExpectStatus(200)
 }
 
 func TestServerSourcePagination(t *testing.T) {

@@ -43,7 +43,7 @@ func BenchmarkPaginationFinalPageLatency(b *testing.B) {
 			b.ResetTimer()
 
 			for i := 0; i < b.N; i++ {
-				result, next, err := db.ListSources(ctx, database.ListOptions{Principal: "admin", Limit: limit, Cursor: cursor})
+				result, next, err := db.ListSources(ctx, "admin", database.ListOptions{Limit: limit, Cursor: cursor})
 				if err != nil {
 					b.Fatal(err)
 				}

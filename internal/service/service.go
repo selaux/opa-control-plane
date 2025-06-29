@@ -113,19 +113,19 @@ shutdown:
 
 func (s *Service) launchWorkers(ctx context.Context) {
 
-	bundles, err := s.database.ListBundlesToBuild()
+	bundles, _, err := s.database.ListBundles(ctx, internalPrincipal, database.ListOptions{})
 	if err != nil {
 		s.log.Errorf("error listing bundles: %s", err.Error())
 		return
 	}
 
-	sourceDefs, _, err := s.database.ListSources(ctx, database.ListOptions{Principal: internalPrincipal})
+	sourceDefs, _, err := s.database.ListSources(ctx, internalPrincipal, database.ListOptions{})
 	if err != nil {
 		s.log.Errorf("error listing sources: %s", err.Error())
 		return
 	}
 
-	stacks, err := s.database.ListStacks()
+	stacks, _, err := s.database.ListStacks(ctx, internalPrincipal, database.ListOptions{})
 	if err != nil {
 		s.log.Errorf("error listing stacks: %s", err.Error())
 		return

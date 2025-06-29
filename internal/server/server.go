@@ -32,12 +32,18 @@ func (s *Server) Init() *Server {
 		s.router = mux.NewRouter()
 	}
 
-	s.router.Handle("/v1/sources", http.HandlerFunc(s.v1SourcesList)).Methods(http.MethodGet)
 	s.router.Handle("/v1/sources/{source:.+}/{path:.+}", http.HandlerFunc(s.v1SourcesDataGet)).Methods(http.MethodGet)
 	s.router.Handle("/v1/sources/{source:.+}/{path:.+}", http.HandlerFunc(s.v1SourcesDataPut)).Methods(http.MethodPost, http.MethodPut)
 	s.router.Handle("/v1/sources/{source:.+}/{path:.+}", http.HandlerFunc(s.v1SourcesDataDelete)).Methods(http.MethodDelete)
+	s.router.Handle("/v1/sources", http.HandlerFunc(s.v1SourcesList)).Methods(http.MethodGet)
 	s.router.Handle("/v1/sources/{source:.+}", http.HandlerFunc(s.v1SourcesPut)).Methods(http.MethodPut)
 	s.router.Handle("/v1/sources/{source:.+}", http.HandlerFunc(s.v1SourcesGet)).Methods(http.MethodGet)
+	s.router.Handle("/v1/bundles", http.HandlerFunc(s.v1BundlesList)).Methods(http.MethodGet)
+	s.router.Handle("/v1/bundles/{bundle:.+}", http.HandlerFunc(s.v1BundlesPut)).Methods(http.MethodPut)
+	s.router.Handle("/v1/bundles/{bundle:.+}", http.HandlerFunc(s.v1BundlesGet)).Methods(http.MethodGet)
+	s.router.Handle("/v1/stacks", http.HandlerFunc(s.v1StacksList)).Methods(http.MethodGet)
+	s.router.Handle("/v1/stacks/{stack:.+}", http.HandlerFunc(s.v1StacksPut)).Methods(http.MethodPut)
+	s.router.Handle("/v1/stacks/{stack:.+}", http.HandlerFunc(s.v1StacksGet)).Methods(http.MethodGet)
 	s.router.Use(authenticationMiddleware(s.db))
 
 	return s
@@ -57,11 +63,78 @@ func (s *Server) ListenAndServe(addr string) error {
 	return http.ListenAndServe(addr, s.router)
 }
 
+func (s *Server) v1BundlesList(w http.ResponseWriter, r *http.Request) {
+
+	ctx := r.Context()
+	opts := s.listOptions(r)
+	bundles, nextCursor, err := s.db.ListBundles(ctx, s.auth(r), opts)
+	if err != nil {
+		errorAuto(w, err)
+		return
+	}
+
+	resp := types.BundlesListResponseV1{Result: bundles, NextCursor: nextCursor}
+	JSONOK(w, resp, pretty(r))
+}
+
+func (s *Server) v1BundlesPut(w http.ResponseWriter, r *http.Request) {
+
+	ctx := r.Context()
+	vars := mux.Vars(r)
+
+	name, err := url.PathUnescape(vars["bundle"])
+	if err != nil {
+		ErrorString(w, http.StatusBadRequest, types.CodeInvalidParameter, err)
+		return
+	}
+
+	var b config.Bundle
+	if err := newJSONDecoder(r.Body).Decode(&b); err != nil {
+		writer.ErrorString(w, http.StatusBadRequest, types.CodeInvalidParameter, err)
+		return
+	}
+
+	if b.Name == "" {
+		b.Name = name
+	} else if b.Name != name {
+		writer.ErrorString(w, http.StatusBadRequest, types.CodeInvalidParameter, fmt.Errorf("bundle name must match path"))
+		return
+	}
+
+	if err := s.db.UpsertBundle(ctx, s.auth(r), &b); err != nil {
+		errorAuto(w, err)
+		return
+	}
+
+	resp := types.BundlesPutResponseV1{}
+	JSONOK(w, resp, pretty(r))
+}
+
+func (s *Server) v1BundlesGet(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	vars := mux.Vars(r)
+
+	name, err := url.PathUnescape(vars["bundle"])
+	if err != nil {
+		ErrorString(w, http.StatusBadRequest, types.CodeInvalidParameter, err)
+		return
+	}
+
+	b, err := s.db.GetBundle(ctx, s.auth(r), name)
+	if err != nil {
+		errorAuto(w, err)
+		return
+	}
+
+	resp := types.BundlesGetResponseV1{Result: b}
+	JSONOK(w, resp, pretty(r))
+}
+
 func (s *Server) v1SourcesList(w http.ResponseWriter, r *http.Request) {
 
 	ctx := r.Context()
 	opts := s.listOptions(r)
-	sources, nextCursor, err := s.db.ListSources(ctx, opts)
+	sources, nextCursor, err := s.db.ListSources(ctx, s.auth(r), opts)
 	if err != nil {
 		errorAuto(w, err)
 		return
@@ -198,6 +271,74 @@ func (s *Server) v1SourcesDataDelete(w http.ResponseWriter, r *http.Request) {
 	JSONOK(w, resp, pretty(r))
 }
 
+// v1StacksList handles GET /v1/stacks
+func (s *Server) v1StacksList(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	opts := s.listOptions(r)
+	stacks, nextCursor, err := s.db.ListStacks(ctx, s.auth(r), opts)
+	if err != nil {
+		errorAuto(w, err)
+		return
+	}
+
+	resp := types.StacksListResponseV1{Result: stacks, NextCursor: nextCursor}
+	JSONOK(w, resp, pretty(r))
+}
+
+// v1StacksGet handles GET /v1/stacks/{stack}
+func (s *Server) v1StacksGet(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	vars := mux.Vars(r)
+
+	name, err := url.PathUnescape(vars["stack"])
+	if err != nil {
+		ErrorString(w, http.StatusBadRequest, types.CodeInvalidParameter, err)
+		return
+	}
+
+	stack, err := s.db.GetStack(ctx, s.auth(r), name)
+	if err != nil {
+		errorAuto(w, err)
+		return
+	}
+
+	resp := types.StacksGetResponseV1{Result: stack}
+	JSONOK(w, resp, pretty(r))
+}
+
+// v1StacksPut handles PUT /v1/stacks/{stack}
+func (s *Server) v1StacksPut(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	vars := mux.Vars(r)
+
+	name, err := url.PathUnescape(vars["stack"])
+	if err != nil {
+		ErrorString(w, http.StatusBadRequest, types.CodeInvalidParameter, err)
+		return
+	}
+
+	var stack config.Stack
+	if err := newJSONDecoder(r.Body).Decode(&stack); err != nil {
+		writer.ErrorString(w, http.StatusBadRequest, types.CodeInvalidParameter, err)
+		return
+	}
+
+	if stack.Name == "" {
+		stack.Name = name
+	} else if stack.Name != name {
+		writer.ErrorString(w, http.StatusBadRequest, types.CodeInvalidParameter, fmt.Errorf("stack name must match path"))
+		return
+	}
+
+	if err := s.db.UpsertStack(ctx, s.auth(r), &stack); err != nil {
+		errorAuto(w, err)
+		return
+	}
+
+	resp := types.StacksPutResponseV1{}
+	JSONOK(w, resp, pretty(r))
+}
+
 func (s *Server) auth(r *http.Request) string {
 	p := r.Context().Value(principalKey{})
 	if p == nil {
@@ -213,7 +354,7 @@ func (s *Server) auth(r *http.Request) string {
 const pageLimitMax = 100
 
 func (s *Server) listOptions(r *http.Request) database.ListOptions {
-	opts := database.ListOptions{Principal: s.auth(r)}
+	var opts database.ListOptions
 	q := r.URL.Query()
 	limit := q.Get("limit")
 	if n, err := strconv.Atoi(limit); err == nil {
