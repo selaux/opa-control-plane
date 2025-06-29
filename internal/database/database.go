@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"database/sql"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -12,6 +13,7 @@ import (
 	"path/filepath"
 	"slices"
 	"sort"
+	"strconv"
 
 	"github.com/aws/aws-sdk-go-v2/feature/rds/auth"
 	_ "github.com/go-sql-driver/mysql"
@@ -92,7 +94,8 @@ func (d *Database) InitDB(ctx context.Context, persistenceDir string) error {
 			excluded TEXT
 		);`,
 		`CREATE TABLE IF NOT EXISTS sources (
-			name TEXT PRIMARY KEY,
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			name TEXT NOT NULL UNIQUE,
 			builtin TEXT,
 			repo TEXT NOT NULL,
 			ref TEXT,
@@ -466,8 +469,8 @@ func (d *Database) ListBundlesToBuild() ([]*config.Bundle, error) {
 	return slices.Collect(maps.Values(bundleMap)), nil
 }
 
-func (d *Database) GetSource(ctx context.Context, principal string, sourceName string) (*config.Source, error) {
-	sources, err := d.ListSources(ctx, principal, Filter{Name: sourceName})
+func (d *Database) GetSource(ctx context.Context, principal string, name string) (*config.Source, error) {
+	sources, _, err := d.ListSources(ctx, ListOptions{Principal: principal, Name: name})
 	if err != nil {
 		return nil, err
 	}
@@ -479,29 +482,41 @@ func (d *Database) GetSource(ctx context.Context, principal string, sourceName s
 	return sources[0], nil
 }
 
-type Filter struct {
-	Name string
+type ListOptions struct {
+	Principal string
+	Name      string
+	Limit     int
+	Cursor    string
 }
 
-func (d *Database) ListSources(ctx context.Context, principal string, filter Filter) ([]*config.Source, error) {
+func (d *Database) ListSources(ctx context.Context, opts ListOptions) ([]*config.Source, string, error) {
 	txn, err := d.db.Begin()
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	defer txn.Commit()
 
 	expr, err := authz.Partial(ctx, authz.Access{
-		Principal:  principal,
+		Principal:  opts.Principal,
 		Resource:   "sources",
 		Permission: "sources.view",
 	}, map[string]authz.ColumnRef{
 		"input.name": {Table: "sources", Column: "name"},
 	})
 	if err != nil {
-		return nil, err
+		return nil, "", err
+	}
+
+	var after int64
+	if opts.Cursor != "" {
+		decoded, err := base64.URLEncoding.DecodeString(opts.Cursor)
+		if err == nil {
+			after, _ = strconv.ParseInt(string(decoded), 10, 64)
+		}
 	}
 
 	query := `SELECT
+	sources.id,
 	sources.name AS source_name,
 	sources.builtin,
 	sources.repo,
@@ -525,70 +540,93 @@ WHERE ((sources_secrets.ref_type = 'git_credentials' AND secrets.value IS NOT NU
 
 	var args []any
 
-	if filter.Name != "" {
-		query += " AND sources.name = ?"
-		args = append(args, filter.Name)
+	if opts.Name != "" {
+		query += " AND (sources.name = ?)"
+		args = append(args, opts.Name)
+	}
+
+	if after > 0 {
+		query += " AND (sources.id > ?)"
+		args = append(args, after)
+	}
+	query += " ORDER BY sources.id"
+	if opts.Limit > 0 {
+		query += " LIMIT ?"
+		args = append(args, opts.Limit)
 	}
 
 	rows, err := txn.Query(query, args...)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	defer rows.Close()
 
+	type sourceRow struct {
+		id                                     int64
+		sourceName                             string
+		builtin                                *string
+		repo                                   string
+		ref, gitCommit, path, includePaths     *string
+		secretName, secretRefType, secretValue *string
+		requirementName                        *string
+	}
+
 	srcMap := make(map[string]*config.Source)
+	idMap := make(map[string]int64)
+	var last int64
 
 	for rows.Next() {
-		var sourceName, repo string
-		var builtin *string
-		var secretName, secretRefType, secretValue *string
-		var ref, gitCommit, path, includePaths *string
-		var requirementName *string
-		if err := rows.Scan(&sourceName, &builtin, &repo, &ref, &gitCommit, &path, &includePaths, &secretName, &secretRefType, &secretValue, &requirementName); err != nil {
-			return nil, err
+		var row sourceRow
+		if err := rows.Scan(&row.id, &row.sourceName, &row.builtin, &row.repo, &row.ref, &row.gitCommit, &row.path, &row.includePaths, &row.secretName, &row.secretRefType, &row.secretValue, &row.requirementName); err != nil {
+			return nil, "", err
 		}
 
-		src, exists := srcMap[sourceName]
+		src, exists := srcMap[row.sourceName]
 		if !exists {
 			src = &config.Source{
-				Name:    sourceName,
-				Builtin: builtin,
+				Name:    row.sourceName,
+				Builtin: row.builtin,
 				Git: config.Git{
-					Repo: repo,
+					Repo: row.repo,
 				},
 			}
-			srcMap[sourceName] = src
+			srcMap[row.sourceName] = src
+			idMap[row.sourceName] = row.id
 
-			if ref != nil {
-				src.Git.Reference = ref
+			if row.ref != nil {
+				src.Git.Reference = row.ref
 			}
-			if gitCommit != nil {
-				src.Git.Commit = gitCommit
+			if row.gitCommit != nil {
+				src.Git.Commit = row.gitCommit
 			}
-			if path != nil {
-				src.Git.Path = path
+			if row.path != nil {
+				src.Git.Path = row.path
 			}
-			if includePaths != nil {
-				if err := json.Unmarshal([]byte(*includePaths), &src.Git.IncludedFiles); err != nil {
-					return nil, fmt.Errorf("failed to unmarshal include paths for %q: %w", src.Name, err)
+			if row.includePaths != nil {
+				if err := json.Unmarshal([]byte(*row.includePaths), &src.Git.IncludedFiles); err != nil {
+					return nil, "", fmt.Errorf("failed to unmarshal include paths for %q: %w", src.Name, err)
 				}
 			}
 		}
 
-		if secretName != nil {
-			s := config.Secret{Name: *secretName}
-			if err := json.Unmarshal([]byte(*secretValue), &s.Value); err != nil {
-				return nil, err
+		if row.secretName != nil {
+			s := config.Secret{Name: *row.secretName}
+			if err := json.Unmarshal([]byte(*row.secretValue), &s.Value); err != nil {
+				return nil, "", err
 			}
 
-			switch *secretRefType {
+			switch *row.secretRefType {
 			case "git_credentials":
 				src.Git.Credentials = s.Ref()
 			}
 		}
 
-		if requirementName != nil {
-			src.Requirements = append(src.Requirements, config.Requirement{Source: requirementName})
+		if row.requirementName != nil {
+			src.Requirements = append(src.Requirements, config.Requirement{Source: row.requirementName})
+		}
+
+		if row.id > last {
+			last = row.id
 		}
 	}
 
@@ -605,7 +643,7 @@ WHERE ((sources_secrets.ref_type = 'git_credentials' AND secrets.value IS NOT NU
 		sources_datasources
 	`)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 
 	defer rows2.Close()
@@ -613,7 +651,7 @@ WHERE ((sources_secrets.ref_type = 'git_credentials' AND secrets.value IS NOT NU
 	for rows2.Next() {
 		var name, source_name, path, type_, configuration, transformQuery string
 		if err := rows2.Scan(&name, &source_name, &path, &type_, &configuration, &transformQuery); err != nil {
-			return nil, err
+			return nil, "", err
 		}
 
 		datasource := config.Datasource{
@@ -624,7 +662,7 @@ WHERE ((sources_secrets.ref_type = 'git_credentials' AND secrets.value IS NOT NU
 		}
 
 		if err := json.Unmarshal([]byte(configuration), &datasource.Config); err != nil {
-			return nil, err
+			return nil, "", err
 		}
 
 		src, ok := srcMap[source_name]
@@ -635,10 +673,16 @@ WHERE ((sources_secrets.ref_type = 'git_credentials' AND secrets.value IS NOT NU
 
 	sl := slices.Collect(maps.Values(srcMap))
 	sort.Slice(sl, func(i, j int) bool {
-		return sl[i].Name < sl[j].Name
+		return idMap[sl[i].Name] < idMap[sl[j].Name]
 	})
 
-	return sl, nil
+	var nextCursor string
+	if opts.Limit > 0 && len(sl) == opts.Limit {
+		cursor := strconv.FormatInt(last, 10)
+		nextCursor = base64.URLEncoding.EncodeToString([]byte(cursor))
+	}
+
+	return sl, nextCursor, nil
 }
 
 func (d *Database) ListStacks() ([]*config.Stack, error) {

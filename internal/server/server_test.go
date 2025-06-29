@@ -5,6 +5,7 @@ import (
 	"context"
 	"io"
 	"net/http/httptest"
+	"strconv"
 	"testing"
 
 	"github.com/gorilla/mux"
@@ -170,6 +171,67 @@ func TestServerSourceOwners(t *testing.T) {
 	ts.Request("PUT", "/v1/sources/testsrc", "{}", ownerKey).ExpectStatus(200)
 }
 
+func TestServerSourcePagination(t *testing.T) {
+	ctx := context.Background()
+
+	db := initTestDB(ctx, t)
+	ts := initTestServer(t, db)
+	defer ts.Close()
+
+	if err := database.UpsertPrincipal(ctx, db, database.Principal{Id: "internal", Role: "administrator"}); err != nil {
+		t.Fatal(err)
+	}
+
+	const ownerKey = "test-owner-key"
+
+	if err := db.UpsertToken(ctx, "internal", &config.Token{Name: "testowner", APIKey: ownerKey, Scopes: []config.Scope{{Role: "owner"}}}); err != nil {
+		t.Fatal(err)
+	}
+
+	const ownerKey2 = "test-owner-key2"
+
+	if err := db.UpsertToken(ctx, "internal", &config.Token{Name: "testowner2", APIKey: ownerKey2, Scopes: []config.Scope{{Role: "owner"}}}); err != nil {
+		t.Fatal(err)
+	}
+
+	for i := range 200 {
+		ts.Request("PUT", "/v1/sources/testsrc"+strconv.Itoa(i), "{}", ownerKey).ExpectStatus(200)
+	}
+
+	// Create a source for another owner that must not be seen during pagination.
+	ts.Request("PUT", "/v1/sources/othersource", "{}", ownerKey2).ExpectStatus(200)
+
+	var (
+		allSources []*config.Source
+		cursor     string
+		pageCount  int
+	)
+
+	for {
+		url := "/v1/sources?limit=10"
+		if cursor != "" {
+			url += "&cursor=" + cursor
+		}
+		var resp types.SourcesListResponseV1
+		ts.Request("GET", url, "", ownerKey).ExpectStatus(200).ExpectBody(&resp)
+
+		allSources = append(allSources, resp.Result...)
+		if resp.NextCursor == "" {
+			break
+		}
+		cursor = resp.NextCursor
+		pageCount++
+	}
+
+	if len(allSources) != 200 {
+		t.Fatalf("expected 200 sources, got %d", len(allSources))
+	}
+	if pageCount != 20 {
+		t.Fatalf("expected pagination to require multiple pages, got %d", pageCount)
+	}
+
+}
+
 func initTestDB(ctx context.Context, t *testing.T) *database.Database {
 	t.Helper()
 	var db database.Database
@@ -226,6 +288,7 @@ func (tr *testResponse) Body() *bytes.Buffer {
 func (tr *testResponse) ExpectStatus(code int) *testResponse {
 	tr.ts.t.Helper()
 	if tr.w.Code != code {
+		tr.ts.t.Log("body:", tr.w.Body.String())
 		tr.ts.t.Fatalf("expected status %v but got %v", code, tr.w.Code)
 	}
 	return tr
@@ -234,6 +297,7 @@ func (tr *testResponse) ExpectStatus(code int) *testResponse {
 func (tr *testResponse) ExpectBody(x interface{}) *testResponse {
 	tr.ts.t.Helper()
 	if err := newJSONDecoder(tr.w.Body).Decode(x); err != nil {
+		tr.ts.t.Log("body:", tr.w.Body.String())
 		tr.ts.t.Fatal(err)
 	}
 	return tr

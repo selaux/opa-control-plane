@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/url"
 	"path"
+	"strconv"
 	"strings"
 
 	"github.com/gorilla/mux"
@@ -59,13 +60,14 @@ func (s *Server) ListenAndServe(addr string) error {
 func (s *Server) v1SourcesList(w http.ResponseWriter, r *http.Request) {
 
 	ctx := r.Context()
-	sources, err := s.db.ListSources(ctx, s.auth(r), database.Filter{})
+	opts := s.listOptions(r)
+	sources, nextCursor, err := s.db.ListSources(ctx, opts)
 	if err != nil {
 		errorAuto(w, err)
 		return
 	}
 
-	resp := types.SourcesListResponseV1{Result: sources}
+	resp := types.SourcesListResponseV1{Result: sources, NextCursor: nextCursor}
 	JSONOK(w, resp, pretty(r))
 }
 
@@ -206,6 +208,24 @@ func (s *Server) auth(r *http.Request) string {
 		panic("unreachable")
 	}
 	return p.(string)
+}
+
+const pageLimitMax = 100
+
+func (s *Server) listOptions(r *http.Request) database.ListOptions {
+	opts := database.ListOptions{Principal: s.auth(r)}
+	q := r.URL.Query()
+	limit := q.Get("limit")
+	if n, err := strconv.Atoi(limit); err == nil {
+		if n <= pageLimitMax {
+			opts.Limit = n
+		}
+	}
+	if opts.Limit == 0 {
+		opts.Limit = pageLimitMax
+	}
+	opts.Cursor = q.Get("cursor")
+	return opts
 }
 
 func errorAuto(w http.ResponseWriter, err error) {

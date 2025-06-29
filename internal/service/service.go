@@ -119,7 +119,7 @@ func (s *Service) launchWorkers(ctx context.Context) {
 		return
 	}
 
-	sourceDefs, err := s.database.ListSources(ctx, internalPrincipal, database.Filter{})
+	sourceDefs, _, err := s.database.ListSources(ctx, database.ListOptions{Principal: internalPrincipal})
 	if err != nil {
 		s.log.Errorf("error listing sources: %s", err.Error())
 		return

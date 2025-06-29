@@ -22,7 +22,8 @@ type SourcesGetDataResponseV1 struct {
 }
 
 type SourcesListResponseV1 struct {
-	Result []*config.Source `json:"result,omitempty"`
+	Result     []*config.Source `json:"result,omitempty"`
+	NextCursor string           `json:"next_cursor,omitempty"`
 }
 
 type SourcesGetResponseV1 struct {
