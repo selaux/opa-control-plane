@@ -1758,8 +1758,9 @@ func fetchLibraryPolicies(c *das.Client, state *dasState) error {
 					// have policies on it. Need to fetch each library individually.
 					resp, err := c.JSON("v1/libraries/"+l.Id, das.Params{
 						Query: map[string]string{
-							"rule_counts": "false",
-							"modules":     "false",
+							"rule_counts":       "false",
+							"modules":           "false",
+							"dependant_bundles": "none",
 						},
 					})
 					if err != nil {
