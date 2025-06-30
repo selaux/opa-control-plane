@@ -33,6 +33,7 @@ type Options struct {
 	ConfigFile           []string
 	URL                  string
 	Token                string
+	Headers              []string
 	NumDecisions         int
 	PolicyType           string
 	MaxEvalTimeInflation int
@@ -59,6 +60,7 @@ func init() {
 
 	backtest.Flags().StringSliceVarP(&opts.ConfigFile, "config", "c", []string{"config.yaml"}, "Path to the configuration file")
 	backtest.Flags().StringVarP(&opts.URL, "url", "u", "", "Styra tenant URL (e.g., https://expo.styra.com)")
+	backtest.Flags().StringSliceVarP(&opts.Headers, "header", "", nil, "Set additional HTTP headers for requests to Styra API")
 	backtest.Flags().IntVarP(&opts.NumDecisions, "decisions", "n", 100, "Number of decisions to backtest")
 	backtest.Flags().StringVarP(&opts.PolicyType, "policy-type", "", "", "Specify policy type to backtest against (e.g., validating, mutating, etc.)")
 	backtest.Flags().IntVarP(&opts.MaxEvalTimeInflation, "max-eval-time-inflation", "", 100, "Maximum allowed increase in decision evaluation time (in percents, <0 to disable)")
@@ -112,9 +114,10 @@ func Run(opts Options) error {
 	}
 
 	styra := das.Client{
-		URL:    url,
-		Token:  opts.Token,
-		Client: http.DefaultClient}
+		URL:     url,
+		Headers: opts.Headers,
+		Token:   opts.Token,
+		Client:  http.DefaultClient}
 
 	log.Info("Fetching systems")
 	resp, err := styra.JSON("v1/systems")
