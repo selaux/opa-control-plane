@@ -787,7 +787,7 @@ type ObjectStorage struct {
 
 func (o *ObjectStorage) Equal(other *ObjectStorage) bool {
 	return fastEqual(o, other, func() bool {
-		return o.AmazonS3.Equal(other.AmazonS3) && o.GCPCloudStorage.Equal(other.GCPCloudStorage) && o.AzureBlobStorage.Equal(other.AzureBlobStorage)
+		return o.AmazonS3.Equal(other.AmazonS3) && o.GCPCloudStorage.Equal(other.GCPCloudStorage) && o.AzureBlobStorage.Equal(other.AzureBlobStorage) && o.FileSystemStorage.Equal(other.FileSystemStorage)
 	})
 }
 
@@ -839,6 +839,12 @@ func (g *GCPCloudStorage) Equal(other *GCPCloudStorage) bool {
 func (a *AzureBlobStorage) Equal(other *AzureBlobStorage) bool {
 	return fastEqual(a, other, func() bool {
 		return a.AccountURL == other.AccountURL && a.Container == other.Container && a.Path == other.Path
+	})
+}
+
+func (f *FileSystemStorage) Equal(other *FileSystemStorage) bool {
+	return fastEqual(f, other, func() bool {
+		return f.Path == other.Path
 	})
 }
 
