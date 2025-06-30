@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/tsandall/lighthouse/internal/config"
+	"github.com/styrainc/lighthouse/internal/config"
 )
 
 // refreshCredentialsInterval sets the refreshing interval to ensure they are up to date.

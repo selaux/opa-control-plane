@@ -11,9 +11,9 @@ import (
 	"github.com/open-policy-agent/opa/ast"
 	"github.com/open-policy-agent/opa/bundle"
 
-	"github.com/tsandall/lighthouse/internal/builder"
-	"github.com/tsandall/lighthouse/internal/config"
-	"github.com/tsandall/lighthouse/internal/test/tempfs"
+	"github.com/styrainc/lighthouse/internal/builder"
+	"github.com/styrainc/lighthouse/internal/config"
+	"github.com/styrainc/lighthouse/internal/test/tempfs"
 )
 
 func TestBuilder(t *testing.T) {

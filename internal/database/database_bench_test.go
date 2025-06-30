@@ -8,8 +8,8 @@ import (
 	"strconv"
 	"testing"
 
-	"github.com/tsandall/lighthouse/internal/config"
-	"github.com/tsandall/lighthouse/internal/database"
+	"github.com/styrainc/lighthouse/internal/config"
+	"github.com/styrainc/lighthouse/internal/database"
 )
 
 func BenchmarkPaginationFinalPageLatency(b *testing.B) {

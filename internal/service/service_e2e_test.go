@@ -22,11 +22,11 @@ import (
 	"github.com/johannesboyne/gofakes3/backend/s3mem"
 	"github.com/open-policy-agent/opa/ast"
 	"github.com/open-policy-agent/opa/bundle"
-	"github.com/tsandall/lighthouse/internal/logging"
-	"github.com/tsandall/lighthouse/internal/service"
-	"github.com/tsandall/lighthouse/internal/test/libraries"
-	"github.com/tsandall/lighthouse/internal/test/tempfs"
-	"github.com/tsandall/lighthouse/internal/util"
+	"github.com/styrainc/lighthouse/internal/logging"
+	"github.com/styrainc/lighthouse/internal/service"
+	"github.com/styrainc/lighthouse/internal/test/libraries"
+	"github.com/styrainc/lighthouse/internal/test/tempfs"
+	"github.com/styrainc/lighthouse/internal/util"
 	"gopkg.in/yaml.v3"
 )
 

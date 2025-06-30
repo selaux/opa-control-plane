@@ -19,8 +19,8 @@ import (
 	"github.com/aws/aws-sdk-go-v2/feature/s3/manager"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
-	iaws "github.com/tsandall/lighthouse/internal/aws"
-	"github.com/tsandall/lighthouse/internal/config"
+	iaws "github.com/styrainc/lighthouse/internal/aws"
+	"github.com/styrainc/lighthouse/internal/config"
 
 	"google.golang.org/api/option"
 )

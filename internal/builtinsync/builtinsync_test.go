@@ -8,10 +8,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/tsandall/lighthouse/internal/builtinsync"
-	"github.com/tsandall/lighthouse/internal/test/libraries"
-	"github.com/tsandall/lighthouse/internal/test/tempfs"
-	"github.com/tsandall/lighthouse/internal/util"
+	"github.com/styrainc/lighthouse/internal/builtinsync"
+	"github.com/styrainc/lighthouse/internal/test/libraries"
+	"github.com/styrainc/lighthouse/internal/test/tempfs"
+	"github.com/styrainc/lighthouse/internal/util"
 )
 
 func TestBuiltinSync(t *testing.T) {

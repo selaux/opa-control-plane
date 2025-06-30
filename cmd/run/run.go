@@ -5,13 +5,13 @@ import (
 	"os"
 
 	"github.com/spf13/cobra"
-	"github.com/tsandall/lighthouse/cmd"
-	"github.com/tsandall/lighthouse/internal/config"
-	"github.com/tsandall/lighthouse/internal/logging"
-	"github.com/tsandall/lighthouse/internal/server"
-	"github.com/tsandall/lighthouse/internal/service"
-	"github.com/tsandall/lighthouse/internal/util"
-	"github.com/tsandall/lighthouse/libraries"
+	"github.com/styrainc/lighthouse/cmd"
+	"github.com/styrainc/lighthouse/internal/config"
+	"github.com/styrainc/lighthouse/internal/logging"
+	"github.com/styrainc/lighthouse/internal/server"
+	"github.com/styrainc/lighthouse/internal/service"
+	"github.com/styrainc/lighthouse/internal/util"
+	"github.com/styrainc/lighthouse/libraries"
 )
 
 const defaultLocalAddr = "localhost:8282"

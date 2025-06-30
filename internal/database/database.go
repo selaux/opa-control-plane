@@ -19,9 +19,9 @@ import (
 	_ "github.com/go-sql-driver/mysql"
 	_ "github.com/jackc/pgx/v5/stdlib" // database/sql compatible driver for pgx
 	_ "github.com/mattn/go-sqlite3"
-	"github.com/tsandall/lighthouse/internal/authz"
-	"github.com/tsandall/lighthouse/internal/aws"
-	"github.com/tsandall/lighthouse/internal/config"
+	"github.com/styrainc/lighthouse/internal/authz"
+	"github.com/styrainc/lighthouse/internal/aws"
+	"github.com/styrainc/lighthouse/internal/config"
 )
 
 // Database implements the database operations. It will hide any differences between the varying SQL databases from the rest of the codebase.

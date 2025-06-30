@@ -3,12 +3,12 @@ package main
 import (
 	"os"
 
-	"github.com/tsandall/lighthouse/cmd"
-	_ "github.com/tsandall/lighthouse/cmd/backtest"
-	_ "github.com/tsandall/lighthouse/cmd/compare"
-	_ "github.com/tsandall/lighthouse/cmd/migrate"
-	_ "github.com/tsandall/lighthouse/cmd/run"
-	_ "github.com/tsandall/lighthouse/cmd/version"
+	"github.com/styrainc/lighthouse/cmd"
+	_ "github.com/styrainc/lighthouse/cmd/backtest"
+	_ "github.com/styrainc/lighthouse/cmd/compare"
+	_ "github.com/styrainc/lighthouse/cmd/migrate"
+	_ "github.com/styrainc/lighthouse/cmd/run"
+	_ "github.com/styrainc/lighthouse/cmd/version"
 )
 
 func main() {

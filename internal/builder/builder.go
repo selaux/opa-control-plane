@@ -16,8 +16,8 @@ import (
 	"github.com/open-policy-agent/opa/bundle"
 	"github.com/open-policy-agent/opa/compile"
 	"github.com/open-policy-agent/opa/rego"
-	"github.com/tsandall/lighthouse/internal/config"
-	"github.com/tsandall/lighthouse/internal/util"
+	"github.com/styrainc/lighthouse/internal/config"
+	"github.com/styrainc/lighthouse/internal/util"
 	"github.com/yalue/merged_fs"
 )
 

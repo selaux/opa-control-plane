@@ -18,7 +18,7 @@ import (
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/transport"
 	"github.com/go-git/go-git/v5/plumbing/transport/http"
-	"github.com/tsandall/lighthouse/internal/config"
+	"github.com/styrainc/lighthouse/internal/config"
 )
 
 type Synchronizer struct {

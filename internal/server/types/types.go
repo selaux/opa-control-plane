@@ -3,7 +3,7 @@ package types
 import (
 	"encoding/json"
 
-	"github.com/tsandall/lighthouse/internal/config"
+	"github.com/styrainc/lighthouse/internal/config"
 )
 
 const (

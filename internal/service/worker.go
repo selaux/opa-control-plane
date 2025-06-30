@@ -5,10 +5,10 @@ import (
 	"context"
 	"time"
 
-	"github.com/tsandall/lighthouse/internal/builder"
-	"github.com/tsandall/lighthouse/internal/config"
-	"github.com/tsandall/lighthouse/internal/logging"
-	"github.com/tsandall/lighthouse/internal/s3"
+	"github.com/styrainc/lighthouse/internal/builder"
+	"github.com/styrainc/lighthouse/internal/config"
+	"github.com/styrainc/lighthouse/internal/logging"
+	"github.com/styrainc/lighthouse/internal/s3"
 )
 
 var (

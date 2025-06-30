@@ -1,4 +1,4 @@
-module github.com/tsandall/lighthouse
+module github.com/styrainc/lighthouse
 
 go 1.24.0
 

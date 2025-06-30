@@ -16,14 +16,14 @@ import (
 
 	"github.com/johannesboyne/gofakes3"
 	"github.com/johannesboyne/gofakes3/backend/s3mem"
-	"github.com/tsandall/lighthouse/cmd/backtest"
-	"github.com/tsandall/lighthouse/cmd/migrate"
-	"github.com/tsandall/lighthouse/internal/config"
-	"github.com/tsandall/lighthouse/internal/logging"
-	"github.com/tsandall/lighthouse/internal/service"
-	"github.com/tsandall/lighthouse/internal/test/tempfs"
-	"github.com/tsandall/lighthouse/internal/util"
-	"github.com/tsandall/lighthouse/libraries"
+	"github.com/styrainc/lighthouse/cmd/backtest"
+	"github.com/styrainc/lighthouse/cmd/migrate"
+	"github.com/styrainc/lighthouse/internal/config"
+	"github.com/styrainc/lighthouse/internal/logging"
+	"github.com/styrainc/lighthouse/internal/service"
+	"github.com/styrainc/lighthouse/internal/test/tempfs"
+	"github.com/styrainc/lighthouse/internal/util"
+	"github.com/styrainc/lighthouse/libraries"
 	"golang.org/x/sync/errgroup"
 )
 

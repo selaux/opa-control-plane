@@ -6,9 +6,9 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/tsandall/lighthouse/internal/config"
-	"github.com/tsandall/lighthouse/internal/database"
-	"github.com/tsandall/lighthouse/internal/service"
+	"github.com/styrainc/lighthouse/internal/config"
+	"github.com/styrainc/lighthouse/internal/database"
+	"github.com/styrainc/lighthouse/internal/service"
 )
 
 func TestDatabaseSourcesData(t *testing.T) {

@@ -18,11 +18,11 @@ import (
 	"github.com/open-policy-agent/opa/ast"
 	"github.com/open-policy-agent/opa/bundle"
 	"github.com/spf13/cobra"
-	"github.com/tsandall/lighthouse/cmd"
-	"github.com/tsandall/lighthouse/cmd/internal/das"
-	"github.com/tsandall/lighthouse/internal/config"
-	"github.com/tsandall/lighthouse/internal/logging"
-	"github.com/tsandall/lighthouse/internal/s3"
+	"github.com/styrainc/lighthouse/cmd"
+	"github.com/styrainc/lighthouse/cmd/internal/das"
+	"github.com/styrainc/lighthouse/internal/config"
+	"github.com/styrainc/lighthouse/internal/logging"
+	"github.com/styrainc/lighthouse/internal/s3"
 )
 
 var log *logging.Logger

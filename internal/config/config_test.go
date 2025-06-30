@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/tsandall/lighthouse/internal/config"
+	"github.com/styrainc/lighthouse/internal/config"
 	"gopkg.in/yaml.v3"
 )
 

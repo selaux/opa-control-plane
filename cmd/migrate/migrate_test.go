@@ -7,9 +7,9 @@ import (
 	"sort"
 	"testing"
 
-	"github.com/tsandall/lighthouse/cmd/internal/das"
-	"github.com/tsandall/lighthouse/internal/config"
-	"github.com/tsandall/lighthouse/libraries"
+	"github.com/styrainc/lighthouse/cmd/internal/das"
+	"github.com/styrainc/lighthouse/internal/config"
+	"github.com/styrainc/lighthouse/libraries"
 )
 
 func TestLibraryPackageIndex(t *testing.T) {
