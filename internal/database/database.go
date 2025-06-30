@@ -114,6 +114,7 @@ func (d *Database) InitDB(ctx context.Context, persistenceDir string) error {
 			s3region TEXT,
 			s3bucket TEXT,
 			s3key TEXT,
+			filepath TEXT,
 			excluded TEXT
 		);`,
 		`CREATE TABLE IF NOT EXISTS sources (
@@ -432,6 +433,7 @@ func (d *Database) ListBundles(ctx context.Context, principal string, opts ListO
 		bundles.s3region,
 		bundles.s3bucket,
 		bundles.s3key,
+		bundles.filepath,
 		bundles.excluded,
         secrets.name AS secret_name,
 		bundles_secrets.ref_type AS secret_ref_type,
@@ -444,10 +446,14 @@ func (d *Database) ListBundles(ctx context.Context, principal string, opts ListO
     LEFT JOIN
         secrets ON bundles_secrets.secret_name = secrets.name
 	LEFT JOIN
-		bundles_requirements ON bundles.name = bundles_requirements.bundle_name
-	WHERE (bundles.s3bucket IS NOT NULL) AND
-		(bundles_secrets.ref_type IS NULL OR bundles_secrets.ref_type = 'aws')` + " AND (" + expr.SQL() + ")"
-
+		bundles_requirements ON bundles.name = bundles_requirements.bundle_name ` +
+		// Bundles stored to S3 object storages
+		`WHERE ((bundles.s3bucket IS NOT NULL) AND
+		(bundles_secrets.ref_type IS NULL OR bundles_secrets.ref_type = 'aws')` +
+		// Bundles stored to filesystem
+		" OR (bundles.filepath IS NOT NULL))" +
+		// Authorization
+		" AND (" + expr.SQL() + ")"
 	var args []any
 
 	if opts.name != "" {
@@ -472,13 +478,13 @@ func (d *Database) ListBundles(ctx context.Context, principal string, opts ListO
 	defer rows.Close()
 
 	type bundleRow struct {
-		id                                     int64
-		bundleName                             string
-		labels                                 *string
-		s3url, s3region, s3bucket, s3key       *string
-		excluded                               *string
-		secretName, secretRefType, secretValue *string
-		reqSrc                                 *string
+		id                                         int64
+		bundleName                                 string
+		labels                                     *string
+		s3url, s3region, s3bucket, s3key, filepath *string
+		excluded                                   *string
+		secretName, secretRefType, secretValue     *string
+		reqSrc                                     *string
 	}
 	bundleMap := make(map[string]*config.Bundle)
 	idMap := make(map[string]int64)
@@ -486,7 +492,7 @@ func (d *Database) ListBundles(ctx context.Context, principal string, opts ListO
 
 	for rows.Next() {
 		var row bundleRow
-		if err := rows.Scan(&row.id, &row.bundleName, &row.labels, &row.s3url, &row.s3region, &row.s3bucket, &row.s3key, &row.excluded, &row.secretName, &row.secretRefType, &row.secretValue, &row.reqSrc); err != nil {
+		if err := rows.Scan(&row.id, &row.bundleName, &row.labels, &row.s3url, &row.s3region, &row.s3bucket, &row.s3key, &row.filepath, &row.excluded, &row.secretName, &row.secretRefType, &row.secretValue, &row.reqSrc); err != nil {
 			return nil, "", err
 		}
 
@@ -513,6 +519,10 @@ func (d *Database) ListBundles(ctx context.Context, principal string, opts ListO
 				}
 				if row.s3url != nil {
 					bundle.ObjectStorage.AmazonS3.URL = *row.s3url
+				}
+			} else if row.filepath != nil {
+				bundle.ObjectStorage.FileSystemStorage = &config.FileSystemStorage{
+					Path: *row.filepath,
 				}
 			}
 
@@ -930,12 +940,15 @@ func (d *Database) UpsertBundle(ctx context.Context, principal string, bundle *c
 		return err
 	}
 
-	var s3url, s3region, s3bucket, s3key *string
+	var s3url, s3region, s3bucket, s3key, filepath *string
 	if bundle.ObjectStorage.AmazonS3 != nil {
 		s3url = &bundle.ObjectStorage.AmazonS3.URL
 		s3region = &bundle.ObjectStorage.AmazonS3.Region
 		s3bucket = &bundle.ObjectStorage.AmazonS3.Bucket
 		s3key = &bundle.ObjectStorage.AmazonS3.Key
+	}
+	if bundle.ObjectStorage.FileSystemStorage != nil {
+		filepath = &bundle.ObjectStorage.FileSystemStorage.Path
 	}
 
 	labels, err := json.Marshal(bundle.Labels)
@@ -948,8 +961,8 @@ func (d *Database) UpsertBundle(ctx context.Context, principal string, bundle *c
 		return err
 	}
 
-	if _, err := tx.Exec(`INSERT OR REPLACE INTO bundles (name, labels, s3url, s3region, s3bucket, s3key, excluded) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-		bundle.Name, string(labels), s3url, s3region, s3bucket, s3key, string(excluded)); err != nil {
+	if _, err := tx.Exec(`INSERT OR REPLACE INTO bundles (name, labels, s3url, s3region, s3bucket, s3key, filepath, excluded) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		bundle.Name, string(labels), s3url, s3region, s3bucket, s3key, filepath, string(excluded)); err != nil {
 		return err
 	}
 
