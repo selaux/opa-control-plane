@@ -120,7 +120,16 @@ func Run(opts Options) error {
 		Client:  http.DefaultClient}
 
 	log.Info("Fetching systems")
-	resp, err := styra.JSON("v1/systems")
+	resp, err := styra.JSON("v1/systems", das.Params{Query: map[string]string{
+		"authz":       "false",
+		"compact":     "true",
+		"datasources": "false",
+		"errors":      "false",
+		"metadata":    "false",
+		"modules":     "false",
+		"policies":    "false",
+		"rule_counts": "false",
+	}})
 	if err != nil {
 		return err
 	}
@@ -130,9 +139,9 @@ func Run(opts Options) error {
 		return err
 	}
 
-	v1SystemsByName := map[string]*das.V1System{}
+	v1SystemsByName := make(map[string]string)
 	for _, system := range v1systems {
-		v1SystemsByName[system.Name] = system
+		v1SystemsByName[system.Name] = system.Id
 	}
 
 	report := Report{
@@ -161,9 +170,9 @@ func Run(opts Options) error {
 	return nil
 }
 
-func backtestSystem(ctx context.Context, opts Options, styra *das.Client, byName map[string]*das.V1System, system *config.Bundle, report *Report) error {
+func backtestSystem(ctx context.Context, opts Options, styra *das.Client, byName map[string]string, system *config.Bundle, report *Report) error {
 
-	v1, ok := byName[system.Name]
+	systemId, ok := byName[system.Name]
 	if !ok {
 		report.ExtraSystems = append(report.ExtraSystems, system.Name)
 		return nil
@@ -172,7 +181,7 @@ func backtestSystem(ctx context.Context, opts Options, styra *das.Client, byName
 	params := das.Params{
 		Query: map[string]string{
 			"limit":  fmt.Sprintf("%d", opts.NumDecisions),
-			"system": v1.Id,
+			"system": systemId,
 		},
 	}
 
