@@ -424,7 +424,7 @@ func (d *Database) ListBundles(ctx context.Context, principal string, opts ListO
 		return nil, "", err
 	}
 
-	// TODO(tsandall): do we support object storage w/o credentials?
+	// TODO: object storage credential types beyond aws.
 	query := `SELECT
 		bundles.id,
         bundles.name AS bundle_name,
