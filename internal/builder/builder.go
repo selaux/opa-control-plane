@@ -253,7 +253,7 @@ func (b *Builder) Build(ctx context.Context) error {
 	return bundle.Write(b.output, *result)
 }
 
-func walkFilesRecursive(excludes []glob.Glob, dir Dir, suffix string, fn func(path string, fi os.FileInfo) error) error {
+func walkFilesRecursive(excludes []glob.Glob, dir Dir, suffixes []string, fn func(path string, fi os.FileInfo) error) error {
 	var includes []glob.Glob
 	for _, i := range dir.IncludedFiles {
 		g, err := glob.Compile(i)
@@ -275,7 +275,9 @@ func walkFilesRecursive(excludes []glob.Glob, dir Dir, suffix string, fn func(pa
 		if !isIncluded(strings.TrimPrefix(path, dir.Path+"/"), includes) {
 			return nil
 		}
-		if filepath.Ext(path) != suffix {
+		if !slices.ContainsFunc(suffixes, func(s string) bool {
+			return strings.ToLower(s) == strings.ToLower(filepath.Ext(path))
+		}) {
 			return nil
 		}
 		return fn(path, fi)
@@ -302,7 +304,7 @@ func getRegoAndJSONRootsForDirs(excluded []glob.Glob, dirs []Dir) ([]ast.Ref, er
 
 	for _, dir := range dirs {
 
-		err := walkFilesRecursive(excluded, dir, ".rego", func(path string, _ os.FileInfo) error {
+		err := walkFilesRecursive(excluded, dir, []string{".rego"}, func(path string, _ os.FileInfo) error {
 
 			bs, err := os.ReadFile(path)
 			if err != nil {
@@ -322,7 +324,7 @@ func getRegoAndJSONRootsForDirs(excluded []glob.Glob, dirs []Dir) ([]ast.Ref, er
 			return nil, err
 		}
 
-		err = walkFilesRecursive(excluded, dir, ".json", func(path string, _ os.FileInfo) error {
+		err = walkFilesRecursive(excluded, dir, []string{".json", ".yaml", ".yml"}, func(path string, _ os.FileInfo) error {
 
 			path, err := filepath.Rel(dir.Path, path)
 			if err != nil {
