@@ -86,7 +86,7 @@ func (d *filteredDir) ReadDir(n int) ([]fs.DirEntry, error) {
 
 	var filtered []fs.DirEntry
 	for _, entry := range entries {
-		path := d.path + "/" + entry.Name()
+		path := filepath.Join(d.path, entry.Name())
 		if !isExcluded(d.excluded, path) {
 			if !entry.IsDir() && !isIncluded(d.included, path) {
 				continue
@@ -111,12 +111,14 @@ func (d *filteredDir) Read(bs []byte) (int, error) {
 }
 
 func isExcluded(excluded []glob.Glob, name string) bool {
+	name = filepath.Clean(name)
 	return slices.ContainsFunc(excluded, func(g glob.Glob) bool {
 		return g.Match(name)
 	})
 }
 
 func isIncluded(included []glob.Glob, name string) bool {
+	name = filepath.Clean(name)
 	return len(included) == 0 || slices.ContainsFunc(included, func(g glob.Glob) bool {
 		return g.Match(name)
 	})
