@@ -511,6 +511,23 @@ func Run(params Options) error {
 		for _, s := range secrets {
 			output.Secrets[s.Name] = s
 		}
+
+		if _, ok := sc.Selector.Get(staticStackMatchLabelKey); ok {
+			for _, systemId := range stack.MatchingSystems {
+				s, ok := state.SystemsById[systemId]
+				if !ok {
+					if params.SystemId == systemId {
+						return fmt.Errorf("unexpected error: missing state for system %q", systemId)
+					}
+					if params.SystemId == "" {
+						log.Warnf("Stack %q matches non-existent system %v", stack.Name, systemId)
+					}
+					continue
+				}
+				log.Warnf("Stack %q selector logic cannot be automatically translated. Review logic and configure bundle labels and stack selector manually.", stack.Name)
+				output.Bundles[s.Name].Labels[staticStackMatchLabelKey] = sc.Name
+			}
+		}
 	}
 
 	if err := migrateDependencies(&c, state, &output); err != nil {
@@ -1030,6 +1047,8 @@ func migrateV1PushDatasource(c *das.Client, nsPrefix string, id string) (config.
 	return result, nil
 }
 
+const staticStackMatchLabelKey = "fixme-static-stack-match"
+
 func migrateV1Stack(c *das.Client, state *dasState, v1 *das.V1Stack, migrateDSContent bool) (*config.Stack, *config.Source, []*config.Secret, error) {
 
 	var stack config.Stack
@@ -1068,13 +1087,9 @@ func migrateV1Stack(c *das.Client, state *dasState, v1 *das.V1Stack, migrateDSCo
 				return nil, nil, nil, fmt.Errorf("failed to parse selector policy for %q: %w", v1.Name, err)
 			}
 
-			stack.Selector, err = migrateV1Selector(module)
+			stack.Selector, err = migrateV1Selector(v1, module)
 			if err != nil {
 				return nil, nil, nil, fmt.Errorf("failed to migrate selector for %q: %w", v1.Name, err)
-			}
-			err = stack.Selector.Set("system-type", []string{v1.Type})
-			if err != nil {
-				return nil, nil, nil, fmt.Errorf("failed to set system-type label for %q: %w", v1.Name, err)
 			}
 
 			return &stack, src, secrets, err
@@ -1162,46 +1177,74 @@ func migrateV1GitConfig(origin *das.V1GitRepoConfig, src *config.Source) *config
 	return secret
 }
 
-func migrateV1Selector(module *ast.Module) (config.Selector, error) {
-	selector := config.Selector{}
-	for _, r := range module.Rules {
-		if !r.Head.Name.Equal(ast.Var("systems")) {
-			continue
+func migrateV1Selector(v1 *das.V1Stack, module *ast.Module) (config.Selector, error) {
+	selector, ok, err := migrateV1SelectorLogic(module)
+	if err != nil {
+		return selector, err
+	} else if !ok {
+		if err := selector.Set(staticStackMatchLabelKey, []string{v1.Name}); err != nil {
+			return config.Selector{}, fmt.Errorf("failed to set static stack match label for %q: %w", v1.Name, err)
 		}
-		var innerErr error
-		ast.WalkExprs(r, func(x *ast.Expr) bool {
-			if innerErr != nil {
-				return true
-			}
-			if selector.Len() > 0 {
-				return true
-			}
-			if x.IsAssignment() {
-				ops := x.Operands()
-				if ops[0].Equal(ast.VarTerm("include")) {
-					val, err := ast.JSON(ops[1].Value)
-					if err != nil {
-						innerErr = err
-						return true
-					}
-					obj, ok := val.(map[string]interface{})
+	}
+	if err := selector.Set("system-type", []string{v1.Type}); err != nil {
+		return selector, fmt.Errorf("failed to set system-type label for %q: %w", v1.Name, err)
+	}
+	return selector, nil
+}
+
+func migrateV1SelectorLogic(module *ast.Module) (config.Selector, bool, error) {
+	var selector config.Selector
+	var matchAllFound bool
+	var excludeIsEmpty bool
+	done := func() bool { return matchAllFound && selector.Len() > 0 && excludeIsEmpty }
+
+	if len(module.Rules) != 1 {
+		return config.Selector{}, false, nil
+	}
+
+	r := module.Rules[0]
+	if !r.Head.Name.Equal(ast.Var("systems")) {
+		return config.Selector{}, false, nil
+	}
+
+	var innerErr error
+	ast.WalkExprs(r, func(x *ast.Expr) bool {
+		if innerErr != nil {
+			return true
+		}
+		if done() {
+			return true
+		}
+		if x.IsAssignment() {
+			ops := x.Operands()
+			if ops[0].Equal(ast.VarTerm("include")) {
+				val, err := ast.JSON(ops[1].Value)
+				if err != nil {
+					innerErr = err
+					return true
+				}
+				obj, ok := val.(map[string]interface{})
+				if !ok {
+					innerErr = fmt.Errorf("unexpected selector value structure: %v", ops[1])
+					return true
+				}
+				for k, vs := range obj {
+					sl, ok := vs.([]interface{})
 					if !ok {
-						innerErr = fmt.Errorf("unexpected selector value structure: %v", ops[1])
+						innerErr = fmt.Errorf("unexpected selector list structure: %v", ops[1])
 						return true
-					}
-					for k, vs := range obj {
-						sl, ok := vs.([]interface{})
-						if !ok {
-							innerErr = fmt.Errorf("unexpected selector list structure: %v", ops[1])
+					} else if len(sl) == 0 {
+						if err := selector.Set(k, []string{}); err != nil {
+							innerErr = err
 							return true
 						}
+					} else {
 						for _, v := range sl {
 							s, ok := v.(string)
 							if !ok {
 								innerErr = fmt.Errorf("unexpected selector label structure: %v", ops[1])
 								return true
 							}
-
 							l, _ := selector.Get(k)
 							err := selector.Set(k, append(l, s))
 							if err != nil {
@@ -1211,12 +1254,41 @@ func migrateV1Selector(module *ast.Module) (config.Selector, error) {
 						}
 					}
 				}
+			} else if ops[0].Equal(ast.VarTerm("exclude")) {
+				val, err := ast.JSON(ops[1].Value)
+				if err != nil {
+					innerErr = err
+					return true
+				}
+				if obj, ok := val.(map[string]any); ok && len(obj) == 0 {
+					excludeIsEmpty = true
+				}
 			}
-			return false
-		})
-		if innerErr != nil {
-			return config.Selector{}, innerErr
+		} else if terms, ok := x.Terms.([]*ast.Term); ok {
+			// look for "match.all(_, include, exclude)"
+			// ignore metadata
+			exp := map[int]*ast.Term{
+				0: ast.RefTerm(ast.VarTerm("match"), ast.StringTerm("all")),
+				2: ast.VarTerm("include"),
+				3: ast.VarTerm("exclude"),
+			}
+			for pos := range exp {
+				if pos >= len(terms) || !terms[pos].Equal(exp[pos]) {
+					return false
+				}
+			}
+			matchAllFound = !x.Negated
 		}
+
+		return false
+	})
+
+	if innerErr != nil {
+		return config.Selector{}, false, innerErr
+	}
+
+	if !done() {
+		return config.Selector{}, false, nil
 	}
 
 	// NOTE(tsandall): DAS matching also takes into account the type information on the system/stack
@@ -1224,11 +1296,13 @@ func migrateV1Selector(module *ast.Module) (config.Selector, error) {
 	// because otherwise an empty selector matches ALL systems.
 	//
 	// NOTE(tsandall): users should just remove stacks from DAS with empty selectors.
-	var err error
 	if selector.Len() == 0 {
-		err = selector.Set("do-not-match", []string{})
+		if err := selector.Set("do-not-match", []string{}); err != nil {
+			return selector, false, err
+		}
 	}
-	return selector, err
+
+	return selector, true, nil
 }
 
 func getSystemGitRoots(c *das.Client, sbomEnabled bool, v1 *das.V1System) ([]string, error) {
@@ -1490,13 +1564,14 @@ type dasState struct {
 		SBOM                  bool `json:"SBOM"`
 		LibraryEditingEnabled bool `json:"LIBRARY_EDITING_ENABLED"`
 	}
-	DatasourcesById map[string]*das.V1Datasource
-	SystemsById     map[string]*das.V1System
-	SystemPolicies  map[string][]*das.V1Policy
-	StacksById      map[string]*das.V1Stack
-	StackPolicies   map[string][]*das.V1Policy
-	LibrariesById   map[string]*das.V1Library
-	LibraryPolicies map[string][]*das.V1Policy
+	SpecificSystemsIds map[string]struct{}
+	DatasourcesById    map[string]*das.V1Datasource
+	SystemsById        map[string]*das.V1System
+	SystemPolicies     map[string][]*das.V1Policy
+	StacksById         map[string]*das.V1Stack
+	StackPolicies      map[string][]*das.V1Policy
+	LibrariesById      map[string]*das.V1Library
+	LibraryPolicies    map[string][]*das.V1Policy
 }
 
 type dasFetchOptions struct {

@@ -2,11 +2,13 @@ package migrate
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"reflect"
 	"sort"
 	"testing"
 
+	"github.com/open-policy-agent/opa/ast"
 	"github.com/styrainc/lighthouse/cmd/internal/das"
 	"github.com/styrainc/lighthouse/internal/config"
 	"github.com/styrainc/lighthouse/libraries"
@@ -383,4 +385,131 @@ func TestMigrateV1Policies(t *testing.T) {
 		})
 	}
 
+}
+
+func TestMigrateV1Selector(t *testing.T) {
+
+	tests := []struct {
+		note     string
+		module   string
+		selector string
+	}{
+		{
+			note: "include only",
+			module: `
+				package x
+
+				systems[system_id] {
+					include := {"foo": {"bar"}, "baz": {"qux", "corge"}, "grault": set()}
+					exclude := {}
+					match.all(data.metadata[system_id].labels, include, exclude)
+				}`,
+			selector: `
+				{
+					"foo": ["bar"],
+					"baz": ["corge", "qux"],
+					"grault": [],
+					"system-type": ["foo-v1"]
+				}
+			`,
+		},
+		{
+			note: "exclude causes static match",
+			module: `
+					package x
+
+					systems[system_id] {
+						include := {"foo": {"bar"}}
+						exclude := {"baz": {"qux"}}
+						match.all(data.metadata[system_id].labels, include, exclude)
+					}
+			`,
+			selector: `
+					{
+						"fixme-static-stack-match": ["test"],
+						"system-type": ["foo-v1"]
+					}
+				`,
+		},
+		{
+			note: "missing match_all causes static match",
+			module: `
+					package x
+
+					systems[system_id] {
+						include := {"foo": {"bar"}}
+						exclude := {}
+						not match.all(data.metadata[system_id].labels, include, exclude)
+					}
+			`,
+			selector: `
+					{
+						"fixme-static-stack-match": ["test"],
+						"system-type": ["foo-v1"]
+					}
+				`,
+		},
+		{
+			note: "multiple rules cause static match",
+			module: `
+					package x
+
+					systems[system_id] {
+						include := {"foo": {"bar"}, "baz": {"qux", "corge"}, "grault": set()}
+						exclude := {}
+						match.all(data.metadata[system_id].labels, include, exclude)
+					}
+
+					systems[system_id] {
+						include := {"another": {"label"}}
+						exclude := {}
+						match.all(data.metadata[system_id].labels, include, exclude)
+					}
+			`,
+			selector: `
+					{
+						"fixme-static-stack-match": ["test"],
+						"system-type": ["foo-v1"]
+					}
+				`,
+		},
+		{
+			note: "missing systems rule cause static match",
+			module: `package x
+
+					select[system_id] {  # this is not a rule name that is recognized by selector logic
+						include := {"foo": {"bar"}, "baz": {"qux", "corge"}, "grault": set()}
+						exclude := {}
+						match.all(data.metadata[system_id].labels, include, exclude)
+					}
+
+			`,
+			selector: `
+					{
+						"fixme-static-stack-match": ["test"],
+						"system-type": ["foo-v1"]
+					}
+				`,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.note, func(t *testing.T) {
+			module := ast.MustParseModule(tc.module)
+			var selector config.Selector
+			if err := json.Unmarshal([]byte(tc.selector), &selector); err != nil {
+				t.Fatal(err)
+			}
+			var stack das.V1Stack
+			stack.Name = "test"
+			stack.Type = "foo-v1"
+			result, err := migrateV1Selector(&stack, module)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !result.Equal(selector) {
+				t.Fatal("expected", selector, "got", result)
+			}
+		})
+	}
 }
