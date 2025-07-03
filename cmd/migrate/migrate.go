@@ -767,7 +767,9 @@ func mapV1LibraryToSourceAndSecretConfig(client *das.Client, v1 *das.V1Library, 
 		secrets = append(secrets, secret)
 	}
 
-	src.Git.IncludedFiles = []string{"libraries/" + v1.Id + "/*"}
+	if src.Git.Repo != "" {
+		src.Git.IncludedFiles = []string{"libraries/" + v1.Id + "/*"}
+	}
 
 	if len(v1.Datasources) > 0 {
 		log.Infof("Fetching datasources for library %q", v1.Id)
@@ -1129,7 +1131,9 @@ func mapV1StackToSourceAndSecretConfig(client *das.Client, v1 *das.V1Stack, migr
 		secrets = append(secrets, secret)
 	}
 
-	src.Git.IncludedFiles = []string{"stacks/" + v1.Id + "/*"}
+	if src.Git.Repo != "" {
+		src.Git.IncludedFiles = []string{"stacks/" + v1.Id + "/*"}
+	}
 
 	return src, secrets, nil
 }
