@@ -26,6 +26,18 @@ import (
 
 var log *logging.Logger
 
+var allocatedNames = make(map[string]int)
+
+func assignSafeName(basename string) string {
+	count := allocatedNames[basename]
+	allocatedNames[basename] = count + 1
+	if count == 0 {
+		return basename
+	}
+
+	return fmt.Sprintf("%s-%d", basename, count)
+}
+
 var systemTypeLibraries = []*config.Source{
 	{
 		Name: "template.envoy:2.1",
@@ -758,7 +770,7 @@ func migrateV1Library(client *das.Client, state *dasState, v1 *das.V1Library, mi
 
 func mapV1LibraryToSourceAndSecretConfig(client *das.Client, v1 *das.V1Library, datasources bool) (*config.Source, []*config.Secret, error) {
 
-	src := &config.Source{Name: v1.Id}
+	src := &config.Source{Name: assignSafeName(v1.Id)}
 	var secrets []*config.Secret
 
 	_, origin := getLibraryGitOrigin(v1)
@@ -930,7 +942,7 @@ func mapV1SystemToBundleSourceAndSecretConfig(_ *das.Client, v1 *das.V1System) (
 	var secret *config.Secret
 
 	bundle.Name = v1.Name
-	src.Name = v1.Name
+	src.Name = assignSafeName(v1.Name)
 	bundle.Requirements = append(bundle.Requirements, config.Requirement{Source: strptr(src.Name)})
 
 	if v1.SourceControl != nil {
@@ -1059,7 +1071,7 @@ func migrateV1Stack(c *das.Client, state *dasState, v1 *das.V1Stack, migrateDSCo
 		return nil, nil, nil, err
 	}
 
-	stack.Requirements = append(stack.Requirements, config.Requirement{Source: &v1.Name})
+	stack.Requirements = append(stack.Requirements, config.Requirement{Source: &src.Name})
 
 	gitRoots, err := getStackGitRoots(c, state.FeatureFlags.SBOM, v1)
 	if err != nil {
@@ -1101,7 +1113,7 @@ func migrateV1Stack(c *das.Client, state *dasState, v1 *das.V1Stack, migrateDSCo
 
 func mapV1StackToSourceAndSecretConfig(client *das.Client, v1 *das.V1Stack, migrateDSContent bool) (*config.Source, []*config.Secret, error) {
 
-	src := &config.Source{Name: v1.Name}
+	src := &config.Source{Name: assignSafeName(v1.Name)}
 	var secrets []*config.Secret
 
 	if len(v1.Datasources) > 0 {
