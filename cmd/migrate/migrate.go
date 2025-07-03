@@ -1122,7 +1122,7 @@ func mapV1StackToSourceAndSecretConfig(client *das.Client, v1 *das.V1Stack, migr
 		}
 	}
 
-	workspace, origin := getStackGitOrigin(v1)
+	_, origin := getStackGitOrigin(v1)
 	if origin == nil {
 		return src, secrets, nil
 	}
@@ -1131,9 +1131,7 @@ func mapV1StackToSourceAndSecretConfig(client *das.Client, v1 *das.V1Stack, migr
 		secrets = append(secrets, secret)
 	}
 
-	if workspace {
-		src.Git.IncludedFiles = []string{"stacks/" + v1.Id + "/*"}
-	}
+	src.Git.IncludedFiles = []string{"stacks/" + v1.Id + "/*"}
 
 	return src, secrets, nil
 }
