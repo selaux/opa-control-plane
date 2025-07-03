@@ -7,6 +7,7 @@ import (
 	"net/http"
 	neturl "net/url"
 	"strings"
+	"time"
 )
 
 type V1System struct {
@@ -171,17 +172,30 @@ func (c *Client) Get(path string, params ...Params) (*http.Response, error) {
 		req.Header.Add("authorization", fmt.Sprintf("Bearer %v", c.Token))
 	}
 
-	resp, err := c.Client.Do(req)
-	if err != nil {
-		return nil, err
+	// Retries on 503 Service Unavailable
+
+	var resp *http.Response
+	for i := 0; i < 3; i++ {
+		resp, err = c.Client.Do(req)
+		if err != nil {
+			return nil, err
+		}
+
+		if resp.StatusCode == http.StatusServiceUnavailable {
+			resp.Body.Close()
+			time.Sleep(2 * time.Second)
+			continue
+		}
+
+		break
 	}
 
 	if resp.StatusCode != http.StatusOK {
+		resp.Body.Close()
 		return nil, Error{URL: url, Method: "GET", StatusCode: resp.StatusCode}
 	}
 
 	return resp, nil
-
 }
 
 type Error struct {
