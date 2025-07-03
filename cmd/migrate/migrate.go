@@ -761,15 +761,13 @@ func mapV1LibraryToSourceAndSecretConfig(client *das.Client, v1 *das.V1Library, 
 	src := &config.Source{Name: v1.Id}
 	var secrets []*config.Secret
 
-	workspace, origin := getLibraryGitOrigin(v1)
+	_, origin := getLibraryGitOrigin(v1)
 	secret := migrateV1GitConfig(origin, src)
 	if secret != nil {
 		secrets = append(secrets, secret)
 	}
 
-	if workspace {
-		src.Git.IncludedFiles = []string{"libraries/" + v1.Id + "/*"}
-	}
+	src.Git.IncludedFiles = []string{"libraries/" + v1.Id + "/*"}
 
 	if len(v1.Datasources) > 0 {
 		log.Infof("Fetching datasources for library %q", v1.Id)
