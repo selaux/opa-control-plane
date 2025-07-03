@@ -16,10 +16,18 @@ import (
 	"github.com/go-git/go-git/v5"
 	gitconfig "github.com/go-git/go-git/v5/config"
 	"github.com/go-git/go-git/v5/plumbing"
+	"github.com/go-git/go-git/v5/plumbing/protocol/packp/capability"
 	"github.com/go-git/go-git/v5/plumbing/transport"
 	"github.com/go-git/go-git/v5/plumbing/transport/http"
 	"github.com/styrainc/lighthouse/internal/config"
 )
+
+func init() {
+	// For Azure DevOps compatibility. More details: https://github.com/go-git/go-git/issues/64
+	transport.UnsupportedCapabilities = []capability.Capability{
+		capability.ThinPack,
+	}
+}
 
 type Synchronizer struct {
 	path   string
