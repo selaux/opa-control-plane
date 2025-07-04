@@ -1607,7 +1607,16 @@ func fetchDASState(c *das.Client, opts dasFetchOptions) (*dasState, error) {
 
 	if opts.SystemId == "" {
 		log.Info("Fetching v1/systems")
-		resp, err := c.JSON("v1/systems")
+		resp, err := c.JSON("v1/systems", das.Params{Query: map[string]string{
+			"authz":       "false",
+			"compact":     "true",
+			"datasources": "true",
+			"errors":      "false",
+			"metadata":    "false",
+			"modules":     "false",
+			"policies":    "true",
+			"rule_counts": "false",
+		}})
 		if err != nil {
 			return nil, err
 		}
