@@ -421,7 +421,7 @@ func TestMigration(t *testing.T) {
 
 				if err := backtest.Run(backtest.Options{
 					ConfigFile:           []string{filepath.Join(dir, "config.d")},
-					URL:                  styraURL,
+					URL:                  tc.styraURL,
 					Token:                styraToken,
 					NumDecisions:         100,
 					PolicyType:           tc.policyType,
