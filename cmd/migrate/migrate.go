@@ -26,11 +26,13 @@ import (
 
 var log *logging.Logger
 
-var allocatedNames = make(map[string]int)
+type nameFactory struct {
+	allocatedNames map[string]int
+}
 
-func assignSafeName(basename string) string {
-	count := allocatedNames[basename]
-	allocatedNames[basename] = count + 1
+func (nf *nameFactory) AssignSafeName(basename string) string {
+	count := nf.allocatedNames[basename]
+	nf.allocatedNames[basename] = count + 1
 	if count == 0 {
 		return basename
 	}
@@ -441,6 +443,7 @@ func init() {
 }
 
 func Run(params Options) error {
+	nf := &nameFactory{allocatedNames: make(map[string]int)}
 	log = logging.NewLogger(params.Logging)
 
 	if params.URL == "" {
@@ -474,7 +477,7 @@ func Run(params Options) error {
 	}
 
 	for _, library := range state.LibrariesById {
-		sc, secrets, err := migrateV1Library(&c, state, library, params.Datasources)
+		sc, secrets, err := migrateV1Library(nf, &c, state, library, params.Datasources)
 		if err != nil {
 			return err
 		}
@@ -498,7 +501,7 @@ func Run(params Options) error {
 	}
 
 	for _, system := range state.SystemsById {
-		b, src, secrets, err := migrateV1System(&c, state, system, params.Datasources)
+		b, src, secrets, err := migrateV1System(nf, &c, state, system, params.Datasources)
 		if err != nil {
 			return err
 		}
@@ -512,7 +515,7 @@ func Run(params Options) error {
 	}
 
 	for _, stack := range state.StacksById {
-		sc, src, secrets, err := migrateV1Stack(&c, state, stack, params.Datasources)
+		sc, src, secrets, err := migrateV1Stack(nf, &c, state, stack, params.Datasources)
 		if err != nil {
 			return err
 		}
@@ -743,9 +746,9 @@ func splitConfig(outputDir string, output config.Root) (map[string][]byte, error
 	return result, nil
 }
 
-func migrateV1Library(client *das.Client, state *dasState, v1 *das.V1Library, migrateDSContent bool) (*config.Source, []*config.Secret, error) {
+func migrateV1Library(nf *nameFactory, client *das.Client, state *dasState, v1 *das.V1Library, migrateDSContent bool) (*config.Source, []*config.Secret, error) {
 
-	src, secrets, err := mapV1LibraryToSourceAndSecretConfig(client, v1, migrateDSContent)
+	src, secrets, err := mapV1LibraryToSourceAndSecretConfig(nf, client, v1, migrateDSContent)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -768,9 +771,9 @@ func migrateV1Library(client *das.Client, state *dasState, v1 *das.V1Library, mi
 	return src, secrets, nil
 }
 
-func mapV1LibraryToSourceAndSecretConfig(client *das.Client, v1 *das.V1Library, datasources bool) (*config.Source, []*config.Secret, error) {
+func mapV1LibraryToSourceAndSecretConfig(nf *nameFactory, client *das.Client, v1 *das.V1Library, datasources bool) (*config.Source, []*config.Secret, error) {
 
-	src := &config.Source{Name: assignSafeName(v1.Id)}
+	src := &config.Source{Name: nf.AssignSafeName(v1.Id)}
 	var secrets []*config.Secret
 
 	_, origin := getLibraryGitOrigin(v1)
@@ -814,10 +817,10 @@ func getLibraryGitOrigin(v1 *das.V1Library) (bool, *das.V1GitRepoConfig) {
 	return false, &v1.SourceControl.LibraryOrigin
 }
 
-func migrateV1System(client *das.Client, state *dasState, v1 *das.V1System, migrateDSContent bool) (*config.Bundle, *config.Source, []*config.Secret, error) {
+func migrateV1System(nf *nameFactory, client *das.Client, state *dasState, v1 *das.V1System, migrateDSContent bool) (*config.Bundle, *config.Source, []*config.Secret, error) {
 
 	var secrets []*config.Secret
-	bundle, library, secret, err := mapV1SystemToBundleSourceAndSecretConfig(client, v1)
+	bundle, library, secret, err := mapV1SystemToBundleSourceAndSecretConfig(nf, client, v1)
 	if err != nil {
 		return nil, nil, nil, err
 	}
@@ -936,13 +939,13 @@ func migrateV1HTTPPullDatasource(nsPrefix string, v1 *das.V1Datasource) (config.
 	return ds, nil, nil
 }
 
-func mapV1SystemToBundleSourceAndSecretConfig(_ *das.Client, v1 *das.V1System) (*config.Bundle, *config.Source, *config.Secret, error) {
+func mapV1SystemToBundleSourceAndSecretConfig(nf *nameFactory, _ *das.Client, v1 *das.V1System) (*config.Bundle, *config.Source, *config.Secret, error) {
 	var bundle config.Bundle
 	var src config.Source
 	var secret *config.Secret
 
 	bundle.Name = v1.Name
-	src.Name = assignSafeName(v1.Name)
+	src.Name = nf.AssignSafeName(v1.Name)
 	bundle.Requirements = append(bundle.Requirements, config.Requirement{Source: strptr(src.Name)})
 
 	if v1.SourceControl != nil {
@@ -1061,12 +1064,12 @@ func migrateV1PushDatasource(c *das.Client, nsPrefix string, id string) (config.
 
 const staticStackMatchLabelKey = "fixme-static-stack-match"
 
-func migrateV1Stack(c *das.Client, state *dasState, v1 *das.V1Stack, migrateDSContent bool) (*config.Stack, *config.Source, []*config.Secret, error) {
+func migrateV1Stack(nf *nameFactory, c *das.Client, state *dasState, v1 *das.V1Stack, migrateDSContent bool) (*config.Stack, *config.Source, []*config.Secret, error) {
 
 	var stack config.Stack
 	stack.Name = v1.Name
 
-	src, secrets, err := mapV1StackToSourceAndSecretConfig(c, v1, migrateDSContent)
+	src, secrets, err := mapV1StackToSourceAndSecretConfig(nf, c, v1, migrateDSContent)
 	if err != nil {
 		return nil, nil, nil, err
 	}
@@ -1111,9 +1114,9 @@ func migrateV1Stack(c *das.Client, state *dasState, v1 *das.V1Stack, migrateDSCo
 	return nil, nil, nil, fmt.Errorf("misisng selector policy for %q", v1.Name)
 }
 
-func mapV1StackToSourceAndSecretConfig(client *das.Client, v1 *das.V1Stack, migrateDSContent bool) (*config.Source, []*config.Secret, error) {
+func mapV1StackToSourceAndSecretConfig(nf *nameFactory, client *das.Client, v1 *das.V1Stack, migrateDSContent bool) (*config.Source, []*config.Secret, error) {
 
-	src := &config.Source{Name: assignSafeName(v1.Name)}
+	src := &config.Source{Name: nf.AssignSafeName(v1.Name)}
 	var secrets []*config.Secret
 
 	if len(v1.Datasources) > 0 {
