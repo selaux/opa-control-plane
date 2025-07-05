@@ -75,6 +75,29 @@ func TestMigration(t *testing.T) {
 			},
 		},
 		{
+			name:              "kubernetes1",
+			styraURLEnvName:   "STYRA_URL_2",
+			styraTokenEnvName: "STYRA_TOKEN_2",
+			systemName:        "torin-k8s-v1-test",
+			systemIdEnvName:   "STYRA_KUBERNETES_V1_SYSTEM_ID",
+			extraConfigs: map[string]string{
+				"config.d/2-storage.yaml": `{
+					bundles: {
+						torin-k8s-v1-test: {
+							object_storage: {
+								aws: {
+									url: {{ .URL }},
+									bucket: test,
+									region: mock-region,
+									key: bundle.tar.gz,
+								},
+							},
+						},
+					},
+				}`,
+			},
+		},
+		{
 			name:            "kubernetes2-validating",
 			systemName:      "Banteng cluster",
 			systemIdEnvName: "STYRA_KUBERNETES_SYSTEM_ID",

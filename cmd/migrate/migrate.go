@@ -99,6 +99,14 @@ var systemTypeLibraries = []*config.Source{
 		},
 	},
 	{
+		Name: "kubernetes",
+		Requirements: []config.Requirement{
+			{Source: strptr("kubernetes:v1-entrypoint-main")},
+			{Source: strptr("kubernetes:v2-entrypoint-log")}, // kubernetes v1 and v2 share the same log policy
+			{Source: strptr("kubernetes:v1-conflicts")},
+		},
+	},
+	{
 		Name: "template.terraform:2.0",
 		Requirements: []config.Requirement{
 			{Source: strptr("template.terraform:2.0-entrypoint-main")},
@@ -163,6 +171,13 @@ var stackTypeLibraries = map[string]*config.Source{
 		Name: "kubernetes:v2-stack",
 		Requirements: []config.Requirement{
 			{Source: strptr("kubernetes:v2-library")},
+			{Source: strptr("match-v1")},
+		},
+	},
+	"kubernetes": {
+		Name: "kubernetes:v1-stack",
+		Requirements: []config.Requirement{
+			{Source: strptr("kubernetes:v2-library")}, // kubernetes v1 and v2 share the same library
 			{Source: strptr("match-v1")},
 		},
 	},
@@ -250,6 +265,14 @@ var baseLibraries = []*config.Source{
 	{
 		Name:    "kubernetes:v2-library",
 		Builtin: strptr("kubernetes-v2/library"),
+	},
+	{
+		Name:    "kubernetes:v1-entrypoint-main",
+		Builtin: strptr("kubernetes-v1/main"),
+	},
+	{
+		Name:    "kubernetes:v1-conflicts",
+		Builtin: strptr("kubernetes-v1/conflicts"),
 	},
 	{
 		Name:    "template.terraform:2.0-entrypoint-main",
