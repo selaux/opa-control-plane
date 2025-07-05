@@ -36,18 +36,19 @@ func TestMigration(t *testing.T) {
 
 	cases := []struct {
 		name              string
-		styraURLEnvName   string // default STYRA_URL
+		styraURL          string
+		systemId          string
 		styraTokenEnvName string // default STYRA_TOKEN
 		systemName        string
-		systemIdEnvName   string
 		extraConfigs      map[string]string
 		policyType        string // used to filter decisions for backtest
 		datasources       bool   // indicates whether to include datasource content in migration
 	}{
 		{
-			name:            "envoy21",
-			systemName:      "Envoy App",
-			systemIdEnvName: "STYRA_ENVOY_SYSTEM_ID",
+			name:       "envoy21",
+			styraURL:   "https://expo.styra.com",
+			systemId:   "f89b1de32c4a4252ac19db97c007f8d4",
+			systemName: "Envoy App",
 			extraConfigs: map[string]string{
 				"config.d/1-secrets.yaml": `{
 					secrets: {
@@ -76,10 +77,10 @@ func TestMigration(t *testing.T) {
 		},
 		{
 			name:              "kubernetes1",
-			styraURLEnvName:   "STYRA_URL_2",
+			styraURL:          "https://test.styra.com",
+			systemId:          "ace44151df234247ab59e9177d02c9cc",
 			styraTokenEnvName: "STYRA_TOKEN_2",
 			systemName:        "torin-k8s-v1-test",
-			systemIdEnvName:   "STYRA_KUBERNETES_V1_SYSTEM_ID",
 			extraConfigs: map[string]string{
 				"config.d/2-storage.yaml": `{
 					bundles: {
@@ -98,9 +99,10 @@ func TestMigration(t *testing.T) {
 			},
 		},
 		{
-			name:            "kubernetes2-validating",
-			systemName:      "Banteng cluster",
-			systemIdEnvName: "STYRA_KUBERNETES_SYSTEM_ID",
+			name:       "kubernetes2-validating",
+			styraURL:   "https://expo.styra.com",
+			systemId:   "b470325746e3417e86301b564113b29b",
+			systemName: "Banteng cluster",
 			extraConfigs: map[string]string{
 				"config.d/1-secrets.yaml": `{
 					secrets: {
@@ -129,9 +131,10 @@ func TestMigration(t *testing.T) {
 			policyType: "validating",
 		},
 		{
-			name:            "kubernetes2-mutating",
-			systemName:      "Banteng cluster",
-			systemIdEnvName: "STYRA_KUBERNETES_SYSTEM_ID",
+			name:       "kubernetes2-mutating",
+			styraURL:   "https://expo.styra.com",
+			systemId:   "b470325746e3417e86301b564113b29b",
+			systemName: "Banteng cluster",
 			extraConfigs: map[string]string{
 				"config.d/1-secrets.yaml": `{
 					secrets: {
@@ -160,9 +163,10 @@ func TestMigration(t *testing.T) {
 			policyType: "mutating",
 		},
 		{
-			name:            "custom system with push datasource",
-			systemName:      "Custom app",
-			systemIdEnvName: "STYRA_CUSTOM_SYSTEM_ID",
+			name:       "custom system with push datasource",
+			styraURL:   "https://expo.styra.com",
+			systemId:   "a8318943a5814712a69adcb2d9f76976",
+			systemName: "Custom app",
 			extraConfigs: map[string]string{
 				"config.d/1-secrets.yaml": `{
 					secrets: {
@@ -196,9 +200,10 @@ func TestMigration(t *testing.T) {
 			datasources: true,
 		},
 		{
-			name:            "istio10",
-			systemName:      "Istio App",
-			systemIdEnvName: "STYRA_ISTIO_SYSTEM_ID",
+			name:       "istio10",
+			styraURL:   "https://expo.styra.com",
+			systemId:   "a3dd4c8155ae43a794b6e5b7a53cdd60",
+			systemName: "Istio App",
 			extraConfigs: map[string]string{
 				"config.d/2-storage.yaml": `{
 					bundles: {
@@ -217,9 +222,10 @@ func TestMigration(t *testing.T) {
 			},
 		},
 		{
-			name:            "kuma10",
-			systemName:      "Kuma",
-			systemIdEnvName: "STYRA_KUMA_SYSTEM_ID",
+			name:       "kuma10",
+			styraURL:   "https://expo.styra.com",
+			systemId:   "d1c66f8ca33749b9b27b2d2ac1151bc1",
+			systemName: "Kuma",
 			extraConfigs: map[string]string{
 				"config.d/2-storage.yaml": `{
 					bundles: {
@@ -241,9 +247,10 @@ func TestMigration(t *testing.T) {
 			// NOTE(tsandall): policies depend on two datasources however system
 			// does not have any decisions that exercise that part of the
 			// policy, so we are not enabling datasource content migration here.
-			name:            "kong-gateway10",
-			systemName:      "Kong Gateway - prod",
-			systemIdEnvName: "STYRA_KONG_GATEWAY_SYSTEM_ID",
+			name:       "kong-gateway10",
+			styraURL:   "https://expo.styra.com",
+			systemId:   "ef6321e7461a4035b8638f73951fa0c4",
+			systemName: "Kong Gateway - prod",
 			extraConfigs: map[string]string{
 				"config.d/2-storage.yaml": `{
 					bundles: {
@@ -262,9 +269,10 @@ func TestMigration(t *testing.T) {
 			},
 		},
 		{
-			name:            "terraform20",
-			systemName:      "Terraform - GCP",
-			systemIdEnvName: "STYRA_TERRAFORM_SYSTEM_ID",
+			name:       "terraform20",
+			styraURL:   "https://expo.styra.com",
+			systemId:   "c600dddb333c48b7b67616564e7b8726",
+			systemName: "Terraform - GCP",
 			extraConfigs: map[string]string{
 				"config.d/2-storage.yaml": `{
 					bundles: {
@@ -285,10 +293,10 @@ func TestMigration(t *testing.T) {
 		},
 		{
 			name:              "http pull datasources",
-			styraURLEnvName:   "STYRA_URL_2",
+			styraURL:          "https://test.styra.com",
 			styraTokenEnvName: "STYRA_TOKEN_2",
+			systemId:          "c765ce3ea0e14751b88e3530f9d3c8ac",
 			systemName:        "torin-pull-test-2",
-			systemIdEnvName:   "STYRA_PULL_TEST_SYSTEM_ID",
 			extraConfigs: map[string]string{
 				"config.d/2-storage.yaml": `{
 					bundles: {
@@ -316,27 +324,13 @@ func TestMigration(t *testing.T) {
 
 		t.Run(tc.name, func(t *testing.T) {
 
-			if tc.styraURLEnvName == "" {
-				tc.styraURLEnvName = "STYRA_URL"
-			}
-
 			if tc.styraTokenEnvName == "" {
 				tc.styraTokenEnvName = "STYRA_TOKEN"
-			}
-
-			styraURL := os.Getenv(tc.styraURLEnvName)
-			if styraURL == "" {
-				t.Fatalf("%v environment variable is not set", tc.styraURLEnvName)
 			}
 
 			styraToken := os.Getenv(tc.styraTokenEnvName)
 			if styraToken == "" {
 				t.Fatalf("%v environment variable is not set", tc.styraTokenEnvName)
-			}
-
-			systemId := os.Getenv(tc.systemIdEnvName)
-			if systemId == "" {
-				t.Fatalf("%v environment variable is not set", tc.systemIdEnvName)
 			}
 
 			mock, s3TS := testS3Service(t, "test")
@@ -369,9 +363,9 @@ func TestMigration(t *testing.T) {
 				}
 
 				err = migrate.Run(migrate.Options{
-					URL:         styraURL,
+					URL:         tc.styraURL,
 					Token:       styraToken,
-					SystemId:    systemId,
+					SystemId:    tc.systemId,
 					Prune:       true,
 					Datasources: tc.datasources,
 					EmbedFiles:  true,
