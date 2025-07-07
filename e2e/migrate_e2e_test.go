@@ -413,7 +413,9 @@ func TestMigration(t *testing.T) {
 				ctx, cancel := context.WithCancel(context.Background())
 				defer cancel()
 
+				stopped := make(chan struct{})
 				g.Go(func() error {
+					defer close(stopped)
 					return svc.Run(ctx)
 				})
 
@@ -453,6 +455,9 @@ func TestMigration(t *testing.T) {
 				}); err != nil {
 					t.Fatal(err)
 				}
+
+				cancel()
+				<-stopped
 
 				var r backtest.Report
 				if err := json.Unmarshal(buf.Bytes(), &r); err != nil {
