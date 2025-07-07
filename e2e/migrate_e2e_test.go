@@ -76,6 +76,29 @@ func TestMigration(t *testing.T) {
 			},
 		},
 		{
+			name:              "envoy1",
+			styraURL:          "https://kurt.styra.com",
+			systemId:          "cbbf33aeb9ce44349bc3faad43060ae0",
+			systemName:        "envoy-v1-e2e-test",
+			styraTokenEnvName: "STYRA_TOKEN_3",
+			extraConfigs: map[string]string{
+				"config.d/2-storage.yaml": `{
+					bundles: {
+						envoy-v1-e2e-test: {
+							object_storage: {
+								aws: {
+									url: {{ .URL }},
+									bucket: test,
+									region: mock-region,
+									key: bundle.tar.gz,
+								},
+							},
+						},
+					},
+				}`,
+			},
+		},
+		{
 			name:              "kubernetes1",
 			styraURL:          "https://test.styra.com",
 			systemId:          "ace44151df234247ab59e9177d02c9cc",

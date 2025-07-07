@@ -62,6 +62,19 @@ var systemTypeLibraries = []*config.Source{
 		},
 	},
 	{
+		Name: "envoy",
+		Requirements: []config.Requirement{
+			{Source: strptr("envoy:v1-entrypoint-application")},
+			{Source: strptr("envoy:v1-entrypoint-egress")},
+			{Source: strptr("envoy:v1-entrypoint-ingress")},
+			{Source: strptr("envoy:v1-entrypoint-resolver")},
+			{Source: strptr("envoy:v1-entrypoint-inject")},
+			{Source: strptr("envoy:v1-entrypoint-log")},
+			{Source: strptr("envoy:v1-conflicts")},
+			{Source: strptr("envoy:v1-injection")},
+		},
+	},
+	{
 		Name: "template.istio:1.0",
 		Requirements: []config.Requirement{
 			{Source: strptr("template.envoy:2.0-entrypoint-application")},
@@ -145,6 +158,12 @@ var stackTypeLibraries = map[string]*config.Source{
 	},
 	"template.envoy:2.0": {
 		Name: "template.envoy:2.0-stack",
+		Requirements: []config.Requirement{
+			{Source: strptr("match-v1")},
+		},
+	},
+	"envoy": {
+		Name: "envoy:v1-stack",
 		Requirements: []config.Requirement{
 			{Source: strptr("match-v1")},
 		},
@@ -237,6 +256,38 @@ var baseLibraries = []*config.Source{
 	{
 		Name:    "template.envoy:2.0-conflicts",
 		Builtin: strptr("envoy-v2.0/conflicts"),
+	},
+	{
+		Name:    "envoy:v1-entrypoint-application",
+		Builtin: strptr("envoy-v1/application"),
+	},
+	{
+		Name:    "envoy:v1-entrypoint-egress",
+		Builtin: strptr("envoy-v1/egress"),
+	},
+	{
+		Name:    "envoy:v1-entrypoint-ingress",
+		Builtin: strptr("envoy-v1/ingress"),
+	},
+	{
+		Name:    "envoy:v1-entrypoint-resolver",
+		Builtin: strptr("envoy-v1/resolver"),
+	},
+	{
+		Name:    "envoy:v1-entrypoint-inject",
+		Builtin: strptr("envoy-v1/inject"),
+	},
+	{
+		Name:    "envoy:v1-entrypoint-log",
+		Builtin: strptr("envoy-v1/log"),
+	},
+	{
+		Name:    "envoy:v1-conflicts",
+		Builtin: strptr("envoy-v1/conflicts"),
+	},
+	{
+		Name:    "envoy:v1-injection",
+		Builtin: strptr("envoy-v1/injection"),
 	},
 	{
 		Name:    "template.kong-gateway:1.0-entrypoint-main",
