@@ -1856,11 +1856,16 @@ func fetchLegacyLibrary(c *das.Client, id string, git das.V1GitRepoConfig) (*das
 }
 
 func fetchSystemPolicies(c *das.Client, state *dasState) error {
-	ch := make(chan *das.V1System)
+	ch := make(chan *das.V1System, len(state.SystemsById))
 	var wg sync.WaitGroup
 	var mu sync.Mutex
 
 	state.SystemPolicies = map[string][]*das.V1Policy{}
+
+	for _, s := range state.SystemsById {
+		ch <- s
+	}
+	close(ch)
 
 	for i := 0; i < 10; i++ {
 		wg.Add(1)
@@ -1879,21 +1884,21 @@ func fetchSystemPolicies(c *das.Client, state *dasState) error {
 		}()
 	}
 
-	for _, s := range state.SystemsById {
-		ch <- s
-	}
-
-	close(ch)
 	wg.Wait()
 	return nil
 }
 
 func fetchStackPolicies(c *das.Client, state *dasState) error {
-	ch := make(chan *das.V1Stack)
+	ch := make(chan *das.V1Stack, len(state.StacksById))
 	var wg sync.WaitGroup
 	var mu sync.Mutex
 
 	state.StackPolicies = map[string][]*das.V1Policy{}
+
+	for _, s := range state.StacksById {
+		ch <- s
+	}
+	close(ch)
 
 	for i := 0; i < 10; i++ {
 		wg.Add(1)
@@ -1912,21 +1917,21 @@ func fetchStackPolicies(c *das.Client, state *dasState) error {
 		}()
 	}
 
-	for _, s := range state.StacksById {
-		ch <- s
-	}
-
-	close(ch)
 	wg.Wait()
 	return nil
 }
 
 func fetchLibraryPolicies(c *das.Client, state *dasState) error {
-	ch := make(chan *das.V1Library)
+	ch := make(chan *das.V1Library, len(state.LibrariesById))
 	var wg sync.WaitGroup
 	var mu sync.Mutex
 
 	state.LibraryPolicies = map[string][]*das.V1Policy{}
+
+	for _, l := range state.LibrariesById {
+		ch <- l
+	}
+	close(ch)
 
 	for i := 0; i < 10; i++ {
 		wg.Add(1)
@@ -1961,7 +1966,6 @@ func fetchLibraryPolicies(c *das.Client, state *dasState) error {
 				}
 
 				mu.Lock()
-				state.LibrariesById[l.Id] = l
 				state.LibraryPolicies[l.Id] = ps
 				mu.Unlock()
 			}
@@ -1969,11 +1973,6 @@ func fetchLibraryPolicies(c *das.Client, state *dasState) error {
 		}()
 	}
 
-	for _, l := range state.LibrariesById {
-		ch <- l
-	}
-
-	close(ch)
 	wg.Wait()
 	return nil
 }
