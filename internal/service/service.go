@@ -108,6 +108,10 @@ shutdown:
 		}
 	}
 
+	for _, w := range s.workers {
+		w.UpdateConfig(nil, nil, nil)
+	}
+
 	return nil
 }
 
