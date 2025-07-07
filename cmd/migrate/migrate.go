@@ -574,16 +574,22 @@ func Run(params Options) error {
 		}
 	}
 
+	// Dependency migratation complements the requirements of the libraries.
+	// Copy to avoid tainting of library sources.
+
 	for _, bi := range systemTypeLibraries {
-		output.Sources[bi.Name] = bi
+		cpy := *bi
+		output.Sources[bi.Name] = &cpy
 	}
 
 	for _, bi := range stackTypeLibraries {
-		output.Sources[bi.Name] = bi
+		cpy := *bi
+		output.Sources[bi.Name] = &cpy
 	}
 
 	for _, bi := range baseLibraries {
-		output.Sources[bi.Name] = bi
+		cpy := *bi
+		output.Sources[bi.Name] = &cpy
 	}
 
 	for _, system := range state.SystemsById {
