@@ -518,6 +518,12 @@ func init() {
 
 func Run(params Options) error {
 	nf := &nameFactory{allocatedNames: make(map[string]int)}
+
+	// Register default names that may conflict with tenant assigned names.
+	for _, lib := range systemTypeLibraries {
+		nf.AssignSafeName(lib.Name)
+	}
+
 	log = logging.NewLogger(params.Logging)
 
 	if params.URL == "" {
@@ -550,7 +556,9 @@ func Run(params Options) error {
 		return err
 	}
 
-	for _, library := range state.LibrariesById {
+	index := newLibraryPackageIndex()
+
+	for id, library := range state.LibrariesById {
 		sc, secrets, err := migrateV1Library(nf, &c, state, library, params.Datasources)
 		if err != nil {
 			return err
@@ -559,6 +567,10 @@ func Run(params Options) error {
 		output.Sources[sc.Name] = sc
 		for _, s := range secrets {
 			output.Secrets[s.Name] = s
+		}
+
+		for _, p := range state.LibraryPolicies[id] {
+			index.Add(p.Package, sc.Name)
 		}
 	}
 
@@ -619,7 +631,7 @@ func Run(params Options) error {
 		}
 	}
 
-	if err := migrateDependencies(&c, state, &output); err != nil {
+	if err := migrateDependencies(&c, state, index, &output); err != nil {
 		return err
 	}
 
@@ -1462,16 +1474,7 @@ func getStackGitRoots(c *das.Client, sbomEnabled bool, v1 *das.V1Stack) ([]strin
 	return gitRoots, nil
 }
 
-func migrateDependencies(_ *das.Client, state *dasState, output *config.Root) error {
-
-	index := newLibraryPackageIndex()
-
-	for id, policies := range state.LibraryPolicies {
-		for _, p := range policies {
-			index.Add(p.Package, id)
-		}
-	}
-
+func migrateDependencies(_ *das.Client, state *dasState, index *libraryPackageIndex, output *config.Root) error {
 	for id, policies := range state.SystemPolicies {
 		rs, err := getRequirementsForPolicies(policies, index, "")
 		if err != nil {
