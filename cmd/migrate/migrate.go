@@ -653,13 +653,13 @@ func Run(params Options) error {
 			return secrets[i].Name < secrets[j].Name
 		})
 		for _, stack := range stacks {
-			log.Infof("Removed unused stack %q", stack.Name)
+			log.Debugf("Removed unused stack %q", stack.Name)
 		}
 		for _, lib := range sources {
-			log.Infof("Removed unused source %q", lib.Name)
+			log.Debugf("Removed unused source %q", lib.Name)
 		}
 		for _, s := range secrets {
-			log.Infof("Removed unused secret %q", s.Name)
+			log.Debugf("Removed unused secret %q", s.Name)
 		}
 	}
 
