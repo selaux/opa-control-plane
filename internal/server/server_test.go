@@ -148,11 +148,12 @@ func TestServerBundleOwners(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// NOTE(tsandall): currently bundles require minimal object storage
-	// configuration (otherwise they are ignored by service)
 	ts.Request("PUT", "/v1/bundles/testbundle", `{
 		"object_storage": {
 			"aws": {
+				"region": "us-east-1",
+				"bucket": "test-bucket",
+				"key": "test-key"
 			}
 		}
 	}`, ownerKey).ExpectStatus(200)
