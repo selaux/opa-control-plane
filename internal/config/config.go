@@ -311,7 +311,7 @@ func (s *Bundle) validate() error {
 		}
 	}
 
-	return nil
+	return s.ObjectStorage.validate()
 }
 
 func (s *Bundle) Equal(other *Bundle) bool {
@@ -791,6 +791,19 @@ func (o *ObjectStorage) Equal(other *ObjectStorage) bool {
 	})
 }
 
+func (o *ObjectStorage) validate() error {
+	if err := o.AmazonS3.validate(); err != nil {
+		return err
+	}
+	if err := o.GCPCloudStorage.validate(); err != nil {
+		return err
+	}
+	if err := o.AzureBlobStorage.validate(); err != nil {
+		return err
+	}
+	return o.FileSystemStorage.validate()
+}
+
 // AmazonS3 defines the configuration for an Amazon S3-compatible object storage.
 type AmazonS3 struct {
 	Bucket      string     `json:"bucket" yaml:"bucket"`
@@ -830,10 +843,50 @@ func (a *AmazonS3) Equal(other *AmazonS3) bool {
 	})
 }
 
+func (a *AmazonS3) validate() error {
+	if a == nil {
+		return nil
+	}
+
+	if a.Bucket == "" {
+		return fmt.Errorf("amazon s3 bucket is required")
+	}
+
+	if a.Key == "" {
+		return fmt.Errorf("amazon s3 key is required")
+	}
+
+	if a.Region == "" {
+		return fmt.Errorf("amazon s3 region is required")
+	}
+
+	return nil
+}
+
 func (g *GCPCloudStorage) Equal(other *GCPCloudStorage) bool {
 	return fastEqual(g, other, func() bool {
 		return g.Project == other.Project && g.Bucket == other.Bucket && g.Object == other.Object
 	})
+}
+
+func (g *GCPCloudStorage) validate() error {
+	if g == nil {
+		return nil
+	}
+
+	if g.Project == "" {
+		return fmt.Errorf("gcp cloud storage project is required")
+	}
+
+	if g.Bucket == "" {
+		return fmt.Errorf("gcp cloud storage bucket is required")
+	}
+
+	if g.Object == "" {
+		return fmt.Errorf("gcp cloud storage object is required")
+	}
+
+	return nil
 }
 
 func (a *AzureBlobStorage) Equal(other *AzureBlobStorage) bool {
@@ -842,10 +895,42 @@ func (a *AzureBlobStorage) Equal(other *AzureBlobStorage) bool {
 	})
 }
 
+func (a *AzureBlobStorage) validate() error {
+	if a == nil {
+		return nil
+	}
+
+	if a.AccountURL == "" {
+		return fmt.Errorf("azure blob storage account URL is required")
+	}
+
+	if a.Container == "" {
+		return fmt.Errorf("azure blob storage container is required")
+	}
+
+	if a.Path == "" {
+		return fmt.Errorf("azure blob storage path is required")
+	}
+
+	return nil
+}
+
 func (f *FileSystemStorage) Equal(other *FileSystemStorage) bool {
 	return fastEqual(f, other, func() bool {
 		return f.Path == other.Path
 	})
+}
+
+func (f *FileSystemStorage) validate() error {
+	if f == nil {
+		return nil
+	}
+
+	if f.Path == "" {
+		return fmt.Errorf("filesystem storage path is required")
+	}
+
+	return nil
 }
 
 type Datasource struct {
