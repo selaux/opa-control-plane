@@ -441,6 +441,22 @@ type logger struct {
 	logging.Logger
 }
 
+func (l *logger) Debug(fmt string, a ...any) {
+	l.Logger.Debugf(fmt, a...)
+}
+
+func (l *logger) Info(fmt string, a ...any) {
+	l.Logger.Infof(fmt, a...)
+}
+
+func (l *logger) Error(fmt string, a ...any) {
+	l.Logger.Errorf(fmt, a...)
+}
+
+func (l *logger) Warn(fmt string, a ...any) {
+	l.Logger.Warnf(fmt, a...)
+}
+
 func (l *logger) GetLevel() v1.Level {
 	return v1.Debug
 }
