@@ -19,6 +19,7 @@ import (
 	"github.com/open-policy-agent/opa/ast"
 	"github.com/open-policy-agent/opa/bundle"
 	"github.com/open-policy-agent/opa/sdk"
+	v1 "github.com/open-policy-agent/opa/v1/logging"
 	"github.com/spf13/cobra"
 	"github.com/styrainc/lighthouse/cmd"
 	"github.com/styrainc/lighthouse/cmd/internal/das"
@@ -268,6 +269,7 @@ func backtestSystem(ctx context.Context, opts Options, styra *das.Client, byName
 	opa, err := sdk.New(ctx, sdk.Options{
 		Config: strings.NewReader(config),
 		Ready:  ready,
+		Logger: &logger{*log},
 	})
 	if err != nil {
 		return err
@@ -432,4 +434,21 @@ func compareResults(d *das.V1Decision, r *interface{}, t time.Duration, maxEvalI
 	}
 
 	return nil
+}
+
+// logger adapts logging.Logger to opa/v1/logging.Logger
+type logger struct {
+	logging.Logger
+}
+
+func (l *logger) GetLevel() v1.Level {
+	return v1.Debug
+}
+
+func (l *logger) SetLevel(level v1.Level) {
+	// no-op
+}
+
+func (l *logger) WithFields(fields map[string]any) v1.Logger {
+	return l
 }
