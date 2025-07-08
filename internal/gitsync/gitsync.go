@@ -8,6 +8,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net"
 	gohttp "net/http"
 	"os"
 	"sync"
@@ -19,8 +20,18 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/protocol/packp/capability"
 	"github.com/go-git/go-git/v5/plumbing/transport"
 	"github.com/go-git/go-git/v5/plumbing/transport/http"
+	gitssh "github.com/go-git/go-git/v5/plumbing/transport/ssh"
 	"github.com/styrainc/lighthouse/internal/config"
+	"golang.org/x/crypto/ssh"
 )
+
+var wellknownFingerprints = []string{
+	"SHA256:uNiVztksCsDhcc0u9e8BujQXVUpKZIDTMczCvj3tD2s", // github.com https://docs.github.com/en/github/authenticating-to-github/githubs-ssh-key-fingerprints
+	"SHA256:p2QAMXNIC1TJYWeIOttrVc98/R1BUFWu3/LiyKgUfQM", // github.com
+	"SHA256:+DiY3wvvV6TuJJhbpZisF/zLDA0zPMSvHdkr4UvCOqU", // github.com
+	"SHA256:zzXQOXSRBEiUtuE8AikJYKwbHaxvSc0ojez9YXaGp1A", // bitbucket.org https://support.atlassian.com/bitbucket-cloud/docs/configure-ssh-and-two-step-verification/
+	"SHA256:ohD8VZEXGWo6Ez8GSEJQ9WpafgLFsOfLOtGGQCQo6Og", // dev.azure.com https://github.com/MicrosoftDocs/azure-devops-docs/issues/7726 (also available through user settings after signing in)
+}
 
 func init() {
 	// For Azure DevOps compatibility. More details: https://github.com/go-git/go-git/issues/64
@@ -152,9 +163,26 @@ func (s *Synchronizer) auth(ctx context.Context) (transport.AuthMethod, error) {
 			return nil, err
 		}
 
-		return &http.TokenAuth{
-			Token: token,
-		}, nil
+		return &http.TokenAuth{Token: token}, nil
+
+	case "ssh_key":
+		key, _ := value["key"].(string)
+		passphrase, _ := value["passphrase"].(string)
+
+		l, _ := value["fingerprints"].([]interface{})
+		fingerprints := make([]string, 0, len(l))
+		for _, fp := range l {
+			if s, ok := fp.(string); ok {
+				fingerprints = append(fingerprints, s)
+			}
+		}
+
+		// If no fingerprints are provided, use well-known ones for popular services.
+		if len(fingerprints) == 0 {
+			fingerprints = wellknownFingerprints
+		}
+
+		return newSSHAuth(key, passphrase, fingerprints)
 
 	default:
 		return nil, fmt.Errorf("unsupported authentication type: %s", value["type"])
@@ -205,4 +233,47 @@ func (gh *github) transport(integrationID, installationID int64, privateKey []by
 	}
 
 	return gh.tr, nil
+}
+
+func newSSHAuth(key string, passphrase string, fingerprints []string) (gitssh.AuthMethod, error) {
+	var signer ssh.Signer
+	var err error
+	if passphrase != "" {
+		signer, err = ssh.ParsePrivateKeyWithPassphrase([]byte(key), []byte(passphrase))
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		signer, err = ssh.ParsePrivateKey([]byte(key))
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	if len(fingerprints) == 0 {
+		return nil, errors.New("ssh: at least one fingerprint is required when using ssh_key authentication")
+	}
+
+	return &gitssh.PublicKeys{
+		User:   "git",
+		Signer: signer,
+		HostKeyCallbackHelper: gitssh.HostKeyCallbackHelper{
+			HostKeyCallback: newCheckFingerprints(fingerprints),
+		},
+	}, nil
+}
+
+func newCheckFingerprints(fingerprints []string) ssh.HostKeyCallback {
+	m := make(map[string]bool, len(fingerprints))
+	for _, fp := range fingerprints {
+		m[fp] = true
+	}
+
+	return func(hostname string, _ net.Addr, key ssh.PublicKey) error {
+		fingerprint := ssh.FingerprintSHA256(key)
+		if _, ok := m[fingerprint]; !ok {
+			return fmt.Errorf("ssh: unknown fingerprint (%s) for %s", fingerprint, hostname)
+		}
+		return nil
+	}
 }

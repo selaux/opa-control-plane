@@ -650,6 +650,7 @@ func (s *SecretRef) Equal(other *SecretRef) bool {
 // * "basic_auth" for HTTP basic authentication. Values for keys "username" and "password" are expected.
 // * "gcp_auth" for Google Cloud authentication. Value for a key "api_key" or "credentials" is expected.
 // * "github_app_auth" for GitHub App authentication. Values for keys "integration_id", "installation_id", and "private_key" are expected.
+// * "ssh_key" for SSH private key authentication. Value for key "key" (private key) is expected. "fingerprints" (string array) and "passphrase" are optional.
 // * "token_auth" for HTTP bearer token authentication. Value for a key "token" is expected.
 type Secret struct {
 	Name  string                 `json:"-" yaml:"-"`
