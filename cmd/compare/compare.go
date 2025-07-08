@@ -79,6 +79,7 @@ type compareRegoReport struct {
 type compareParams struct {
 	configFile        []string
 	styraURL          string
+	headers           []string
 	styraToken        string
 	mergeConflictFail bool
 	logging           logging.Config
@@ -102,6 +103,7 @@ func init() {
 
 	compare.Flags().StringSliceVarP(&params.configFile, "config", "c", []string{"config.yaml"}, "Path to the configuration file")
 	compare.Flags().StringVarP(&params.styraURL, "url", "u", "", "Styra tenant URL (e.g., https://expo.styra.com)")
+	compare.Flags().StringSliceVarP(&params.headers, "header", "", nil, "Set additional HTTP headers for requests to Styra API")
 	compare.Flags().BoolVarP(&params.mergeConflictFail, "merge-conflict-fail", "", false, "Fail on config merge conflicts")
 	logging.VarP(compare, &params.logging)
 
@@ -141,9 +143,11 @@ func doCompare(params compareParams) error {
 	})
 
 	styra := das.Client{
-		URL:    url,
-		Token:  params.styraToken,
-		Client: http.DefaultClient}
+		URL:     url,
+		Headers: params.headers,
+		Token:   params.styraToken,
+		Client:  http.DefaultClient,
+	}
 	log.Info("Fetching systems...")
 	resp, err := styra.JSON("v1/systems")
 	if err != nil {
