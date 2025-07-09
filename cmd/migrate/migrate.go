@@ -452,19 +452,21 @@ var baseLibPackageIndex = func() map[string]*libraryPackageIndex {
 }()
 
 type Options struct {
-	Token          string
-	URL            string
-	Headers        []string
-	SystemId       string
-	Prune          bool
-	Datasources    bool
-	FilesPath      string
-	EmbedFiles     bool
-	Logging        logging.Config
-	Output         io.Writer
-	OutputDir      string
-	S3BucketName   string
-	S3BucketRegion string
+	Token             string
+	URL               string
+	Headers           []string
+	SystemId          string
+	Prune             bool
+	Datasources       bool
+	FilesPath         string
+	EmbedFiles        bool
+	Logging           logging.Config
+	Output            io.Writer
+	OutputDir         string
+	ObjectStorage     string
+	FilesystemRootDir string
+	S3BucketName      string
+	S3BucketRegion    string
 }
 
 func init() {
@@ -507,6 +509,8 @@ func init() {
 	migrate.Flags().BoolVarP(&params.EmbedFiles, "embed-files", "", false, "Embed non-git stored files into output configuration")
 	migrate.Flags().BoolVarP(&stdout, "stdout", "", false, "Write configuration to stdout")
 	migrate.Flags().StringVarP(&params.OutputDir, "output-dir", "o", "", "Directory to output configuration files to (default \"config.d[/<system-id>]\")")
+	migrate.Flags().StringVarP(&params.ObjectStorage, "object-storage", "", "filesystem", "Set object storage type (e.g., filesystem, aws, azure, gcp.) Disable object storage config by providing an empty string.")
+	migrate.Flags().StringVarP(&params.FilesystemRootDir, "filesystem-root-dir", "", "bundles", "Set root directory for filesystem object storage")
 	migrate.Flags().StringVarP(&params.S3BucketName, "s3-bucket-name", "", "BUCKET_NAME", "Set placeholder AWS S3 bucket name for object storage")
 	migrate.Flags().StringVarP(&params.S3BucketRegion, "s3-bucket-region", "", "BUCKET_REGION", "Set placeholder AWS S3 bucket region for object storage")
 	logging.VarP(migrate, &params.Logging)
@@ -697,7 +701,8 @@ func Run(params Options) error {
 		}
 	}
 
-	if len(params.S3BucketName) > 0 {
+	switch params.ObjectStorage {
+	case "aws":
 		for name := range output.Bundles {
 			output.Bundles[name].ObjectStorage = config.ObjectStorage{
 				AmazonS3: &config.AmazonS3{
@@ -719,6 +724,18 @@ func Run(params Options) error {
 				},
 			}
 		}
+	case "filesystem":
+		for name := range output.Bundles {
+			output.Bundles[name].ObjectStorage = config.ObjectStorage{
+				FileSystemStorage: &config.FileSystemStorage{
+					Path: filepath.Join(params.FilesystemRootDir, name, "bundle.tar.gz"),
+				},
+			}
+		}
+	case "":
+		// noop
+	default:
+		return fmt.Errorf("unsupported object storage type")
 	}
 
 	if params.Output != nil {

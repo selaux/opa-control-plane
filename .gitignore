@@ -3,6 +3,7 @@
 .vscode
 config.yaml
 config.d
+bundles/
 data
 lighthouse_*
 files
