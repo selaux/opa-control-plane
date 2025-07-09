@@ -606,7 +606,7 @@ func Run(params Options) error {
 		}
 	}
 
-	for _, stack := range state.StacksById {
+	for id, stack := range state.StacksById {
 		sc, src, secrets, err := migrateV1Stack(nf, &c, state, stack, params.Datasources)
 		if err != nil {
 			return err
@@ -619,20 +619,12 @@ func Run(params Options) error {
 			output.Secrets[s.Name] = s
 		}
 
-		if _, ok := sc.Selector.Get(staticStackMatchLabelKey); ok {
+		if _, ok := sc.Selector.Get(staticStackSelectorPrefix + id); ok {
 			for _, systemId := range stack.MatchingSystems {
-				s, ok := state.SystemsById[systemId]
-				if !ok {
-					if params.SystemId == systemId {
-						return fmt.Errorf("unexpected error: missing state for system %q", systemId)
-					}
-					if params.SystemId == "" {
-						log.Warnf("Stack %q matches non-existent system %v", stack.Name, systemId)
-					}
-					continue
+				if system, ok := state.SystemsById[systemId]; ok {
+					log.Warnf("Stack %q selector logic cannot be automatically translated. Review logic and configure bundle labels and stack selector manually.", stack.Name)
+					output.Bundles[system.Name].Labels[staticStackSelectorPrefix+id] = "FIXME"
 				}
-				log.Warnf("Stack %q selector logic cannot be automatically translated. Review logic and configure bundle labels and stack selector manually.", stack.Name)
-				output.Bundles[s.Name].Labels[staticStackMatchLabelKey] = sc.Name
 			}
 		}
 	}
@@ -1154,8 +1146,6 @@ func migrateV1PushDatasource(c *das.Client, nsPrefix string, id string) (config.
 	return result, nil
 }
 
-const staticStackMatchLabelKey = "fixme-static-stack-match"
-
 func migrateV1Stack(nf *nameFactory, c *das.Client, state *dasState, v1 *das.V1Stack, migrateDSContent bool) (*config.Stack, *config.Source, []*config.Secret, error) {
 
 	var stack config.Stack
@@ -1284,12 +1274,14 @@ func migrateV1GitConfig(origin *das.V1GitRepoConfig, src *config.Source) *config
 	return secret
 }
 
+const staticStackSelectorPrefix = "stack-"
+
 func migrateV1Selector(v1 *das.V1Stack, module *ast.Module) (config.Selector, error) {
 	selector, ok, err := migrateV1SelectorLogic(module)
 	if err != nil {
 		return selector, err
 	} else if !ok {
-		if err := selector.Set(staticStackMatchLabelKey, []string{v1.Name}); err != nil {
+		if err := selector.Set(staticStackSelectorPrefix+v1.Id, []string{"*"}); err != nil {
 			return config.Selector{}, fmt.Errorf("failed to set static stack match label for %q: %w", v1.Name, err)
 		}
 	}

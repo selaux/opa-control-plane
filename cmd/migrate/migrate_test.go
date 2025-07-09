@@ -426,7 +426,7 @@ func TestMigrateV1Selector(t *testing.T) {
 			`,
 			selector: `
 					{
-						"fixme-static-stack-match": ["test"],
+						"stack-abcd": ["*"],
 						"system-type": ["foo-v1"]
 					}
 				`,
@@ -444,7 +444,7 @@ func TestMigrateV1Selector(t *testing.T) {
 			`,
 			selector: `
 					{
-						"fixme-static-stack-match": ["test"],
+						"stack-abcd": ["*"],
 						"system-type": ["foo-v1"]
 					}
 				`,
@@ -468,7 +468,7 @@ func TestMigrateV1Selector(t *testing.T) {
 			`,
 			selector: `
 					{
-						"fixme-static-stack-match": ["test"],
+						"stack-abcd": ["*"],
 						"system-type": ["foo-v1"]
 					}
 				`,
@@ -486,7 +486,7 @@ func TestMigrateV1Selector(t *testing.T) {
 			`,
 			selector: `
 					{
-						"fixme-static-stack-match": ["test"],
+						"stack-abcd": ["*"],
 						"system-type": ["foo-v1"]
 					}
 				`,
@@ -501,7 +501,7 @@ func TestMigrateV1Selector(t *testing.T) {
 				t.Fatal(err)
 			}
 			var stack das.V1Stack
-			stack.Name = "test"
+			stack.Id = "abcd"
 			stack.Type = "foo-v1"
 			result, err := migrateV1Selector(&stack, module)
 			if err != nil {
