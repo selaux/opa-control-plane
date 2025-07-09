@@ -181,7 +181,7 @@ func (c *Client) Get(path string, params ...Params) (*http.Response, error) {
 			return nil, err
 		}
 
-		if resp.StatusCode == http.StatusServiceUnavailable {
+		if resp.StatusCode == http.StatusServiceUnavailable || resp.StatusCode == http.StatusBadGateway {
 			resp.Body.Close()
 			time.Sleep(2 * time.Second)
 			continue
