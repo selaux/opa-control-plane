@@ -125,7 +125,8 @@ func (d *Database) InitDB(ctx context.Context, persistenceDir string) error {
 			ref TEXT,
 			gitcommit TEXT,
 			path TEXT,
-			git_included_files TEXT
+			git_included_files TEXT,
+			git_excluded_files TEXT
 		);`,
 		`CREATE TABLE IF NOT EXISTS stacks (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -609,6 +610,7 @@ func (d *Database) ListSources(ctx context.Context, principal string, opts ListO
 	sources.gitcommit,
 	sources.path,
 	sources.git_included_files,
+	sources.git_excluded_files,
 	secrets.name AS secret_name,
 	sources_secrets.ref_type as secret_ref_type,
 	secrets.value AS secret_value,
@@ -647,13 +649,13 @@ WHERE ((sources_secrets.ref_type = 'git_credentials' AND secrets.value IS NOT NU
 	defer rows.Close()
 
 	type sourceRow struct {
-		id                                     int64
-		sourceName                             string
-		builtin                                *string
-		repo                                   string
-		ref, gitCommit, path, includePaths     *string
-		secretName, secretRefType, secretValue *string
-		requirementName                        *string
+		id                                               int64
+		sourceName                                       string
+		builtin                                          *string
+		repo                                             string
+		ref, gitCommit, path, includePaths, excludePaths *string
+		secretName, secretRefType, secretValue           *string
+		requirementName                                  *string
 	}
 
 	srcMap := make(map[string]*config.Source)
@@ -662,7 +664,7 @@ WHERE ((sources_secrets.ref_type = 'git_credentials' AND secrets.value IS NOT NU
 
 	for rows.Next() {
 		var row sourceRow
-		if err := rows.Scan(&row.id, &row.sourceName, &row.builtin, &row.repo, &row.ref, &row.gitCommit, &row.path, &row.includePaths, &row.secretName, &row.secretRefType, &row.secretValue, &row.requirementName); err != nil {
+		if err := rows.Scan(&row.id, &row.sourceName, &row.builtin, &row.repo, &row.ref, &row.gitCommit, &row.path, &row.includePaths, &row.excludePaths, &row.secretName, &row.secretRefType, &row.secretValue, &row.requirementName); err != nil {
 			return nil, "", err
 		}
 
@@ -690,6 +692,11 @@ WHERE ((sources_secrets.ref_type = 'git_credentials' AND secrets.value IS NOT NU
 			if row.includePaths != nil {
 				if err := json.Unmarshal([]byte(*row.includePaths), &src.Git.IncludedFiles); err != nil {
 					return nil, "", fmt.Errorf("failed to unmarshal include paths for %q: %w", src.Name, err)
+				}
+			}
+			if row.excludePaths != nil {
+				if err := json.Unmarshal([]byte(*row.excludePaths), &src.Git.ExcludedFiles); err != nil {
+					return nil, "", fmt.Errorf("failed to unmarshal exclude paths for %q: %w", src.Name, err)
 				}
 			}
 		}
@@ -1008,7 +1015,12 @@ func (d *Database) UpsertSource(ctx context.Context, principal string, source *c
 		return err
 	}
 
-	if _, err := tx.Exec(`INSERT OR REPLACE INTO sources (name, builtin, repo, ref, gitcommit, path, git_included_files) VALUES (?, ?, ?, ?, ?, ?, ?)`, source.Name, source.Builtin, source.Git.Repo, source.Git.Reference, source.Git.Commit, source.Git.Path, string(includedFiles)); err != nil {
+	excludedFiles, err := json.Marshal(source.Git.ExcludedFiles)
+	if err != nil {
+		return err
+	}
+
+	if _, err := tx.Exec(`INSERT OR REPLACE INTO sources (name, builtin, repo, ref, gitcommit, path, git_included_files, git_excluded_files) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, source.Name, source.Builtin, source.Git.Repo, source.Git.Reference, source.Git.Commit, source.Git.Path, string(includedFiles), string(excludedFiles)); err != nil {
 		return err
 	}
 
