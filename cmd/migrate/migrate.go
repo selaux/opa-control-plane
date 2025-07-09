@@ -752,32 +752,6 @@ func Run(params Options) error {
 		}
 	}
 
-	v1SystemsByName := map[string]*das.V1System{}
-	for _, system := range state.SystemsById {
-		v1SystemsByName[system.Name] = system
-	}
-
-	for _, system := range output.Bundles {
-		matches := ast.NewSet()
-		for _, stack := range output.Stacks {
-			if stack.Selector.Matches(system.Labels) {
-				matches.Add(ast.StringTerm(stack.Name))
-			}
-		}
-		expectedMatches := ast.NewSet()
-		for _, stackId := range v1SystemsByName[system.Name].MatchingStacks {
-			expectedMatches.Add(ast.StringTerm(state.StacksById[stackId].Name))
-		}
-		missing := expectedMatches.Diff(matches)
-		extra := matches.Diff(expectedMatches)
-		if missing.Len() > 0 {
-			log.Infof("System %q has missing stacks %v", system.Name, missing)
-		}
-		if extra.Len() > 0 {
-			log.Infof("System %q has extra stacks %v", system.Name, extra)
-		}
-	}
-
 	return nil
 }
 
