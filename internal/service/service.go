@@ -239,11 +239,12 @@ func newSource(name string) *source {
 	}
 }
 
-func (src *source) addDir(dir string, wipe bool, includedFiles []string) {
+func (src *source) addDir(dir string, wipe bool, includedFiles []string, excludedFiles []string) {
 	src.Source.Dirs = append(src.Source.Dirs, builder.Dir{
 		Path:          dir,
 		Wipe:          wipe,
 		IncludedFiles: includedFiles,
+		ExcludedFiles: excludedFiles,
 	})
 }
 
@@ -253,7 +254,7 @@ func (src *source) SyncGit(syncs *[]Synchronizer, git config.Git, repoDir string
 		if git.Path != nil {
 			srcDir = path.Join(srcDir, *git.Path)
 		}
-		src.addDir(srcDir, false, git.IncludedFiles)
+		src.addDir(srcDir, false, git.IncludedFiles, git.ExcludedFiles)
 		*syncs = append(*syncs, gitsync.New(repoDir, git))
 	}
 
@@ -262,7 +263,7 @@ func (src *source) SyncGit(syncs *[]Synchronizer, git config.Git, repoDir string
 
 func (src *source) SyncBuiltin(syncs *[]Synchronizer, builtin *string, fs fs.FS, dir string) *source {
 	if builtin != nil {
-		src.addDir(dir, true, nil)
+		src.addDir(dir, true, nil, nil)
 		*syncs = append(*syncs, builtinsync.New(fs, dir, *builtin))
 	}
 	return src
@@ -285,14 +286,14 @@ func (src *source) SyncDatasources(syncs *[]Synchronizer, datasources []config.D
 		}
 	}
 	if len(datasources) > 0 {
-		src.addDir(dir, true, nil)
+		src.addDir(dir, true, nil, nil)
 	}
 	return src
 }
 
 func (src *source) SyncSourceSQL(syncs *[]Synchronizer, name string, database *database.Database, dir string) *source {
 	*syncs = append(*syncs, sqlsync.NewSQLSourceDataSynchronizer(dir, database, name))
-	src.addDir(dir, true, nil)
+	src.addDir(dir, true, nil, nil)
 	return src
 }
 

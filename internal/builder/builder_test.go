@@ -23,6 +23,7 @@ func TestBuilder(t *testing.T) {
 		files         map[string]string
 		requirements  []string
 		includedFiles []string
+		excludedFiles []string
 	}
 
 	cases := []struct {
@@ -278,7 +279,7 @@ func TestBuilder(t *testing.T) {
 			expRoots: []string{"x", "y", "z"},
 		},
 		{
-			note: "included files (source level)",
+			note: "included and excluded files (source level)",
 			sources: []sourceMock{
 				{
 					files: map[string]string{
@@ -291,10 +292,12 @@ func TestBuilder(t *testing.T) {
 				{
 					name: "lib",
 					files: map[string]string{
-						"x/x.rego": "package x\np := 9",
-						"z/z.rego": "package z\nq := 10",
+						"x/x.rego":        "package x\np := 9",
+						"z/z.rego":        "package z\nq := 10",
+						".hidden/ci.json": "{}",
 					},
-					includedFiles: []string{"z/*"},
+					includedFiles: []string{"z/*", "**/*.json"},
+					excludedFiles: []string{".*/*"},
 				},
 			},
 			exp: map[string]string{
@@ -365,7 +368,7 @@ func TestBuilder(t *testing.T) {
 					}
 					srcs = append(srcs, &builder.Source{
 						Name:         src.name,
-						Dirs:         []builder.Dir{{Path: fmt.Sprintf("%v/src%d", root, i), IncludedFiles: src.includedFiles}},
+						Dirs:         []builder.Dir{{Path: fmt.Sprintf("%v/src%d", root, i), IncludedFiles: src.includedFiles, ExcludedFiles: src.excludedFiles}},
 						Requirements: rs,
 					})
 				}

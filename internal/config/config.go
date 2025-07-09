@@ -550,6 +550,7 @@ type Git struct {
 	Commit        *string    `json:"commit,omitempty" yaml:"commit,omitempty"`
 	Path          *string    `json:"path,omitempty" yaml:"path,omitempty"`
 	IncludedFiles StringSet  `json:"included_files,omitempty" yaml:"included_files,omitempty"`
+	ExcludedFiles StringSet  `json:"excluded_files,omitempty" yaml:"excluded_files,omitempty"`
 	Credentials   *SecretRef `json:"credentials,omitempty" yaml:"credentials,omitempty"` // If nil, use the default SSH authentication mechanisms available
 	// or no authentication for public repos. Note, JSON schema validation overrides this to string type.
 }
@@ -560,7 +561,8 @@ func (g *Git) Equal(other *Git) bool {
 			stringPtrEqual(g.Commit, other.Commit) &&
 			stringPtrEqual(g.Path, other.Path) &&
 			g.Credentials.Equal(other.Credentials) &&
-			g.IncludedFiles.Equal(other.IncludedFiles)
+			g.IncludedFiles.Equal(other.IncludedFiles) &&
+			g.ExcludedFiles.Equal(other.ExcludedFiles)
 	})
 }
 

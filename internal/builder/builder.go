@@ -115,6 +115,7 @@ type Dir struct {
 	Path          string   // local fs path to source files
 	Wipe          bool     // bit indicates if worker should delete directory before synchronization
 	IncludedFiles []string // inclusion filter on files to load from path
+	ExcludedFiles []string // exclusion filter on files to skip from path
 }
 
 type Builder struct {
@@ -218,7 +219,7 @@ func (b *Builder) Build(ctx context.Context) error {
 
 	var fses []fs.FS
 	for _, srcDir := range toBuild {
-		fs, err := util.NewFilterFS(os.DirFS(srcDir.Path), srcDir.IncludedFiles, nil)
+		fs, err := util.NewFilterFS(os.DirFS(srcDir.Path), srcDir.IncludedFiles, srcDir.ExcludedFiles)
 		if err != nil {
 			return err
 		}
