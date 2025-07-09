@@ -574,7 +574,7 @@ func Run(params Options) error {
 		}
 	}
 
-	// Dependency migratation complements the requirements of the libraries.
+	// Dependency migration complements the requirements of the libraries.
 	// Copy to avoid tainting of library sources.
 
 	for _, bi := range systemTypeLibraries {
@@ -1054,6 +1054,10 @@ func mapV1SystemToBundleSourceAndSecretConfig(nf *nameFactory, _ *das.Client, v1
 			secret.Name = v1.SourceControl.Origin.SSHCredentials.PrivateKey
 			src.Git.Credentials = &config.SecretRef{Name: secret.Name}
 		}
+
+		if src.Git.Repo != "" {
+			src.Git.ExcludedFiles = []string{".*/*"}
+		}
 	}
 
 	return &bundle, &src, secret, nil
@@ -1269,6 +1273,10 @@ func migrateV1GitConfig(origin *das.V1GitRepoConfig, src *config.Source) *config
 		secret = &config.Secret{}
 		secret.Name = origin.SSHCredentials.PrivateKey
 		src.Git.Credentials = &config.SecretRef{Name: secret.Name}
+	}
+
+	if src.Git.Repo != "" {
+		src.Git.ExcludedFiles = []string{".*/*"}
 	}
 
 	return secret
