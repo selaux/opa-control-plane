@@ -57,6 +57,13 @@ func New(path string, config config.Git) *Synchronizer {
 // Execute performs the synchronization of the configured Git repository. If the repository does not exist
 // on disk, clone it. If it does exist, pull the latest changes and rebase the local branch onto the remote branch.
 func (s *Synchronizer) Execute(ctx context.Context) error {
+	if err := s.execute(ctx); err != nil {
+		return fmt.Errorf("git synchronizer: %v: %w", s.config.Repo, err)
+	}
+	return nil
+}
+
+func (s *Synchronizer) execute(ctx context.Context) error {
 	var repository *git.Repository
 
 	authMethod, err := s.auth(ctx)
