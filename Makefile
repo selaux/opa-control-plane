@@ -1,6 +1,7 @@
 CGO_ENABLED ?= 1
 GOFLAGS ?= "-buildmode=exe"
 GO := CGO_ENABLED=$(CGO_ENABLED) GOFLAGS="$(GOFLAGS)" go
+DOCKER := docker
 
 GOARCH := $(shell go env GOARCH)
 GOOS := $(shell go env GOOS)
@@ -10,6 +11,10 @@ GO_TAGS := -tags=
 BIN := lighthouse_$(GOOS)_$(GOARCH)
 
 LDFLAGS := ""
+
+# Get current git SHA and add -dirty if there are uncommitted changes
+VCS := $(shell git rev-parse --short HEAD)$(shell test -n "$(shell git status --porcelain)" && echo -dirty)
+GOVERSION := $(shell awk '/^go /{print $$2; exit}' go.mod)
 
 .PHONY: all
 all: build test
@@ -23,6 +28,10 @@ build: go-build
 
 .PHONY: test
 test: go-test go-bench library-test authz-test
+
+.PHONY: docker-build
+docker-build:
+	$(DOCKER) build --platform linux/amd64 --build-arg GOVERSION=$(GOVERSION) -t styrainc/lighthouse:$(VCS) -f Dockerfile .
 
 .PHONY: go-build
 go-build: generate
