@@ -647,13 +647,14 @@ func (s *SecretRef) Equal(other *SecretRef) bool {
 //
 // Currently the following secret types are supported:
 //
-// * "aws_auth" for AWS authentication. Values for keys "access_key_id", "secret_access_key", and optional "session_token" are expected.
-// * "azure_auth" for Azure authentication. Values for keys "account_name" and "account_key" are expected.
-// * "basic_auth" for HTTP basic authentication. Values for keys "username" and "password" are expected.
-// * "gcp_auth" for Google Cloud authentication. Value for a key "api_key" or "credentials" is expected.
-// * "github_app_auth" for GitHub App authentication. Values for keys "integration_id", "installation_id", and "private_key" are expected.
-// * "ssh_key" for SSH private key authentication. Value for key "key" (private key) is expected. "fingerprints" (string array) and "passphrase" are optional.
-// * "token_auth" for HTTP bearer token authentication. Value for a key "token" is expected.
+//   - "aws_auth" for AWS authentication. Values for keys "access_key_id", "secret_access_key", and optional "session_token" are expected.
+//   - "azure_auth" for Azure authentication. Values for keys "account_name" and "account_key" are expected.
+//   - "basic_auth" for HTTP basic authentication. Values for keys "username" and "password" are expected.
+//     "headers" (string array) is optional and can be used to set additional headers for the HTTP requests (currently only supported for git).
+//   - "gcp_auth" for Google Cloud authentication. Value for a key "api_key" or "credentials" is expected.
+//   - "github_app_auth" for GitHub App authentication. Values for keys "integration_id", "installation_id", and "private_key" are expected.
+//   - "ssh_key" for SSH private key authentication. Value for key "key" (private key) is expected. "fingerprints" (string array) and "passphrase" are optional.
+//   - "token_auth" for HTTP bearer token authentication. Value for a key "token" is expected.
 type Secret struct {
 	Name  string                 `json:"-" yaml:"-"`
 	Value map[string]interface{} `json:"-" yaml:"-"`

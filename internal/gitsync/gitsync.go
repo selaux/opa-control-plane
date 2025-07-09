@@ -11,6 +11,7 @@ import (
 	"net"
 	gohttp "net/http"
 	"os"
+	"strings"
 	"sync"
 
 	"github.com/bradleyfalzon/ghinstallation"
@@ -156,9 +157,18 @@ func (s *Synchronizer) auth(ctx context.Context) (transport.AuthMethod, error) {
 	case "basic_auth":
 		username, _ := value["username"].(string)
 		password, _ := value["password"].(string)
-		return &http.BasicAuth{
+		l, _ := value["headers"].([]interface{})
+		headers := make([]string, 0, len(l))
+		for _, h := range l {
+			if s, ok := h.(string); ok {
+				headers = append(headers, s)
+			}
+		}
+
+		return &basicAuth{
 			Username: username,
 			Password: password,
+			Headers:  headers,
 		}, nil
 	case "github_app_auth":
 		integrationID, _ := value["integration_id"].(int64)
@@ -282,5 +292,35 @@ func newCheckFingerprints(fingerprints []string) ssh.HostKeyCallback {
 			return fmt.Errorf("ssh: unknown fingerprint (%s) for %s", fingerprint, hostname)
 		}
 		return nil
+	}
+}
+
+// basicAuth provides HTTP basic authentication but in addition can set
+// extra headers required for authentication.
+type basicAuth struct {
+	Username string
+	Password string
+	Headers  []string
+}
+
+func (a *basicAuth) String() string {
+	masked := "*******"
+	if a.Password == "" {
+		masked = "<empty>"
+	}
+	return fmt.Sprintf("%s - %s:%s [%s]", a.Name(), a.Username, masked, strings.Join(a.Headers, ", "))
+}
+
+func (a *basicAuth) Name() string {
+	return "http-basic-auth-extra"
+}
+
+func (a *basicAuth) SetAuth(r *gohttp.Request) {
+	r.SetBasicAuth(a.Username, a.Password)
+	for _, header := range a.Headers {
+		name, value, found := strings.Cut(header, ":")
+		if found {
+			r.Header.Set(strings.TrimSpace(name), strings.TrimSpace(value))
+		}
 	}
 }
