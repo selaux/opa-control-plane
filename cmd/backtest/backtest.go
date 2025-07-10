@@ -93,6 +93,7 @@ type DecisionDiff struct {
 }
 
 func Run(opts Options) error {
+	ctx := context.Background()
 	log = logging.NewLogger(opts.Logging)
 
 	bs, err := config.Merge(opts.ConfigFile, opts.MergeConflictFail)
@@ -121,40 +122,13 @@ func Run(opts Options) error {
 		Token:   opts.Token,
 		Client:  http.DefaultClient}
 
-	log.Info("Fetching systems")
-	resp, err := styra.JSON("v1/systems", das.Params{Query: map[string]string{
-		"authz":       "false",
-		"compact":     "true",
-		"datasources": "false",
-		"errors":      "false",
-		"metadata":    "false",
-		"modules":     "false",
-		"policies":    "false",
-		"rule_counts": "false",
-	}})
-	if err != nil {
-		return err
-	}
-
-	var v1systems []*das.V1System
-	if err := resp.Decode(&v1systems); err != nil {
-		return err
-	}
-
-	v1SystemsByName := make(map[string]string)
-	for _, system := range v1systems {
-		v1SystemsByName[system.Name] = system.Id
-	}
-
 	report := Report{
 		Systems: map[string]SystemReport{},
 	}
 
-	ctx := context.Background()
-
 	for _, b := range cfg.Bundles {
 		log.Infof("Backtesting bundle %q", b.Name)
-		if err := backtestSystem(ctx, opts, &styra, v1SystemsByName, b, &report); err != nil {
+		if err := backtestBundle(ctx, opts, &styra, b, &report); err != nil {
 			report.Systems[b.Name] = SystemReport{
 				Status:  "error",
 				Message: err.Error(),
@@ -172,18 +146,36 @@ func Run(opts Options) error {
 	return nil
 }
 
-func backtestSystem(ctx context.Context, opts Options, styra *das.Client, byName map[string]string, system *config.Bundle, report *Report) error {
+func backtestBundle(ctx context.Context, opts Options, styra *das.Client, b *config.Bundle, report *Report) error {
 
-	systemId, ok := byName[system.Name]
+	systemId, ok := b.Labels["system-id"]
 	if !ok {
-		report.ExtraSystems = append(report.ExtraSystems, system.Name)
+		report.ExtraSystems = append(report.ExtraSystems, b.Name)
 		return nil
+	}
+
+	if resp, err := styra.Get("v1/systems/"+systemId, das.Params{Query: map[string]string{
+		"authz":       "false",
+		"compact":     "true",
+		"datasources": "false",
+		"errors":      "false",
+		"metadata":    "false",
+		"modules":     "false",
+		"policies":    "false",
+		"rule_counts": "false",
+	}}); err != nil {
+		return err
+	} else if resp.StatusCode == http.StatusNotFound {
+		report.ExtraSystems = append(report.ExtraSystems, b.Name)
+		return nil
+	} else if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("unexpected status code for system %v: %v", systemId, resp.StatusCode)
 	}
 
 	params := das.Params{
 		Query: map[string]string{
 			"limit":  fmt.Sprintf("%d", opts.NumDecisions),
-			"system": systemId,
+			"system": b.Labels["system-id"],
 		},
 	}
 
@@ -203,11 +195,11 @@ func backtestSystem(ctx context.Context, opts Options, styra *das.Client, byName
 	}
 
 	if len(decisions.Items) == 0 {
-		report.MissingDecisions = append(report.MissingDecisions, system.Name)
+		report.MissingDecisions = append(report.MissingDecisions, b.Name)
 		return nil
 	}
 
-	s, err := s3.New(ctx, system.ObjectStorage)
+	s, err := s3.New(ctx, b.ObjectStorage)
 	if err != nil {
 		return err
 	}
@@ -217,12 +209,12 @@ func backtestSystem(ctx context.Context, opts Options, styra *das.Client, byName
 		return err
 	}
 
-	b, err := ioutil.ReadAll(r)
+	bs, err := ioutil.ReadAll(r)
 	if err != nil {
 		return err
 	}
 
-	a, err := bundle.NewReader(bytes.NewReader(b)).Read()
+	a, err := bundle.NewReader(bytes.NewReader(bs)).Read()
 	if err != nil {
 		return err
 	}
@@ -235,7 +227,7 @@ func backtestSystem(ctx context.Context, opts Options, styra *das.Client, byName
 
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		files := map[string][]byte{
-			"/bundle.tar.gz": b,
+			"/bundle.tar.gz": bs,
 		}
 
 		content, ok := files[r.URL.Path]
@@ -298,7 +290,7 @@ func backtestSystem(ctx context.Context, opts Options, styra *das.Client, byName
 			options.Input = *d.Input
 		}
 
-		log.Infof("Evaluating decision %q for system %q", d.DecisionId, system.Name)
+		log.Infof("Evaluating decision %q for system %q", d.DecisionId, b.Name)
 
 		var result *interface{}
 		var start time.Time = time.Now()
@@ -322,7 +314,7 @@ func backtestSystem(ctx context.Context, opts Options, styra *das.Client, byName
 	}
 
 	if len(diffs) == 0 {
-		report.Systems[system.Name] = SystemReport{
+		report.Systems[b.Name] = SystemReport{
 			Status:  "passed",
 			Message: fmt.Sprintf("evaluated %v decisions in %v and found no difference(s)", len(decisions.Items), time.Since(t0)),
 		}
@@ -333,7 +325,7 @@ func backtestSystem(ctx context.Context, opts Options, styra *das.Client, byName
 			diffs = diffs[:10]
 			reportLimit = " (report limit: 10)"
 		}
-		report.Systems[system.Name] = SystemReport{
+		report.Systems[b.Name] = SystemReport{
 			Status:  "failed",
 			Message: fmt.Sprintf("evaluated %v decisions in %v and found %v difference(s)%v", len(decisions.Items), time.Since(t0), nDiffs, reportLimit),
 			Details: diffs,

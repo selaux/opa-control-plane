@@ -22,6 +22,10 @@ type V1System struct {
 	Datasources    []V1DatasourceRef `json:"datasources"`
 }
 
+func (v1 *V1System) SanitizedName() string {
+	return Sanitize(v1.Name)
+}
+
 type V1DatasourceRef struct {
 	Id string `json:"id"`
 }
@@ -33,6 +37,10 @@ type V1Library struct {
 	Datasources   []V1DatasourceRef       `json:"datasources"`
 }
 
+func (v1 *V1Library) SanitizedName() string {
+	return Sanitize(v1.Id)
+}
+
 type V1LibrarySourceControl struct {
 	UseWorkspaceSettings bool            `json:"use_workspace_settings"`
 	Origin               V1GitRepoConfig `json:"origin"`
@@ -40,8 +48,8 @@ type V1LibrarySourceControl struct {
 }
 
 type V1Stack struct {
-	Name          string          `json:"name"`
 	Id            string          `json:"id"`
+	Name          string          `json:"name"`
 	Type          string          `json:"type"`
 	Policies      []V1PoliciesRef `json:"policies"`
 	SourceControl *struct {
@@ -51,6 +59,10 @@ type V1Stack struct {
 	} `json:"source_control"`
 	Datasources     []V1DatasourceRef `json:"datasources"`
 	MatchingSystems []string          `json:"matching_systems"`
+}
+
+func (v1 *V1Stack) SanitizedName() string {
+	return Sanitize(v1.Name)
 }
 
 type V1Datasource struct {
@@ -220,4 +232,19 @@ func (c *Client) JSON(path string, params ...Params) (*Response, error) {
 	decoder := json.NewDecoder(resp.Body)
 	var r Response
 	return &r, decoder.Decode(&r)
+}
+
+func Sanitize(name string) string {
+	// Only allow: a-z, 0-9, -, _, :, .
+	// Convert to lowercase, replace disallowed characters with '_'
+	name = strings.ToLower(name)
+	var b strings.Builder
+	for _, r := range name {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '-' || r == '_' || r == ':' || r == '.' {
+			b.WriteRune(r)
+		} else {
+			b.WriteRune('_')
+		}
+	}
+	return b.String()
 }

@@ -164,7 +164,7 @@ func doCompare(params compareParams) error {
 
 	v1SystemsByName := map[string]*das.V1System{}
 	for _, system := range v1systems {
-		v1SystemsByName[system.Name] = system
+		v1SystemsByName[system.SanitizedName()] = system
 	}
 
 	_ = styra

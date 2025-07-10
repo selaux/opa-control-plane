@@ -39,7 +39,7 @@ func TestMigration(t *testing.T) {
 		styraURL          string
 		systemId          string
 		styraTokenEnvName string // default STYRA_TOKEN
-		systemName        string
+		bundleName        string
 		extraConfigs      map[string]string
 		policyType        string // used to filter decisions for backtest
 		datasources       bool   // indicates whether to include datasource content in migration
@@ -48,11 +48,11 @@ func TestMigration(t *testing.T) {
 			name:       "envoy21",
 			styraURL:   "https://expo.styra.com",
 			systemId:   "f89b1de32c4a4252ac19db97c007f8d4",
-			systemName: "Envoy App",
+			bundleName: "envoy_app",
 			extraConfigs: map[string]string{
 				"config.d/1-secrets.yaml": `{
 					secrets: {
-						libraries/envoy/git: {
+						libraries_envoy_git: {
 							type: basic_auth,
 							password: $GITHUB_PASSWORD,
 							username: $GITHUB_USERNAME,
@@ -61,7 +61,7 @@ func TestMigration(t *testing.T) {
 				}`,
 				"config.d/2-storage.yaml": `{
 					bundles: {
-						Envoy App: {
+						envoy_app: {
 							object_storage: {
 								aws: {
 									url: {{ .URL }},
@@ -79,7 +79,7 @@ func TestMigration(t *testing.T) {
 			name:              "envoy1",
 			styraURL:          "https://kurt.styra.com",
 			systemId:          "cbbf33aeb9ce44349bc3faad43060ae0",
-			systemName:        "envoy-v1-e2e-test",
+			bundleName:        "envoy-v1-e2e-test",
 			styraTokenEnvName: "STYRA_TOKEN_3",
 			extraConfigs: map[string]string{
 				"config.d/2-storage.yaml": `{
@@ -103,7 +103,7 @@ func TestMigration(t *testing.T) {
 			styraURL:          "https://test.styra.com",
 			systemId:          "ace44151df234247ab59e9177d02c9cc",
 			styraTokenEnvName: "STYRA_TOKEN_2",
-			systemName:        "torin-k8s-v1-test",
+			bundleName:        "torin-k8s-v1-test",
 			extraConfigs: map[string]string{
 				"config.d/2-storage.yaml": `{
 					bundles: {
@@ -125,11 +125,11 @@ func TestMigration(t *testing.T) {
 			name:       "kubernetes2-validating",
 			styraURL:   "https://expo.styra.com",
 			systemId:   "b470325746e3417e86301b564113b29b",
-			systemName: "Banteng cluster",
+			bundleName: "banteng_cluster",
 			extraConfigs: map[string]string{
 				"config.d/1-secrets.yaml": `{
 					secrets: {
-						libraries/test/git: {
+						libraries_test_git: {
 							type: basic_auth,
 							password: $GITHUB_PASSWORD,
 							username: $GITHUB_USERNAME,
@@ -138,7 +138,7 @@ func TestMigration(t *testing.T) {
 				}`,
 				"config.d/2-storage.yaml": `{
 					bundles: {
-						Banteng cluster: {
+						banteng_cluster: {
 							object_storage: {
 								aws: {
 									url: {{ .URL }},
@@ -157,11 +157,11 @@ func TestMigration(t *testing.T) {
 			name:       "kubernetes2-mutating",
 			styraURL:   "https://expo.styra.com",
 			systemId:   "b470325746e3417e86301b564113b29b",
-			systemName: "Banteng cluster",
+			bundleName: "banteng_cluster",
 			extraConfigs: map[string]string{
 				"config.d/1-secrets.yaml": `{
 					secrets: {
-						libraries/test/git: {
+						libraries_test_git: {
 							type: basic_auth,
 							password: $GITHUB_PASSWORD,
 							username: $GITHUB_USERNAME,
@@ -170,7 +170,7 @@ func TestMigration(t *testing.T) {
 				}`,
 				"config.d/2-storage.yaml": `{
 					bundles: {
-						Banteng cluster: {
+						banteng_cluster: {
 							object_storage: {
 								aws: {
 									url: {{ .URL }},
@@ -189,16 +189,16 @@ func TestMigration(t *testing.T) {
 			name:       "custom system with push datasource",
 			styraURL:   "https://expo.styra.com",
 			systemId:   "a8318943a5814712a69adcb2d9f76976",
-			systemName: "Custom app",
+			bundleName: "custom_app",
 			extraConfigs: map[string]string{
 				"config.d/1-secrets.yaml": `{
 					secrets: {
-						libraries/custom_snippets/git: {
+						libraries_custom_snippets_git: {
 							type: basic_auth,
 							password: $GITHUB_PASSWORD,
 							username: $GITHUB_USERNAME,
 						},
-						systems/a8318943a5814712a69adcb2d9f76976/git: {
+						systems_a8318943a5814712a69adcb2d9f76976_git: {
 							type: basic_auth,
 							password: $GITHUB_PASSWORD,
 							username: $GITHUB_USERNAME,
@@ -207,7 +207,7 @@ func TestMigration(t *testing.T) {
 				}`,
 				"config.d/2-storage.yaml": `{
 					bundles: {
-						Custom app: {
+						custom_app: {
 							object_storage: {
 								aws: {
 									url: {{ .URL }},
@@ -226,11 +226,11 @@ func TestMigration(t *testing.T) {
 			name:       "istio10",
 			styraURL:   "https://expo.styra.com",
 			systemId:   "a3dd4c8155ae43a794b6e5b7a53cdd60",
-			systemName: "Istio App",
+			bundleName: "istio_app",
 			extraConfigs: map[string]string{
 				"config.d/2-storage.yaml": `{
 					bundles: {
-						Istio App: {
+						istio_app: {
 							object_storage: {
 								aws: {
 									url: {{ .URL }},
@@ -248,11 +248,11 @@ func TestMigration(t *testing.T) {
 			name:       "kuma10",
 			styraURL:   "https://expo.styra.com",
 			systemId:   "d1c66f8ca33749b9b27b2d2ac1151bc1",
-			systemName: "Kuma",
+			bundleName: "kuma",
 			extraConfigs: map[string]string{
 				"config.d/2-storage.yaml": `{
 					bundles: {
-						Kuma: {
+						kuma: {
 							object_storage: {
 								aws: {
 									url: {{ .URL }},
@@ -273,11 +273,11 @@ func TestMigration(t *testing.T) {
 			name:       "kong-gateway10",
 			styraURL:   "https://expo.styra.com",
 			systemId:   "ef6321e7461a4035b8638f73951fa0c4",
-			systemName: "Kong Gateway - prod",
+			bundleName: "kong_gateway_-_prod",
 			extraConfigs: map[string]string{
 				"config.d/2-storage.yaml": `{
 					bundles: {
-						Kong Gateway - prod: {
+						kong_gateway_-_prod: {
 							object_storage: {
 								aws: {
 									url: {{ .URL }},
@@ -295,11 +295,11 @@ func TestMigration(t *testing.T) {
 			name:       "terraform20",
 			styraURL:   "https://expo.styra.com",
 			systemId:   "c600dddb333c48b7b67616564e7b8726",
-			systemName: "Terraform - GCP",
+			bundleName: "terraform_-_gcp",
 			extraConfigs: map[string]string{
 				"config.d/2-storage.yaml": `{
 					bundles: {
-						Terraform - GCP: {
+						terraform_-_gcp: {
 							object_storage: {
 								aws: {
 									url: {{ .URL }},
@@ -319,7 +319,7 @@ func TestMigration(t *testing.T) {
 			styraURL:          "https://test.styra.com",
 			styraTokenEnvName: "STYRA_TOKEN_2",
 			systemId:          "c765ce3ea0e14751b88e3530f9d3c8ac",
-			systemName:        "torin-pull-test-2",
+			bundleName:        "torin-pull-test-2",
 			extraConfigs: map[string]string{
 				"config.d/2-storage.yaml": `{
 					bundles: {
@@ -464,9 +464,9 @@ func TestMigration(t *testing.T) {
 					t.Fatal(err)
 				}
 
-				if r.Systems[tc.systemName].Status != "passed" {
+				if r.Systems[tc.bundleName].Status != "passed" {
 					t.Logf("Dumping output:\n%v", string(buf.Bytes()))
-					t.Fatalf("expected %q system to be successful", tc.systemName)
+					t.Fatalf("expected %q system to be successful", tc.bundleName)
 				}
 
 			})

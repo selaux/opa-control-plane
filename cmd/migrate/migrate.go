@@ -627,7 +627,7 @@ func Run(params Options) error {
 			for _, systemId := range stack.MatchingSystems {
 				if system, ok := state.SystemsById[systemId]; ok {
 					log.Warnf("Stack %v selector logic cannot be automatically translated. Review logic and configure bundle labels and stack selector manually.", stack.Id)
-					output.Bundles[system.Name].Labels[staticStackSelectorPrefix+id] = "FIXME"
+					output.Bundles[system.SanitizedName()].Labels[staticStackSelectorPrefix+id] = "FIXME"
 				}
 			}
 		}
@@ -929,7 +929,11 @@ func migrateV1System(nf *nameFactory, client *das.Client, state *dasState, v1 *d
 		}
 		bundle.Labels = x.Labels
 		bundle.Labels["system-type"] = v1.Type // TODO(tsandall): remove template. prefix?
+	} else {
+		bundle.Labels = make(map[string]string)
 	}
+
+	bundle.Labels["system-id"] = v1.Id
 
 	if len(v1.Datasources) > 0 {
 		log.Infof("Fetching datasources for system %v", v1.Id)
@@ -1017,38 +1021,14 @@ func migrateV1HTTPPullDatasource(nsPrefix string, v1 *das.V1Datasource) (config.
 func mapV1SystemToBundleSourceAndSecretConfig(nf *nameFactory, _ *das.Client, v1 *das.V1System) (*config.Bundle, *config.Source, *config.Secret, error) {
 	var bundle config.Bundle
 	var src config.Source
-	var secret *config.Secret
 
-	bundle.Name = v1.Name
-	src.Name = nf.AssignSafeName(v1.Name)
+	bundle.Name = v1.SanitizedName()
+	src.Name = nf.AssignSafeName(v1.SanitizedName())
 	bundle.Requirements = append(bundle.Requirements, config.Requirement{Source: strptr(src.Name)})
 
+	var secret *config.Secret
 	if v1.SourceControl != nil {
-		src.Git.Repo = v1.SourceControl.Origin.URL
-
-		if v1.SourceControl.Origin.Commit != "" {
-			src.Git.Commit = &v1.SourceControl.Origin.Commit
-		} else if v1.SourceControl.Origin.Reference != "" {
-			src.Git.Reference = &v1.SourceControl.Origin.Reference
-		}
-
-		if v1.SourceControl.Origin.Path != "" {
-			src.Git.Path = &v1.SourceControl.Origin.Path
-		}
-
-		if v1.SourceControl.Origin.Credentials != "" {
-			secret = &config.Secret{}
-			secret.Name = v1.SourceControl.Origin.Credentials
-			src.Git.Credentials = &config.SecretRef{Name: secret.Name}
-		} else if v1.SourceControl.Origin.SSHCredentials.PrivateKey != "" {
-			secret = &config.Secret{}
-			secret.Name = v1.SourceControl.Origin.SSHCredentials.PrivateKey
-			src.Git.Credentials = &config.SecretRef{Name: secret.Name}
-		}
-
-		if src.Git.Repo != "" {
-			src.Git.ExcludedFiles = []string{".*/*"}
-		}
+		secret = migrateV1GitConfig(&v1.SourceControl.Origin, &src)
 	}
 
 	return &bundle, &src, secret, nil
@@ -1144,7 +1124,7 @@ func migrateV1PushDatasource(c *das.Client, nsPrefix string, id string) (config.
 func migrateV1Stack(nf *nameFactory, c *das.Client, state *dasState, v1 *das.V1Stack, migrateDSContent bool) (*config.Stack, *config.Source, []*config.Secret, error) {
 
 	var stack config.Stack
-	stack.Name = v1.Name
+	stack.Name = v1.SanitizedName()
 
 	src, secrets, err := mapV1StackToSourceAndSecretConfig(nf, c, v1, migrateDSContent)
 	if err != nil {
@@ -1193,7 +1173,7 @@ func migrateV1Stack(nf *nameFactory, c *das.Client, state *dasState, v1 *das.V1S
 
 func mapV1StackToSourceAndSecretConfig(nf *nameFactory, client *das.Client, v1 *das.V1Stack, migrateDSContent bool) (*config.Source, []*config.Secret, error) {
 
-	src := &config.Source{Name: nf.AssignSafeName(v1.Name)}
+	src := &config.Source{Name: nf.AssignSafeName(v1.SanitizedName())}
 	var secrets []*config.Secret
 
 	if len(v1.Datasources) > 0 {
@@ -1258,11 +1238,11 @@ func migrateV1GitConfig(origin *das.V1GitRepoConfig, src *config.Source) *config
 
 	if origin.Credentials != "" {
 		secret = &config.Secret{}
-		secret.Name = origin.Credentials
+		secret.Name = das.Sanitize(origin.Credentials)
 		src.Git.Credentials = &config.SecretRef{Name: secret.Name}
 	} else if origin.SSHCredentials.PrivateKey != "" {
 		secret = &config.Secret{}
-		secret.Name = origin.SSHCredentials.PrivateKey
+		secret.Name = das.Sanitize(origin.SSHCredentials.PrivateKey)
 		src.Git.Credentials = &config.SecretRef{Name: secret.Name}
 	}
 
@@ -1478,7 +1458,7 @@ func migrateDependencies(_ *das.Client, state *dasState, index *libraryPackageIn
 			return err
 		}
 
-		src := output.Sources[state.SystemsById[id].Name]
+		src := output.Sources[state.SystemsById[id].SanitizedName()]
 		src.Requirements = append(src.Requirements, rs...)
 	}
 
@@ -1487,7 +1467,7 @@ func migrateDependencies(_ *das.Client, state *dasState, index *libraryPackageIn
 		if err != nil {
 			return err
 		}
-		src := output.Sources[state.StacksById[id].Name]
+		src := output.Sources[state.StacksById[id].SanitizedName()]
 		src.Requirements = append(src.Requirements, rs...)
 	}
 
