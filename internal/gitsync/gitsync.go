@@ -102,7 +102,10 @@ func (s *Synchronizer) execute(ctx context.Context) error {
 		RemoteName: remote,
 		Auth:       authMethod,
 		Force:      true,
-		RefSpecs:   []gitconfig.RefSpec{gitconfig.RefSpec(fmt.Sprintf("+refs/heads/*:refs/remotes/%s/refs/heads/*", remote))},
+		RefSpecs: []gitconfig.RefSpec{
+			gitconfig.RefSpec(fmt.Sprintf("+refs/heads/*:refs/remotes/%s/refs/heads/*", remote)),
+			gitconfig.RefSpec(fmt.Sprintf("+refs/tags/*:refs/remotes/%s/refs/tags/*", remote)),
+		},
 	})
 	if err != nil && err != git.NoErrAlreadyUpToDate {
 		return err
