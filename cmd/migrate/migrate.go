@@ -1007,15 +1007,11 @@ func migrateV1Datasources(client *das.Client, nsPrefix string, v1 []das.V1Dataso
 		}
 
 		if migrateDSContent {
-			if ds.Category == "rest" && ds.Type == "push" {
-				fs, err := migrateV1PushDatasource(client, nsPrefix, ds.Id)
-				if err != nil {
-					return nil, nil, nil, err
-				}
-				files = append(files, fs)
-			} else {
-				log.Warnf("%v/%v datasource content migration not supported yet", ds.Category, ds.Type)
+			fs, err := migrateV1DatasourceContent(client, nsPrefix, ds.Id)
+			if err != nil {
+				return nil, nil, nil, err
 			}
+			files = append(files, fs)
 		}
 	}
 
@@ -1128,7 +1124,7 @@ func migrateV1Policies(typeLib *config.Source, nsPrefix string, policies []*das.
 	return files, requirements
 }
 
-func migrateV1PushDatasource(c *das.Client, nsPrefix string, id string) (config.Files, error) {
+func migrateV1DatasourceContent(c *das.Client, nsPrefix string, id string) (config.Files, error) {
 	resp, err := c.JSON("v1/data/" + id)
 	if err != nil {
 		return nil, err
