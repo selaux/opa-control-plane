@@ -626,7 +626,7 @@ func Run(params Options) error {
 		if _, ok := sc.Selector.Get(staticStackSelectorPrefix + id); ok {
 			for _, systemId := range stack.MatchingSystems {
 				if system, ok := state.SystemsById[systemId]; ok {
-					log.Warnf("Stack %q selector logic cannot be automatically translated. Review logic and configure bundle labels and stack selector manually.", stack.Name)
+					log.Warnf("Stack %v selector logic cannot be automatically translated. Review logic and configure bundle labels and stack selector manually.", stack.Id)
 					output.Bundles[system.Name].Labels[staticStackSelectorPrefix+id] = "FIXME"
 				}
 			}
@@ -906,7 +906,7 @@ func migrateV1System(nf *nameFactory, client *das.Client, state *dasState, v1 *d
 
 	gitRoots, err := getSystemGitRoots(client, state.FeatureFlags.SBOM, v1)
 	if err != nil {
-		return nil, nil, nil, fmt.Errorf("failed to get git roots for system %q: %w", v1.Name, err)
+		return nil, nil, nil, fmt.Errorf("failed to get git roots for system %v: %w", v1.Id, err)
 	}
 
 	policies := state.SystemPolicies[v1.Id]
@@ -917,7 +917,7 @@ func migrateV1System(nf *nameFactory, client *das.Client, state *dasState, v1 *d
 
 	resp, err := client.JSON(fmt.Sprintf("v1/data/metadata/%v/labels", v1.Id))
 	if err != nil {
-		return nil, nil, nil, fmt.Errorf("failed to query labels for %q: %w", v1.Name, err)
+		return nil, nil, nil, fmt.Errorf("failed to query labels for system %v: %w", v1.Id, err)
 	}
 
 	if len(resp.Result) > 0 {
@@ -925,14 +925,14 @@ func migrateV1System(nf *nameFactory, client *das.Client, state *dasState, v1 *d
 			Labels config.Labels `json:"labels"`
 		}
 		if err := resp.Decode(&x); err != nil {
-			return nil, nil, nil, fmt.Errorf("failed to decode labels for %q: %w", v1.Name, err)
+			return nil, nil, nil, fmt.Errorf("failed to decode labels for system %v: %w", v1.Id, err)
 		}
 		bundle.Labels = x.Labels
 		bundle.Labels["system-type"] = v1.Type // TODO(tsandall): remove template. prefix?
 	}
 
 	if len(v1.Datasources) > 0 {
-		log.Infof("Fetching datasources for system %q", v1.Name)
+		log.Infof("Fetching datasources for system %v", v1.Id)
 
 		ds, files, dsSecrets, err := migrateV1Datasources(client, "systems/"+v1.Id+"/", v1.Datasources, migrateDSContent)
 		if err != nil {
@@ -1155,7 +1155,7 @@ func migrateV1Stack(nf *nameFactory, c *das.Client, state *dasState, v1 *das.V1S
 
 	gitRoots, err := getStackGitRoots(c, state.FeatureFlags.SBOM, v1)
 	if err != nil {
-		return nil, nil, nil, fmt.Errorf("failed to get git roots for stack %q: %w", v1.Name, err)
+		return nil, nil, nil, fmt.Errorf("failed to get git roots for stack %v: %w", v1.Id, err)
 	}
 
 	policies := state.StackPolicies[v1.Id]
@@ -1171,24 +1171,24 @@ func migrateV1Stack(nf *nameFactory, c *das.Client, state *dasState, v1 *das.V1S
 		if p.Package == pkg {
 			s, ok := p.Modules["selector.rego"]
 			if !ok {
-				return nil, nil, nil, fmt.Errorf("missing selector.rego file for %q", v1.Name)
+				return nil, nil, nil, fmt.Errorf("missing selector.rego file for stack %v", v1.Id)
 			}
 
 			module, err := ast.ParseModule("selector.rego", s)
 			if err != nil {
-				return nil, nil, nil, fmt.Errorf("failed to parse selector policy for %q: %w", v1.Name, err)
+				return nil, nil, nil, fmt.Errorf("failed to parse selector policy for stack %v: %w", v1.Id, err)
 			}
 
 			stack.Selector, err = migrateV1Selector(v1, module)
 			if err != nil {
-				return nil, nil, nil, fmt.Errorf("failed to migrate selector for %q: %w", v1.Name, err)
+				return nil, nil, nil, fmt.Errorf("failed to migrate selector for stack %v: %w", v1.Id, err)
 			}
 
 			return &stack, src, secrets, err
 		}
 	}
 
-	return nil, nil, nil, fmt.Errorf("misisng selector policy for %q", v1.Name)
+	return nil, nil, nil, fmt.Errorf("missing selector policy for stack %v", v1.Id)
 }
 
 func mapV1StackToSourceAndSecretConfig(nf *nameFactory, client *das.Client, v1 *das.V1Stack, migrateDSContent bool) (*config.Source, []*config.Secret, error) {
@@ -1197,7 +1197,7 @@ func mapV1StackToSourceAndSecretConfig(nf *nameFactory, client *das.Client, v1 *
 	var secrets []*config.Secret
 
 	if len(v1.Datasources) > 0 {
-		log.Infof("Fetching datasources for stack %q", v1.Id)
+		log.Infof("Fetching datasources for stack %v", v1.Id)
 
 		ds, files, dsSecrets, err := migrateV1Datasources(client, "", v1.Datasources, migrateDSContent)
 		if err != nil {
@@ -1281,11 +1281,11 @@ func migrateV1Selector(v1 *das.V1Stack, module *ast.Module) (config.Selector, er
 		return selector, err
 	} else if !ok {
 		if err := selector.Set(staticStackSelectorPrefix+v1.Id, []string{"*"}); err != nil {
-			return config.Selector{}, fmt.Errorf("failed to set static stack match label for %q: %w", v1.Name, err)
+			return config.Selector{}, fmt.Errorf("failed to set static stack match label for stack %q: %w", v1.Id, err)
 		}
 	}
 	if err := selector.Set("system-type", []string{v1.Type}); err != nil {
-		return selector, fmt.Errorf("failed to set system-type label for %q: %w", v1.Name, err)
+		return selector, fmt.Errorf("failed to set system-type label for stack %v: %w", v1.Id, err)
 	}
 	return selector, nil
 }
@@ -1413,7 +1413,7 @@ func getSystemGitRoots(c *das.Client, sbomEnabled bool, v1 *das.V1System) ([]str
 		return []string{""}, nil
 	}
 
-	log.Infof("Fetching git roots and labels for system %q", v1.Name)
+	log.Infof("Fetching git roots and labels for system %v", v1.Id)
 
 	resp, err := c.JSON("v1/systems/" + v1.Id + "/bundles")
 	if err != nil {
@@ -1445,7 +1445,7 @@ func getStackGitRoots(c *das.Client, sbomEnabled bool, v1 *das.V1Stack) ([]strin
 		return []string{""}, nil
 	}
 
-	log.Infof("Fetching git roots for stack %q", v1.Name)
+	log.Infof("Fetching git roots for stack %v", v1.Id)
 
 	resp, err := c.JSON("v1/systems/" + v1.MatchingSystems[0] + "/bundles")
 	if err != nil {
@@ -1862,7 +1862,7 @@ func fetchSystemPolicies(c *das.Client, state *dasState) error {
 		wg.Add(1)
 		go func() {
 			for s := range ch {
-				log.Infof("Fetching %d policies for system %q", len(s.Policies), s.Name)
+				log.Infof("Fetching %d policies for system %v", len(s.Policies), s.Id)
 				ps, err := fetchPolicies(c, s.Policies)
 				if err != nil {
 					panic(err)
@@ -1895,7 +1895,7 @@ func fetchStackPolicies(c *das.Client, state *dasState) error {
 		wg.Add(1)
 		go func() {
 			for s := range ch {
-				log.Infof("Fetching %d policies for stack %q", len(s.Policies), s.Name)
+				log.Infof("Fetching %d policies for stack %v", len(s.Policies), s.Id)
 				ps, err := fetchPolicies(c, s.Policies)
 				if err != nil {
 					panic(err)
