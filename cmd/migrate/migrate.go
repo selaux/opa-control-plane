@@ -485,9 +485,6 @@ func init() {
 			}
 			if !cmd.Flags().Changed("output-dir") {
 				params.OutputDir = "config.d"
-				if params.SystemId != "" {
-					params.OutputDir = filepath.Join(params.OutputDir, params.SystemId)
-				}
 			}
 		},
 		Run: func(cmd *cobra.Command, args []string) {
@@ -776,17 +773,38 @@ func splitConfig(outputDir string, output config.Root) (map[string][]byte, error
 
 	configs := make(map[string]config.Root)
 
-	if len(output.Bundles) > 0 {
-		configs["config-bundles.yaml"] = config.Root{Bundles: output.Bundles}
+	for name, b := range output.Bundles {
+		srcName := *b.Requirements[0].Source
+		src := output.Sources[srcName]
+		delete(output.Sources, srcName) // do not include bundle source twice
+		root := config.Root{
+			Bundles: map[string]*config.Bundle{name: b},
+			Sources: map[string]*config.Source{srcName: src},
+		}
+		configs["config-system-"+name+".yaml"] = root
 	}
-	if len(output.Stacks) > 0 {
-		configs["config-stacks.yaml"] = config.Root{Stacks: output.Stacks}
+
+	for name, s := range output.Stacks {
+		srcName := *s.Requirements[0].Source
+		src := output.Sources[srcName]
+		delete(output.Sources, srcName) // do not include stack source twice
+		root := config.Root{
+			Stacks:  map[string]*config.Stack{name: s},
+			Sources: map[string]*config.Source{srcName: src},
+		}
+		configs["config-stack-"+name+".yaml"] = root
 	}
-	if len(output.Sources) > 0 {
-		configs["config-sources.yaml"] = config.Root{Sources: output.Sources}
+
+	for name, s := range output.Sources {
+		configs["config-source-"+name+".yaml"] = config.Root{
+			Sources: map[string]*config.Source{name: s},
+		}
 	}
-	if len(output.Secrets) > 0 {
-		configs["config-secrets.yaml"] = config.Root{Secrets: output.Secrets}
+
+	for name, s := range output.Secrets {
+		configs["secret-"+name+".yaml"] = config.Root{
+			Secrets: map[string]*config.Secret{name: s},
+		}
 	}
 
 	testFiles := make(map[string]*config.Source)
