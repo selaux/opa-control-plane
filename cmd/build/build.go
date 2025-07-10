@@ -8,16 +8,12 @@ import (
 	"github.com/styrainc/lighthouse/cmd"
 	"github.com/styrainc/lighthouse/internal/config"
 	"github.com/styrainc/lighthouse/internal/logging"
-	"github.com/styrainc/lighthouse/internal/server"
 	"github.com/styrainc/lighthouse/internal/service"
 	"github.com/styrainc/lighthouse/internal/util"
 	"github.com/styrainc/lighthouse/libraries"
 )
 
-const defaultLocalAddr = "localhost:8282"
-
-type runParams struct {
-	addr              string
+type buildParams struct {
 	configFile        []string
 	persistenceDir    string
 	resetPersistence  bool
@@ -26,11 +22,11 @@ type runParams struct {
 }
 
 func init() {
-	var params runParams
+	var params buildParams
 
-	run := &cobra.Command{
-		Use:   "run",
-		Short: "Run the Lighthouse service",
+	build := &cobra.Command{
+		Use:   "build",
+		Short: "Build and distribute configured bundles",
 		Run: func(cmd *cobra.Command, args []string) {
 			ctx := context.Background()
 
@@ -54,28 +50,21 @@ func init() {
 				WithPersistenceDir(params.persistenceDir).
 				WithConfig(bs).
 				WithBuiltinFS(util.NewEscapeFS(libraries.FS)).
+				WithSingleShot(true).
 				WithLogger(log)
-
-			go func() {
-				if err := server.New().WithDatabase(svc.Database()).Init().ListenAndServe(params.addr); err != nil {
-					log.Fatalf("failed to start server: %v", err)
-				}
-			}()
 
 			if err := svc.Run(ctx); err != nil {
 				log.Fatal(err.Error())
 			}
 		},
 	}
-
-	run.Flags().StringVarP(&params.addr, "addr", "a", defaultLocalAddr, "set listening address of the server")
-	run.Flags().StringSliceVarP(&params.configFile, "config", "c", []string{"config.yaml"}, "Path to the configuration file")
-	run.Flags().StringVarP(&params.persistenceDir, "data-dir", "d", "data", "Path to the persistence directory")
-	run.Flags().BoolVarP(&params.resetPersistence, "reset-persistence", "", false, "Reset the persistence directory (for development purposes)")
-	run.Flags().BoolVarP(&params.mergeConflictFail, "merge-conflict-fail", "", false, "Fail on config merge conflicts")
-	logging.VarP(run, &params.logging)
+	build.Flags().StringSliceVarP(&params.configFile, "config", "c", []string{"config.yaml"}, "Path to the configuration file")
+	build.Flags().StringVarP(&params.persistenceDir, "data-dir", "d", "data", "Path to the persistence directory")
+	build.Flags().BoolVarP(&params.resetPersistence, "reset-persistence", "", false, "Reset the persistence directory (for development purposes)")
+	build.Flags().BoolVarP(&params.mergeConflictFail, "merge-conflict-fail", "", false, "Fail on config merge conflicts")
+	logging.VarP(build, &params.logging)
 
 	cmd.RootCommand.AddCommand(
-		run,
+		build,
 	)
 }

@@ -5,6 +5,7 @@ import (
 
 	"github.com/styrainc/lighthouse/cmd"
 	_ "github.com/styrainc/lighthouse/cmd/backtest"
+	_ "github.com/styrainc/lighthouse/cmd/build"
 	_ "github.com/styrainc/lighthouse/cmd/compare"
 	_ "github.com/styrainc/lighthouse/cmd/migrate"
 	_ "github.com/styrainc/lighthouse/cmd/run"
