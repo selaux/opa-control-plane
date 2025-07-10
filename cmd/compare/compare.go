@@ -20,6 +20,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/styrainc/lighthouse/cmd"
 	"github.com/styrainc/lighthouse/cmd/internal/das"
+	"github.com/styrainc/lighthouse/cmd/internal/flags"
 	"github.com/styrainc/lighthouse/internal/config"
 	"github.com/styrainc/lighthouse/internal/logging"
 	"github.com/styrainc/lighthouse/internal/s3"
@@ -101,7 +102,7 @@ func init() {
 		},
 	}
 
-	compare.Flags().StringSliceVarP(&params.configFile, "config", "c", []string{"config.yaml"}, "Path to the configuration file")
+	flags.AddConfig(compare.Flags(), &params.configFile)
 	compare.Flags().StringVarP(&params.styraURL, "url", "u", "", "Styra tenant URL (e.g., https://expo.styra.com)")
 	compare.Flags().StringSliceVarP(&params.headers, "header", "", nil, "Set additional HTTP headers for requests to Styra API")
 	compare.Flags().BoolVarP(&params.mergeConflictFail, "merge-conflict-fail", "", false, "Fail on config merge conflicts")

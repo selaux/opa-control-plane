@@ -23,6 +23,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/styrainc/lighthouse/cmd"
 	"github.com/styrainc/lighthouse/cmd/internal/das"
+	"github.com/styrainc/lighthouse/cmd/internal/flags"
 	"github.com/styrainc/lighthouse/internal/config"
 	"github.com/styrainc/lighthouse/internal/logging"
 	"github.com/styrainc/lighthouse/internal/s3"
@@ -59,7 +60,7 @@ func init() {
 		},
 	}
 
-	backtest.Flags().StringSliceVarP(&opts.ConfigFile, "config", "c", []string{"config.yaml"}, "Path to the configuration file")
+	flags.AddConfig(backtest.Flags(), &opts.ConfigFile)
 	backtest.Flags().StringVarP(&opts.URL, "url", "u", "", "Styra tenant URL (e.g., https://expo.styra.com)")
 	backtest.Flags().StringSliceVarP(&opts.Headers, "header", "", nil, "Set additional HTTP headers for requests to Styra API")
 	backtest.Flags().IntVarP(&opts.NumDecisions, "decisions", "n", 100, "Number of decisions to backtest")
