@@ -108,6 +108,8 @@ func init() {
 	compare.Flags().BoolVarP(&params.mergeConflictFail, "merge-conflict-fail", "", false, "Fail on config merge conflicts")
 	logging.VarP(compare, &params.logging)
 
+	compare.Hidden = true
+
 	cmd.RootCommand.AddCommand(
 		compare,
 	)
