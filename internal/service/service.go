@@ -129,6 +129,11 @@ func (s *Service) launchWorkers(ctx context.Context) {
 		return
 	}
 
+	sourceDefsByName := make(map[string]*config.Source)
+	for _, src := range sourceDefs {
+		sourceDefsByName[src.Name] = src
+	}
+
 	stacks, _, err := s.database.ListStacks(ctx, internalPrincipal, database.ListOptions{})
 	if err != nil {
 		s.log.Errorf("error listing stacks: %s", err.Error())
@@ -174,23 +179,19 @@ func (s *Service) launchWorkers(ctx context.Context) {
 		}
 
 		s.log.Debugf("(re)starting worker for bundle: %s", b.Name)
-
-		syncs := []Synchronizer{}
-		sources := []*builder.Source{}
-
-		bundleDir := path.Join(s.persistenceDir, md5sum(b.Name))
-
-		src := newSource(b.Name).AddRequirements(b.Requirements)
+		root := newSource(b.Name).AddRequirements(b.Requirements)
 
 		for _, stack := range stacks {
 			if stack.Selector.Matches(b.Labels) {
-				src = src.AddRequirements(stack.Requirements)
+				root = root.AddRequirements(stack.Requirements)
 			}
 		}
 
-		sources = append(sources, &src.Source)
+		syncs := []Synchronizer{}
+		sources := []*builder.Source{&root.Source}
+		bundleDir := path.Join(s.persistenceDir, md5sum(b.Name))
 
-		for _, l := range sourceDefs {
+		for _, l := range getDeps(root.Requirements, sourceDefsByName) {
 			srcDir := path.Join(bundleDir, "sources", l.Name)
 
 			src := newSource(l.Name).
@@ -227,6 +228,27 @@ func (s *Service) allWorkersDone() bool {
 		}
 	}
 	return true
+}
+
+func getDeps(rs config.Requirements, byName map[string]*config.Source) []*config.Source {
+	var result []*config.Source
+	visited := make(map[string]struct{})
+	for len(rs) > 0 {
+		next, tail := rs[0], rs[1:]
+		rs = tail
+		if next.Source == nil {
+			continue
+		} else if _, ok := visited[*next.Source]; ok {
+			continue
+		} else if src, ok := byName[*next.Source]; !ok {
+			continue
+		} else {
+			visited[*next.Source] = struct{}{}
+			result = append(result, src)
+			rs = append(rs, src.Requirements...)
+		}
+	}
+	return result
 }
 
 type source struct {
