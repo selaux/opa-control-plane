@@ -277,7 +277,7 @@ func walkFilesRecursive(excludes []glob.Glob, dir Dir, suffixes []string, fn fun
 			return nil
 		}
 		if !slices.ContainsFunc(suffixes, func(s string) bool {
-			return strings.ToLower(s) == strings.ToLower(filepath.Ext(path))
+			return strings.EqualFold(s, filepath.Ext(path))
 		}) {
 			return nil
 		}
