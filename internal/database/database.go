@@ -89,12 +89,20 @@ func (d *Database) InitDB(ctx context.Context, persistenceDir string) error {
 		// Default to SQLite3 if no config is provided.
 		fallthrough
 	case d.config != nil && d.config.SQL != nil && (d.config.SQL.Driver == "sqlite3" || d.config.SQL.Driver == "sqlite"):
-		err := os.MkdirAll(persistenceDir, 0755)
-		if err != nil {
-			return err
+		var dsn string
+		if d.config != nil && d.config.SQL != nil && d.config.SQL.DSN != "" {
+			dsn = d.config.SQL.DSN
+		} else {
+			err := os.MkdirAll(persistenceDir, 0755)
+			if err != nil {
+				return err
+			}
+
+			dsn = filepath.Join(persistenceDir, "sqlite.db")
 		}
 
-		d.db, err = sql.Open("sqlite", filepath.Join(persistenceDir, "sqlite.db"))
+		var err error
+		d.db, err = sql.Open("sqlite", dsn)
 		if err != nil {
 			return err
 		}
