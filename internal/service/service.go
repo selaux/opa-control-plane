@@ -18,6 +18,7 @@ import (
 	"github.com/styrainc/lighthouse/internal/httpsync"
 	"github.com/styrainc/lighthouse/internal/logging"
 	"github.com/styrainc/lighthouse/internal/pool"
+	"github.com/styrainc/lighthouse/internal/progress"
 	"github.com/styrainc/lighthouse/internal/s3"
 	"github.com/styrainc/lighthouse/internal/sqlsync"
 )
@@ -34,12 +35,14 @@ type Service struct {
 	builtinFS      fs.FS
 	singleShot     bool
 	log            *logging.Logger
+	silent         bool
 }
 
 func New() *Service {
 	return &Service{
 		pool:    pool.New(10),
 		workers: make(map[string]*BundleWorker),
+		silent:  true,
 	}
 }
 
@@ -72,6 +75,11 @@ func (s *Service) WithLogger(logger *logging.Logger) *Service {
 	return s
 }
 
+func (s *Service) WithSilent(yes bool) *Service {
+	s.silent = yes
+	return s
+}
+
 func (s *Service) Run(ctx context.Context) error {
 	if err := s.database.InitDB(ctx, s.persistenceDir); err != nil {
 		return err
@@ -83,9 +91,13 @@ func (s *Service) Run(ctx context.Context) error {
 
 	defer s.database.CloseDB()
 
-	if err := s.database.LoadConfig(ctx, internalPrincipal, s.config); err != nil {
+	bar := progress.New(s.silent, -1, "loading configuration")
+
+	if err := s.database.LoadConfig(ctx, bar, internalPrincipal, s.config); err != nil {
 		return fmt.Errorf("load config failed: %w", err)
 	}
+
+	bar.Finish()
 
 	// Launch new workers for new bundles and bundles with updated configuration until it is time to shutdown.
 
@@ -172,6 +184,8 @@ func (s *Service) launchWorkers(ctx context.Context) {
 	//             ├── datasources/       # Source-specific HTTP datasources
 	//             └── repo/              # Source git repository
 
+	bar := progress.New(s.silent, len(bundles), "building and pushing bundles")
+
 	for _, b := range bundles {
 		if w, ok := s.workers[b.Name]; ok {
 			w.UpdateConfig(b, sourceDefs, stacks)
@@ -210,7 +224,7 @@ func (s *Service) launchWorkers(ctx context.Context) {
 			continue
 		}
 
-		w := NewBundleWorker(b, sourceDefs, stacks, s.log).
+		w := NewBundleWorker(b, sourceDefs, stacks, s.log, bar).
 			WithSources(sources).
 			WithSynchronizers(syncs).
 			WithStorage(storage).

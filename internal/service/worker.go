@@ -8,6 +8,7 @@ import (
 	"github.com/styrainc/lighthouse/internal/builder"
 	"github.com/styrainc/lighthouse/internal/config"
 	"github.com/styrainc/lighthouse/internal/logging"
+	"github.com/styrainc/lighthouse/internal/progress"
 	"github.com/styrainc/lighthouse/internal/s3"
 )
 
@@ -32,6 +33,7 @@ type BundleWorker struct {
 	done          chan struct{}
 	singleShot    bool
 	log           *logging.Logger
+	bar           *progress.Bar
 }
 
 type Synchronizer interface {
@@ -39,12 +41,13 @@ type Synchronizer interface {
 	Close(ctx context.Context)
 }
 
-func NewBundleWorker(b *config.Bundle, sources []*config.Source, stacks []*config.Stack, logger *logging.Logger) *BundleWorker {
+func NewBundleWorker(b *config.Bundle, sources []*config.Source, stacks []*config.Stack, logger *logging.Logger, bar *progress.Bar) *BundleWorker {
 	return &BundleWorker{
 		bundleConfig:  b,
 		sourceConfigs: sources,
 		stackConfigs:  stacks,
 		log:           logger,
+		bar:           bar,
 		changed:       make(chan struct{}), done: make(chan struct{}),
 	}
 }
@@ -87,6 +90,9 @@ func (worker *BundleWorker) UpdateConfig(b *config.Bundle, sources []*config.Sou
 // Execute runs a bundle synchronization iteration: git sync, bundle construct
 // and then push bundles to object storage.
 func (w *BundleWorker) Execute(ctx context.Context) time.Time {
+
+	defer w.bar.Add(1)
+
 	// If a configuration change was requested, request the worker to be removed from the pool and signal this worker being done.
 
 	if w.configurationChanged() {

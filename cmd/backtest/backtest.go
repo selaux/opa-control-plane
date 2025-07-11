@@ -26,6 +26,7 @@ import (
 	"github.com/styrainc/lighthouse/cmd/internal/flags"
 	"github.com/styrainc/lighthouse/internal/config"
 	"github.com/styrainc/lighthouse/internal/logging"
+	"github.com/styrainc/lighthouse/internal/progress"
 	"github.com/styrainc/lighthouse/internal/s3"
 )
 
@@ -42,6 +43,7 @@ type Options struct {
 	MergeConflictFail    bool
 	Logging              logging.Config
 	Output               io.Writer
+	Silent               bool
 }
 
 func init() {
@@ -68,6 +70,7 @@ func init() {
 	backtest.Flags().IntVarP(&opts.MaxEvalTimeInflation, "max-eval-time-inflation", "", 100, "Maximum allowed increase in decision evaluation time (in percents, <0 to disable)")
 	backtest.Flags().BoolVarP(&opts.MergeConflictFail, "merge-conflict-fail", "", false, "Fail on config merge conflicts")
 	logging.VarP(backtest, &opts.Logging)
+	progress.Var(backtest.Flags(), &opts.Silent)
 
 	cmd.RootCommand.AddCommand(
 		backtest,
@@ -94,7 +97,10 @@ type DecisionDiff struct {
 
 func Run(opts Options) error {
 	ctx := context.Background()
-	log = logging.NewLogger(opts.Logging)
+
+	if opts.Silent {
+		log = logging.NewLogger(opts.Logging)
+	}
 
 	bs, err := config.Merge(opts.ConfigFile, opts.MergeConflictFail)
 	if err != nil {
@@ -126,6 +132,8 @@ func Run(opts Options) error {
 		Systems: map[string]SystemReport{},
 	}
 
+	bar := progress.New(opts.Silent, len(cfg.Bundles), fmt.Sprintf("running backtest against %v", opts.ConfigFile))
+
 	for _, b := range cfg.Bundles {
 		log.Infof("Backtesting bundle %q", b.Name)
 		if err := backtestBundle(ctx, opts, &styra, b, &report); err != nil {
@@ -134,7 +142,11 @@ func Run(opts Options) error {
 				Message: err.Error(),
 			}
 		}
+
+		bar.Add(1)
 	}
+
+	bar.Finish()
 
 	bs, err = json.MarshalIndent(report, "", "  ")
 	if err != nil {
@@ -259,11 +271,14 @@ func backtestBundle(ctx context.Context, opts Options, styra *das.Client, b *con
         }`, ts.URL)
 
 	ready := make(chan struct{})
-	opa, err := sdk.New(ctx, sdk.Options{
+	sdkopts := sdk.Options{
 		Config: strings.NewReader(config),
 		Ready:  ready,
-		Logger: &logger{*log},
-	})
+	}
+	if log != nil {
+		sdkopts.Logger = &logger{*log}
+	}
+	opa, err := sdk.New(ctx, sdkopts)
 	if err != nil {
 		return err
 	}

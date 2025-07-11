@@ -393,6 +393,7 @@ func TestMigration(t *testing.T) {
 					Datasources: tc.datasources,
 					EmbedFiles:  true,
 					Output:      f,
+					Silent:      true,
 				})
 				if err != nil {
 					t.Fatal(err)
@@ -452,6 +453,7 @@ func TestMigration(t *testing.T) {
 					PolicyType:           tc.policyType,
 					MaxEvalTimeInflation: maxEvalTimeInflation,
 					Output:               buf,
+					Silent:               true,
 				}); err != nil {
 					t.Fatal(err)
 				}

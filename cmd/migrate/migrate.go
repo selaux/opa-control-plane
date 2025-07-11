@@ -20,10 +20,12 @@ import (
 	"github.com/styrainc/lighthouse/cmd/internal/das"
 	"github.com/styrainc/lighthouse/internal/config"
 	"github.com/styrainc/lighthouse/internal/logging"
+	"github.com/styrainc/lighthouse/internal/progress"
 	"github.com/styrainc/lighthouse/libraries"
 	"gopkg.in/yaml.v3"
 )
 
+var bar *progress.Bar
 var log *logging.Logger
 
 type nameFactory struct {
@@ -452,6 +454,7 @@ var baseLibPackageIndex = func() map[string]*libraryPackageIndex {
 }()
 
 type Options struct {
+	Silent            bool
 	Token             string
 	URL               string
 	Headers           []string
@@ -474,6 +477,7 @@ func init() {
 	var params Options
 
 	var stdout bool
+	params.Silent = true
 	params.Token = os.Getenv("STYRA_TOKEN")
 
 	migrate := &cobra.Command{
@@ -510,6 +514,7 @@ func init() {
 	migrate.Flags().StringVarP(&params.FilesystemRootDir, "filesystem-root-dir", "", "bundles", "Set root directory for filesystem object storage")
 	migrate.Flags().StringVarP(&params.S3BucketName, "s3-bucket-name", "", "BUCKET_NAME", "Set placeholder AWS S3 bucket name for object storage")
 	migrate.Flags().StringVarP(&params.S3BucketRegion, "s3-bucket-region", "", "BUCKET_REGION", "Set placeholder AWS S3 bucket region for object storage")
+	progress.Var(migrate.Flags(), &params.Silent)
 	logging.VarP(migrate, &params.Logging)
 
 	cmd.RootCommand.AddCommand(
@@ -525,7 +530,11 @@ func Run(params Options) error {
 		nf.AssignSafeName(lib.Name)
 	}
 
-	log = logging.NewLogger(params.Logging)
+	bar = progress.New(params.Silent, -1, fmt.Sprintf("fetching state from %v", params.URL))
+
+	if params.Silent {
+		log = logging.NewLogger(params.Logging)
+	}
 
 	if params.URL == "" {
 		return errors.New("please set Styra DAS URL with -u flag (e.g., https://example.styra.com)")
@@ -559,6 +568,9 @@ func Run(params Options) error {
 
 	index := newLibraryPackageIndex()
 
+	bar.Finish()
+	bar = progress.New(params.Silent, len(state.LibrariesById), "migrating libraries")
+
 	for id, library := range state.LibrariesById {
 		sc, secrets, err := migrateV1Library(nf, &c, state, library, params.Datasources)
 		if err != nil {
@@ -573,6 +585,8 @@ func Run(params Options) error {
 		for _, p := range state.LibraryPolicies[id] {
 			index.Add(p.Package, sc.Name)
 		}
+
+		bar.Add(1)
 	}
 
 	// Dependency migration complements the requirements of the libraries.
@@ -593,6 +607,9 @@ func Run(params Options) error {
 		output.Sources[bi.Name] = &cpy
 	}
 
+	bar.Finish()
+	bar = progress.New(params.Silent, len(state.SystemsById), "migrating systems")
+
 	for _, system := range state.SystemsById {
 		b, src, secrets, err := migrateV1System(nf, &c, state, system, params.Datasources)
 		if err != nil {
@@ -605,7 +622,12 @@ func Run(params Options) error {
 		for _, s := range secrets {
 			output.Secrets[s.Name] = s
 		}
+
+		bar.Add(1)
 	}
+
+	bar.Finish()
+	bar = progress.New(params.Silent, len(state.StacksById), "migrating stacks")
 
 	for id, stack := range state.StacksById {
 		sc, src, secrets, err := migrateV1Stack(nf, &c, state, stack, params.Datasources)
@@ -628,7 +650,11 @@ func Run(params Options) error {
 				}
 			}
 		}
+
+		bar.Add(1)
 	}
+
+	bar.Finish()
 
 	if err := migrateDependencies(&c, state, index, &output); err != nil {
 		return err
@@ -1711,6 +1737,7 @@ func fetchDASState(c *das.Client, opts dasFetchOptions) (*dasState, error) {
 		systems = append(systems, &x)
 	}
 
+	bar.AddMax(len(systems))
 	var libraries []*das.V1Library
 
 	if state.FeatureFlags.LibraryEditingEnabled {
@@ -1757,6 +1784,7 @@ func fetchDASState(c *das.Client, opts dasFetchOptions) (*dasState, error) {
 		}
 	}
 
+	bar.AddMax(len(libraries))
 	log.Info("Fetching v1/stacks")
 	resp, err = c.JSON("v1/stacks")
 	if err != nil {
@@ -1769,6 +1797,7 @@ func fetchDASState(c *das.Client, opts dasFetchOptions) (*dasState, error) {
 		return nil, err
 	}
 
+	bar.AddMax(len(stacks))
 	state.SystemsById = map[string]*das.V1System{}
 	for _, s := range systems {
 		state.SystemsById[s.Id] = s
@@ -1864,6 +1893,7 @@ func fetchSystemPolicies(c *das.Client, state *dasState) error {
 				mu.Lock()
 				state.SystemPolicies[s.Id] = ps
 				mu.Unlock()
+				bar.Add(1)
 			}
 			wg.Done()
 		}()
@@ -1897,6 +1927,7 @@ func fetchStackPolicies(c *das.Client, state *dasState) error {
 				mu.Lock()
 				state.StackPolicies[s.Id] = ps
 				mu.Unlock()
+				bar.Add(1)
 			}
 			wg.Done()
 		}()
@@ -1953,6 +1984,7 @@ func fetchLibraryPolicies(c *das.Client, state *dasState) error {
 				mu.Lock()
 				state.LibraryPolicies[l.Id] = ps
 				mu.Unlock()
+				bar.Add(1)
 			}
 			wg.Done()
 		}()
@@ -1963,9 +1995,11 @@ func fetchLibraryPolicies(c *das.Client, state *dasState) error {
 }
 
 func fetchPolicies(c *das.Client, refs []das.V1PoliciesRef) ([]*das.V1Policy, error) {
+	bar.AddMax(len(refs))
 	var result []*das.V1Policy
 	for _, ref := range refs {
 		resp, err := c.JSON("v1/policies/" + ref.Id)
+		bar.Add(1)
 		if err != nil {
 			if dErr, ok := err.(das.Error); ok && dErr.StatusCode == http.StatusNotFound {
 				log.Infof("Non-existent policy reference: %v", ref.Id)

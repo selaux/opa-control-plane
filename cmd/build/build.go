@@ -9,12 +9,14 @@ import (
 	"github.com/styrainc/lighthouse/cmd/internal/flags"
 	"github.com/styrainc/lighthouse/internal/config"
 	"github.com/styrainc/lighthouse/internal/logging"
+	"github.com/styrainc/lighthouse/internal/progress"
 	"github.com/styrainc/lighthouse/internal/service"
 	"github.com/styrainc/lighthouse/internal/util"
 	"github.com/styrainc/lighthouse/libraries"
 )
 
 type buildParams struct {
+	silent            bool
 	configFile        []string
 	persistenceDir    string
 	resetPersistence  bool
@@ -31,7 +33,10 @@ func init() {
 		Run: func(cmd *cobra.Command, args []string) {
 			ctx := context.Background()
 
-			log := logging.NewLogger(params.logging)
+			var log *logging.Logger
+			if params.silent {
+				log = logging.NewLogger(params.logging)
+			}
 
 			if params.resetPersistence {
 				if err := os.RemoveAll(params.persistenceDir); err != nil {
@@ -52,7 +57,8 @@ func init() {
 				WithConfig(bs).
 				WithBuiltinFS(util.NewEscapeFS(libraries.FS)).
 				WithSingleShot(true).
-				WithLogger(log)
+				WithLogger(log).
+				WithSilent(params.silent)
 
 			if err := svc.Run(ctx); err != nil {
 				log.Fatal(err.Error())
@@ -64,6 +70,7 @@ func init() {
 	build.Flags().StringVarP(&params.persistenceDir, "data-dir", "d", "data", "Path to the persistence directory")
 	build.Flags().BoolVarP(&params.resetPersistence, "reset-persistence", "", false, "Reset the persistence directory (for development purposes)")
 	build.Flags().BoolVarP(&params.mergeConflictFail, "merge-conflict-fail", "", false, "Fail on config merge conflicts")
+	progress.Var(build.Flags(), &params.silent)
 	logging.VarP(build, &params.logging)
 
 	cmd.RootCommand.AddCommand(

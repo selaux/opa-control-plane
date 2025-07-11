@@ -22,6 +22,7 @@ import (
 	"github.com/styrainc/lighthouse/internal/authz"
 	"github.com/styrainc/lighthouse/internal/aws"
 	"github.com/styrainc/lighthouse/internal/config"
+	"github.com/styrainc/lighthouse/internal/progress"
 )
 
 // Database implements the database operations. It will hide any differences between the varying SQL databases from the rest of the codebase.
@@ -350,17 +351,20 @@ func (d *Database) SourcesDataDelete(ctx context.Context, sourceName, path strin
 }
 
 // LoadConfig loads the configuration from the configuration file into the database.
-func (d *Database) LoadConfig(ctx context.Context, principal string, bs []byte) error {
+func (d *Database) LoadConfig(ctx context.Context, bar *progress.Bar, principal string, bs []byte) error {
 
 	root, err := config.Parse(bytes.NewBuffer(bs))
 	if err != nil {
 		return err
 	}
 
+	bar.AddMax(len(root.Sources) + len(root.Stacks) + len(root.Secrets) + len(root.Tokens))
+
 	for _, secret := range root.SortedSecrets() {
 		if err := d.UpsertSecret(ctx, principal, secret); err != nil {
 			return fmt.Errorf("upsert secret %q failed: %w", secret.Name, err)
 		}
+		bar.Add(1)
 	}
 
 	sources, err := root.TopologicalSortedSources()
@@ -372,23 +376,27 @@ func (d *Database) LoadConfig(ctx context.Context, principal string, bs []byte) 
 		if err := d.UpsertSource(ctx, principal, src); err != nil {
 			return fmt.Errorf("upsert source %q failed: %w", src.Name, err)
 		}
+		bar.Add(1)
 	}
 
 	for _, b := range root.SortedBundles() {
 		if err := d.UpsertBundle(ctx, principal, b); err != nil {
 			return fmt.Errorf("upsert bundle %q failed: %w", b.Name, err)
 		}
+		bar.Add(1)
 	}
 
 	for _, stack := range root.SortedStacks() {
 		if err := d.UpsertStack(ctx, principal, stack); err != nil {
 			return fmt.Errorf("upsert stack %q failed: %w", stack.Name, err)
 		}
+		bar.Add(1)
 	}
 	for _, token := range root.Tokens {
 		if err := d.UpsertToken(ctx, principal, token); err != nil {
 			return fmt.Errorf("upsert token %q failed: %w", token.Name, err)
 		}
+		bar.Add(1)
 	}
 
 	return nil
