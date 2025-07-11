@@ -9,7 +9,6 @@ import (
 	"path"
 	"time"
 
-	_ "github.com/mattn/go-sqlite3"
 	"github.com/styrainc/lighthouse/internal/builder"
 	"github.com/styrainc/lighthouse/internal/builtinsync"
 	"github.com/styrainc/lighthouse/internal/config"
@@ -21,6 +20,7 @@ import (
 	"github.com/styrainc/lighthouse/internal/progress"
 	"github.com/styrainc/lighthouse/internal/s3"
 	"github.com/styrainc/lighthouse/internal/sqlsync"
+	_ "modernc.org/sqlite"
 )
 
 const internalPrincipal = "internal"

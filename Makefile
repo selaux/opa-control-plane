@@ -1,4 +1,4 @@
-CGO_ENABLED ?= 1
+CGO_ENABLED ?= 0
 GOFLAGS ?= "-buildmode=exe"
 GO := CGO_ENABLED=$(CGO_ENABLED) GOFLAGS="$(GOFLAGS)" go
 DOCKER := docker

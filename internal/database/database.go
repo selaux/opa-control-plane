@@ -17,12 +17,12 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/feature/rds/auth"
 	_ "github.com/go-sql-driver/mysql"
-	_ "github.com/jackc/pgx/v5/stdlib" // database/sql compatible driver for pgx
-	_ "github.com/mattn/go-sqlite3"
+	_ "github.com/jackc/pgx/v5/stdlib" // database/sql compatible driver for pgxg
 	"github.com/styrainc/lighthouse/internal/authz"
 	"github.com/styrainc/lighthouse/internal/aws"
 	"github.com/styrainc/lighthouse/internal/config"
 	"github.com/styrainc/lighthouse/internal/progress"
+	_ "modernc.org/sqlite"
 )
 
 // Database implements the database operations. It will hide any differences between the varying SQL databases from the rest of the codebase.
@@ -88,13 +88,13 @@ func (d *Database) InitDB(ctx context.Context, persistenceDir string) error {
 	case d.config == nil:
 		// Default to SQLite3 if no config is provided.
 		fallthrough
-	case d.config != nil && d.config.SQL != nil && d.config.SQL.Driver == "sqlite3":
+	case d.config != nil && d.config.SQL != nil && (d.config.SQL.Driver == "sqlite3" || d.config.SQL.Driver == "sqlite"):
 		err := os.MkdirAll(persistenceDir, 0755)
 		if err != nil {
 			return err
 		}
 
-		d.db, err = sql.Open("sqlite3", filepath.Join(persistenceDir, "sqlite.db"))
+		d.db, err = sql.Open("sqlite", filepath.Join(persistenceDir, "sqlite.db"))
 		if err != nil {
 			return err
 		}
