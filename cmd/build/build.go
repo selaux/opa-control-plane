@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"fmt"
 	"os"
 
 	"github.com/spf13/cobra"
@@ -61,7 +62,8 @@ func init() {
 				WithSilent(params.silent)
 
 			if err := svc.Run(ctx); err != nil {
-				log.Fatal(err.Error())
+				fmt.Fprintln(os.Stderr, "unexpected error:", err)
+				os.Exit(1)
 			}
 		},
 	}

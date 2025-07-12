@@ -57,7 +57,8 @@ func init() {
 		Run: func(cmd *cobra.Command, args []string) {
 			opts.Output = os.Stdout
 			if err := Run(opts); err != nil {
-				log.Fatal(err.Error())
+				fmt.Fprintln(os.Stderr, "unexpected error:", err)
+				os.Exit(1)
 			}
 		},
 	}

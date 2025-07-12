@@ -25,7 +25,6 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-var bar *progress.Bar
 var log *logging.Logger
 
 type nameFactory struct {
@@ -477,7 +476,6 @@ func init() {
 	var params Options
 
 	var stdout bool
-	params.Silent = true
 	params.Token = os.Getenv("STYRA_TOKEN")
 
 	migrate := &cobra.Command{
@@ -496,7 +494,8 @@ func init() {
 				params.Output = os.Stdout
 			}
 			if err := Run(params); err != nil {
-				log.Fatal(err.Error())
+				fmt.Fprintln(os.Stderr, "unexpected error:", err)
+				os.Exit(1)
 			}
 		},
 	}
@@ -530,8 +529,6 @@ func Run(params Options) error {
 		nf.AssignSafeName(lib.Name)
 	}
 
-	bar = progress.New(params.Silent, -1, fmt.Sprintf("fetching state from %v", params.URL))
-
 	if params.Silent {
 		log = logging.NewLogger(params.Logging)
 	}
@@ -561,100 +558,23 @@ func Run(params Options) error {
 	output.Metadata.ExportedFrom = params.URL
 	output.Metadata.ExportedAt = time.Now().UTC().Format(time.RFC3339)
 
-	state, err := fetchDASState(&c, dasFetchOptions{SystemId: params.SystemId})
+	state, err := fetchDASState(params.Silent, &c, dasFetchOptions{SystemId: params.SystemId})
 	if err != nil {
 		return err
 	}
 
-	index := newLibraryPackageIndex()
-
-	bar.Finish()
-	bar = progress.New(params.Silent, len(state.LibrariesById), "migrating libraries")
-
-	for id, library := range state.LibrariesById {
-		sc, secrets, err := migrateV1Library(nf, &c, state, library, params.Datasources)
-		if err != nil {
-			return err
-		}
-
-		output.Sources[sc.Name] = sc
-		for _, s := range secrets {
-			output.Secrets[s.Name] = s
-		}
-
-		for _, p := range state.LibraryPolicies[id] {
-			index.Add(p.Package, sc.Name)
-		}
-
-		bar.Add(1)
+	index, err := migrateLibraries(params, state, &c, nf, &output)
+	if err != nil {
+		return err
 	}
 
-	// Dependency migration complements the requirements of the libraries.
-	// Copy to avoid tainting of library sources.
-
-	for _, bi := range systemTypeLibraries {
-		cpy := *bi
-		output.Sources[bi.Name] = &cpy
+	if err := migrateSystems(params, state, &c, nf, &output); err != nil {
+		return err
 	}
 
-	for _, bi := range stackTypeLibraries {
-		cpy := *bi
-		output.Sources[bi.Name] = &cpy
+	if err := migrateStacks(params, state, &c, nf, &output); err != nil {
+		return err
 	}
-
-	for _, bi := range baseLibraries {
-		cpy := *bi
-		output.Sources[bi.Name] = &cpy
-	}
-
-	bar.Finish()
-	bar = progress.New(params.Silent, len(state.SystemsById), "migrating systems")
-
-	for _, system := range state.SystemsById {
-		b, src, secrets, err := migrateV1System(nf, &c, state, system, params.Datasources)
-		if err != nil {
-			return err
-		}
-
-		output.Sources[src.Name] = src
-		output.Bundles[b.Name] = b
-
-		for _, s := range secrets {
-			output.Secrets[s.Name] = s
-		}
-
-		bar.Add(1)
-	}
-
-	bar.Finish()
-	bar = progress.New(params.Silent, len(state.StacksById), "migrating stacks")
-
-	for id, stack := range state.StacksById {
-		sc, src, secrets, err := migrateV1Stack(nf, &c, state, stack, params.Datasources)
-		if err != nil {
-			return err
-		}
-
-		output.Stacks[sc.Name] = sc
-		output.Sources[src.Name] = src
-
-		for _, s := range secrets {
-			output.Secrets[s.Name] = s
-		}
-
-		if _, ok := sc.Selector.Get(staticStackSelectorPrefix + id); ok {
-			for _, systemId := range stack.MatchingSystems {
-				if system, ok := state.SystemsById[systemId]; ok {
-					log.Warnf("Stack %v selector logic cannot be automatically translated. Review logic and configure bundle labels and stack selector manually.", stack.Id)
-					output.Bundles[system.SanitizedName()].Labels[staticStackSelectorPrefix+id] = "FIXME"
-				}
-			}
-		}
-
-		bar.Add(1)
-	}
-
-	bar.Finish()
 
 	if err := migrateDependencies(&c, state, index, &output); err != nil {
 		return err
@@ -790,6 +710,108 @@ func Run(params Options) error {
 				return err
 			}
 		}
+	}
+
+	return nil
+}
+
+func migrateLibraries(params Options, state *dasState, c *das.Client, nf *nameFactory, output *config.Root) (*libraryPackageIndex, error) {
+
+	bar := progress.New(params.Silent, len(state.LibrariesById), "migrating libraries")
+	defer bar.Finish()
+
+	index := newLibraryPackageIndex()
+
+	for id, library := range state.LibrariesById {
+		sc, secrets, err := migrateV1Library(nf, c, state, library, params.Datasources)
+		if err != nil {
+			return nil, err
+		}
+
+		output.Sources[sc.Name] = sc
+		for _, s := range secrets {
+			output.Secrets[s.Name] = s
+		}
+
+		for _, p := range state.LibraryPolicies[id] {
+			index.Add(p.Package, sc.Name)
+		}
+
+		bar.Add(1)
+	}
+
+	// Dependency migration complements the requirements of the libraries.
+	// Copy to avoid tainting of library sources.
+
+	for _, bi := range systemTypeLibraries {
+		cpy := *bi
+		output.Sources[bi.Name] = &cpy
+	}
+
+	for _, bi := range stackTypeLibraries {
+		cpy := *bi
+		output.Sources[bi.Name] = &cpy
+	}
+
+	for _, bi := range baseLibraries {
+		cpy := *bi
+		output.Sources[bi.Name] = &cpy
+	}
+
+	return index, nil
+}
+
+func migrateSystems(params Options, state *dasState, c *das.Client, nf *nameFactory, output *config.Root) error {
+	bar := progress.New(params.Silent, len(state.SystemsById), "migrating systems")
+	defer bar.Finish()
+
+	for _, system := range state.SystemsById {
+		b, src, secrets, err := migrateV1System(nf, c, state, system, params.Datasources)
+		if err != nil {
+			return err
+		}
+
+		output.Sources[src.Name] = src
+		output.Bundles[b.Name] = b
+
+		for _, s := range secrets {
+			output.Secrets[s.Name] = s
+		}
+
+		bar.Add(1)
+	}
+
+	return nil
+}
+
+func migrateStacks(params Options, state *dasState, c *das.Client, nf *nameFactory, output *config.Root) error {
+
+	bar := progress.New(params.Silent, len(state.StacksById), "migrating stacks")
+	defer bar.Finish()
+
+	for id, stack := range state.StacksById {
+		sc, src, secrets, err := migrateV1Stack(nf, c, state, stack, params.Datasources)
+		if err != nil {
+			return err
+		}
+
+		output.Stacks[sc.Name] = sc
+		output.Sources[src.Name] = src
+
+		for _, s := range secrets {
+			output.Secrets[s.Name] = s
+		}
+
+		if _, ok := sc.Selector.Get(staticStackSelectorPrefix + id); ok {
+			for _, systemId := range stack.MatchingSystems {
+				if system, ok := state.SystemsById[systemId]; ok {
+					log.Warnf("Stack %v selector logic cannot be automatically translated. Review logic and configure bundle labels and stack selector manually.", stack.Id)
+					output.Bundles[system.SanitizedName()].Labels[staticStackSelectorPrefix+id] = "FIXME"
+				}
+			}
+		}
+
+		bar.Add(1)
 	}
 
 	return nil
@@ -1687,7 +1709,10 @@ type dasFetchOptions struct {
 	SystemId string
 }
 
-func fetchDASState(c *das.Client, opts dasFetchOptions) (*dasState, error) {
+func fetchDASState(silent bool, c *das.Client, opts dasFetchOptions) (*dasState, error) {
+	bar := progress.New(silent, -1, fmt.Sprintf("fetching state from %v", c.URL))
+	defer bar.Finish()
+
 	state := dasState{}
 
 	log.Info("Fetching v1/runtime/features")
@@ -1813,15 +1838,15 @@ func fetchDASState(c *das.Client, opts dasFetchOptions) (*dasState, error) {
 		state.LibrariesById[l.Id] = l
 	}
 
-	if err := fetchSystemPolicies(c, &state); err != nil {
+	if err := fetchSystemPolicies(bar, c, &state); err != nil {
 		return nil, err
 	}
 
-	if err := fetchStackPolicies(c, &state); err != nil {
+	if err := fetchStackPolicies(bar, c, &state); err != nil {
 		return nil, err
 	}
 
-	if err := fetchLibraryPolicies(c, &state); err != nil {
+	if err := fetchLibraryPolicies(bar, c, &state); err != nil {
 		return nil, err
 	}
 
@@ -1869,7 +1894,7 @@ func fetchLegacyLibrary(c *das.Client, id string, git das.V1GitRepoConfig) (*das
 	return &library, nil
 }
 
-func fetchSystemPolicies(c *das.Client, state *dasState) error {
+func fetchSystemPolicies(bar *progress.Bar, c *das.Client, state *dasState) error {
 	ch := make(chan *das.V1System, len(state.SystemsById))
 	var wg sync.WaitGroup
 	var mu sync.Mutex
@@ -1886,14 +1911,13 @@ func fetchSystemPolicies(c *das.Client, state *dasState) error {
 		go func() {
 			for s := range ch {
 				log.Infof("Fetching %d policies for system %v", len(s.Policies), s.Id)
-				ps, err := fetchPolicies(c, s.Policies)
+				ps, err := fetchPolicies(bar, c, s.Policies)
 				if err != nil {
 					panic(err)
 				}
 				mu.Lock()
 				state.SystemPolicies[s.Id] = ps
 				mu.Unlock()
-				bar.Add(1)
 			}
 			wg.Done()
 		}()
@@ -1903,7 +1927,7 @@ func fetchSystemPolicies(c *das.Client, state *dasState) error {
 	return nil
 }
 
-func fetchStackPolicies(c *das.Client, state *dasState) error {
+func fetchStackPolicies(bar *progress.Bar, c *das.Client, state *dasState) error {
 	ch := make(chan *das.V1Stack, len(state.StacksById))
 	var wg sync.WaitGroup
 	var mu sync.Mutex
@@ -1920,14 +1944,13 @@ func fetchStackPolicies(c *das.Client, state *dasState) error {
 		go func() {
 			for s := range ch {
 				log.Infof("Fetching %d policies for stack %v", len(s.Policies), s.Id)
-				ps, err := fetchPolicies(c, s.Policies)
+				ps, err := fetchPolicies(bar, c, s.Policies)
 				if err != nil {
 					panic(err)
 				}
 				mu.Lock()
 				state.StackPolicies[s.Id] = ps
 				mu.Unlock()
-				bar.Add(1)
 			}
 			wg.Done()
 		}()
@@ -1937,7 +1960,7 @@ func fetchStackPolicies(c *das.Client, state *dasState) error {
 	return nil
 }
 
-func fetchLibraryPolicies(c *das.Client, state *dasState) error {
+func fetchLibraryPolicies(bar *progress.Bar, c *das.Client, state *dasState) error {
 	ch := make(chan *das.V1Library, len(state.LibrariesById))
 	var wg sync.WaitGroup
 	var mu sync.Mutex
@@ -1976,7 +1999,7 @@ func fetchLibraryPolicies(c *das.Client, state *dasState) error {
 				}
 
 				log.Infof("Fetching %d policies for library %q", len(l.Policies), l.Id)
-				ps, err := fetchPolicies(c, l.Policies)
+				ps, err := fetchPolicies(bar, c, l.Policies)
 				if err != nil {
 					panic(err)
 				}
@@ -1984,7 +2007,6 @@ func fetchLibraryPolicies(c *das.Client, state *dasState) error {
 				mu.Lock()
 				state.LibraryPolicies[l.Id] = ps
 				mu.Unlock()
-				bar.Add(1)
 			}
 			wg.Done()
 		}()
@@ -1994,7 +2016,7 @@ func fetchLibraryPolicies(c *das.Client, state *dasState) error {
 	return nil
 }
 
-func fetchPolicies(c *das.Client, refs []das.V1PoliciesRef) ([]*das.V1Policy, error) {
+func fetchPolicies(bar *progress.Bar, c *das.Client, refs []das.V1PoliciesRef) ([]*das.V1Policy, error) {
 	bar.AddMax(len(refs))
 	var result []*das.V1Policy
 	for _, ref := range refs {
