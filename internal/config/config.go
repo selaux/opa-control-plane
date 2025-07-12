@@ -103,6 +103,10 @@ func (r *Root) unmarshal(raw *Root) error {
 		stack.Name = name
 	}
 
+	if raw.Database != nil && raw.Database.AWSRDS != nil && raw.Database.AWSRDS.Credentials != nil {
+		raw.Database.AWSRDS.Credentials.value = raw.Secrets[raw.Database.AWSRDS.Credentials.Name]
+	}
+
 	return nil
 }
 
@@ -653,6 +657,7 @@ func (s *SecretRef) Equal(other *SecretRef) bool {
 //     "headers" (string array) is optional and can be used to set additional headers for the HTTP requests (currently only supported for git).
 //   - "gcp_auth" for Google Cloud authentication. Value for a key "api_key" or "credentials" is expected.
 //   - "github_app_auth" for GitHub App authentication. Values for keys "integration_id", "installation_id", and "private_key" are expected.
+//   - "password" for password authentication. Value for key "password" is expected.
 //   - "ssh_key" for SSH private key authentication. Value for key "key" (private key) is expected. "fingerprints" (string array) and "passphrase" are optional.
 //   - "token_auth" for HTTP bearer token authentication. Value for a key "token" is expected.
 type Secret struct {
@@ -771,6 +776,7 @@ func Parse(r io.Reader) (root *Root, err error) {
 	if err != nil {
 		return nil, err
 	}
+
 	if err := yaml.Unmarshal(bs, &root); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal config: %w", err)
 	}

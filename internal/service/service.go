@@ -1,6 +1,7 @@
 package service
 
 import (
+	"bytes"
 	"context"
 	"crypto/md5"
 	"encoding/hex"
@@ -81,6 +82,13 @@ func (s *Service) WithSilent(yes bool) *Service {
 }
 
 func (s *Service) Run(ctx context.Context) error {
+	root, err := config.Parse(bytes.NewBuffer(s.config))
+	if err != nil {
+		return err
+	}
+
+	s.database = *s.database.WithConfig(root.Database)
+
 	if err := s.database.InitDB(ctx, s.persistenceDir); err != nil {
 		return err
 	}
@@ -93,7 +101,7 @@ func (s *Service) Run(ctx context.Context) error {
 
 	bar := progress.New(s.silent, -1, "loading configuration")
 
-	if err := s.database.LoadConfig(ctx, bar, internalPrincipal, s.config); err != nil {
+	if err := s.database.LoadConfig(ctx, bar, internalPrincipal, root); err != nil {
 		return fmt.Errorf("load config failed: %w", err)
 	}
 

@@ -1,7 +1,6 @@
 package database
 
 import (
-	"bytes"
 	"context"
 	"database/sql"
 	"encoding/base64"
@@ -14,6 +13,7 @@ import (
 	"slices"
 	"sort"
 	"strconv"
+	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/feature/rds/auth"
 	_ "github.com/go-sql-driver/mysql"
@@ -73,13 +73,70 @@ func (d *Database) InitDB(ctx context.Context, persistenceDir string) error {
 		dbUser := config.DatabaseUser
 		dbName := config.DatabaseName
 
-		credentials := aws.NewSecretCredentialsProvider(d.config.AWSRDS.Credentials)
-		authenticationToken, err := auth.BuildAuthToken(ctx, endpoint, region, dbUser, credentials)
-		if err != nil {
-			return err
+		var password string
+
+		if d.config.AWSRDS.Credentials != nil {
+			secret, err := d.config.AWSRDS.Credentials.Resolve()
+			if err != nil {
+				return err
+			}
+
+			if secret.Value != nil {
+				switch t, _ := secret.Value["type"].(string); t {
+				case "password":
+					password, _ = secret.Value["password"].(string)
+					if password == "" {
+						return fmt.Errorf("missing or invalid password value in secret %q", d.config.AWSRDS.Credentials.Name)
+					}
+
+				case "aws_auth":
+					credentials := aws.NewSecretCredentialsProvider(d.config.AWSRDS.Credentials)
+					password, err = auth.BuildAuthToken(ctx, endpoint, region, dbUser, credentials)
+					if err != nil {
+						return err
+					}
+
+				default:
+					return fmt.Errorf("unsupported secret type '%s' for RDS credentials", t)
+				}
+			}
+
+			if password == "" {
+				return fmt.Errorf("missing RDS credentials")
+			}
 		}
 
-		dsn := fmt.Sprintf("%s:%s@tcp(%s)/%s?tls=true&allowCleartextPasswords=true", dbUser, authenticationToken, endpoint, dbName)
+		var dsn string
+
+		switch driver {
+		case "postgres":
+			driver = "pgx" // Convenience
+			fallthrough
+		case "pgx":
+			dbHost, dbPort, found := strings.Cut(endpoint, ":")
+			if !found {
+				return fmt.Errorf("invalid endpoint format, expected host:port, got %s", endpoint)
+			}
+
+			port, err := strconv.Atoi(dbPort)
+			if err != nil {
+				return fmt.Errorf("invalid port in endpoint, expected host:port, got %s", endpoint)
+			}
+
+			if port <= 0 || port > 65535 {
+				return fmt.Errorf("invalid port number in endpoint, expected host:port, got %s", endpoint)
+			}
+
+			dsn = fmt.Sprintf("host=%s port=%d user=%s password=%s dbname=%s sslmode=require", dbHost, port, dbUser, password, dbName)
+
+		case "mysql":
+			dsn = fmt.Sprintf("%s:%s@tcp(%s)/%s?tls=true&allowCleartextPasswords=true", dbUser, password, endpoint, dbName)
+
+		default:
+			return fmt.Errorf("unsupported AWS RDS driver: %s", driver)
+		}
+
+		var err error
 		d.db, err = sql.Open(driver, dsn)
 		if err != nil {
 			return err
@@ -359,12 +416,7 @@ func (d *Database) SourcesDataDelete(ctx context.Context, sourceName, path strin
 }
 
 // LoadConfig loads the configuration from the configuration file into the database.
-func (d *Database) LoadConfig(ctx context.Context, bar *progress.Bar, principal string, bs []byte) error {
-
-	root, err := config.Parse(bytes.NewBuffer(bs))
-	if err != nil {
-		return err
-	}
+func (d *Database) LoadConfig(ctx context.Context, bar *progress.Bar, principal string, root *config.Root) error {
 
 	bar.AddMax(len(root.Sources) + len(root.Stacks) + len(root.Secrets) + len(root.Tokens))
 
