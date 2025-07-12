@@ -329,12 +329,7 @@ func (d *Database) SourcesDataGet(ctx context.Context, sourceName, path string, 
 		return nil, false, err
 	}
 
-	args := []string{"?", "?"}
-	if d.kind == postgres {
-		args[0] = "$1"
-		args[1] = "$2"
-	}
-
+	args := d.args(2)
 	rows, err := tx.Query(fmt.Sprintf(`SELECT
 	data
 FROM
@@ -425,12 +420,7 @@ func (d *Database) SourcesDataDelete(ctx context.Context, sourceName, path strin
 		return err
 	}
 
-	args := []string{"?", "?"}
-	if d.kind == postgres {
-		args[0] = "$1"
-		args[1] = "$2"
-	}
-
+	args := d.args(2)
 	if _, err := tx.Exec(fmt.Sprintf(`DELETE FROM sources_data WHERE source_name = %s AND path = %s AND `+expr.SQL(), args[0], args[1]), sourceName, path); err != nil {
 		return err
 	}
@@ -553,30 +543,17 @@ func (d *Database) ListBundles(ctx context.Context, principal string, opts ListO
 	var args []any
 
 	if opts.name != "" {
-		arg := "?"
-		if d.kind == postgres {
-			arg = "$" + strconv.Itoa(len(args)+1)
-		}
-		query += fmt.Sprintf(" AND (bundles.name = %s)", arg)
+		query += fmt.Sprintf(" AND (bundles.name = %s)", d.arg(len(args)))
 		args = append(args, opts.name)
 	}
 
 	if after := opts.cursor(); after > 0 {
-		arg := "?"
-		if d.kind == postgres {
-			arg = "$" + strconv.Itoa(len(args)+1)
-		}
-
-		query += fmt.Sprintf(" AND (bundles.id > %s)", arg)
+		query += fmt.Sprintf(" AND (bundles.id > %s)", d.arg(len(args)))
 		args = append(args, after)
 	}
 	query += " ORDER BY bundles.id"
 	if opts.Limit > 0 {
-		arg := "?"
-		if d.kind == postgres {
-			arg = "$" + strconv.Itoa(len(args)+1)
-		}
-		query += fmt.Sprintf(" LIMIT %s", arg)
+		query += fmt.Sprintf(" LIMIT %s", d.arg(len(args)))
 		args = append(args, opts.Limit)
 	}
 
@@ -736,29 +713,17 @@ WHERE ((sources_secrets.ref_type = 'git_credentials' AND secrets.value IS NOT NU
 	var args []any
 
 	if opts.name != "" {
-		arg := "?"
-		if d.kind == postgres {
-			arg = "$" + strconv.Itoa(len(args)+1)
-		}
-		query += fmt.Sprintf(" AND (sources.name = %s)", arg)
+		query += fmt.Sprintf(" AND (sources.name = %s)", d.arg(len(args)))
 		args = append(args, opts.name)
 	}
 
 	if after := opts.cursor(); after > 0 {
-		arg := "?"
-		if d.kind == postgres {
-			arg = "$" + strconv.Itoa(len(args)+1)
-		}
-		query += fmt.Sprintf(" AND (sources.id > %s)", arg)
+		query += fmt.Sprintf(" AND (sources.id > %s)", d.arg(len(args)))
 		args = append(args, after)
 	}
 	query += " ORDER BY sources.id"
 	if opts.Limit > 0 {
-		arg := "?"
-		if d.kind == postgres {
-			arg = "$" + strconv.Itoa(len(args)+1)
-		}
-		query += fmt.Sprintf(" LIMIT %s", arg)
+		query += fmt.Sprintf(" LIMIT %s", d.arg(len(args)))
 		args = append(args, opts.Limit)
 	}
 
@@ -942,29 +907,17 @@ func (d *Database) ListStacks(ctx context.Context, principal string, opts ListOp
 	var args []any
 
 	if opts.name != "" {
-		arg := "?"
-		if d.kind == postgres {
-			arg = "$" + strconv.Itoa(len(args)+1)
-		}
-		query += fmt.Sprintf(" AND (stacks.name = %s)", arg)
+		query += fmt.Sprintf(" AND (stacks.name = %s)", d.arg(len(args)))
 		args = append(args, opts.name)
 	}
 
 	if after := opts.cursor(); after > 0 {
-		arg := "?"
-		if d.kind == postgres {
-			arg = "$" + strconv.Itoa(len(args)+1)
-		}
-		query += fmt.Sprintf(" AND (stacks.id > %s)", arg)
+		query += fmt.Sprintf(" AND (stacks.id > %s)", d.arg(len(args)))
 		args = append(args, after)
 	}
 	query += " ORDER BY stacks.id"
 	if opts.Limit > 0 {
-		arg := "?"
-		if d.kind == postgres {
-			arg = "$" + strconv.Itoa(len(args)+1)
-		}
-		query += fmt.Sprintf(" LIMIT %s", arg)
+		query += fmt.Sprintf(" LIMIT %s", d.arg(len(args)))
 		args = append(args, opts.Limit)
 	}
 
@@ -1031,17 +984,13 @@ func (d *Database) ListStacks(ctx context.Context, principal string, opts ListOp
 }
 
 func (d *Database) QuerySourceData(sourceName string) (*DataCursor, error) {
-	arg := "?"
-	if d.kind == postgres {
-		arg = "$1"
-	}
 	rows, err := d.db.Query(fmt.Sprintf(`SELECT
 	path,
 	data
 FROM
 	sources_data
 WHERE
-	source_name = %s`, arg), sourceName)
+	source_name = %s`, d.arg(0)), sourceName)
 	if err != nil {
 		return nil, err
 	}
@@ -1343,12 +1292,7 @@ func (d *Database) prepareUpsert(ctx context.Context, tx *sql.Tx, principal, res
 
 func (d *Database) resourceExists(ctx context.Context, tx *sql.Tx, table string, name string) error {
 	var exists any
-	arg := "?"
-	if d.kind == postgres {
-		arg = "$1"
-	}
-
-	if err := tx.QueryRowContext(ctx, fmt.Sprintf("SELECT 1 FROM %v as T WHERE T.name = %s", table, arg), name).Scan(&exists); err != nil {
+	if err := tx.QueryRowContext(ctx, fmt.Sprintf("SELECT 1 FROM %v as T WHERE T.name = %s", table, d.arg(0)), name).Scan(&exists); err != nil {
 		if err == sql.ErrNoRows {
 			return ErrNotFound
 		}
@@ -1362,7 +1306,7 @@ func (d *Database) upsert(ctx context.Context, tx *sql.Tx, table string, columns
 	switch d.kind {
 	case sqlite:
 		query = fmt.Sprintf(`INSERT OR REPLACE INTO %s (%s) VALUES (%s)`, table, strings.Join(columns, ", "),
-			strings.Join(slices.Repeat([]string{"?"}, len(values)), ", "))
+			strings.Join(d.args(len(columns)), ", "))
 
 	case postgres:
 		set := make([]string, 0, len(columns))
@@ -1376,10 +1320,7 @@ func (d *Database) upsert(ctx context.Context, tx *sql.Tx, table string, columns
 			set = append(set, fmt.Sprintf("%s = EXCLUDED.%s", columns[i], columns[i]))
 		}
 
-		var values []string
-		for i := range columns {
-			values = append(values, fmt.Sprintf("$%d", i+1))
-		}
+		values := d.args(len(columns))
 
 		if len(set) == 0 {
 			query = fmt.Sprintf(`INSERT INTO %s (%s) VALUES (%s) ON CONFLICT (%s) DO NOTHING`, table, strings.Join(columns, ", "),
@@ -1393,9 +1334,37 @@ func (d *Database) upsert(ctx context.Context, tx *sql.Tx, table string, columns
 		}
 
 	case mysql:
-		panic("upsert not implemented") // TODO
+		set := make([]string, 0, len(columns))
+		for i := range columns {
+			set = append(set, fmt.Sprintf("%s = VALUES(%s)", columns[i], columns[i]))
+		}
+
+		values := d.args(len(columns))
+
+		query = fmt.Sprintf(`INSERT INTO %s (%s) VALUES (%s) ON DUPLICATE KEY UPDATE %s`, table, strings.Join(columns, ", "),
+			strings.Join(values, ", "),
+			strings.Join(set, ", "))
 	}
 
 	_, err := tx.ExecContext(ctx, query, values...)
 	return err
+}
+
+func (d *Database) arg(i int) string {
+	if d.kind == postgres {
+		return "$" + strconv.Itoa(i+1)
+	}
+	return "?"
+}
+
+func (d *Database) args(n int) []string {
+	args := make([]string, n)
+	for i := 0; i < n; i++ {
+		args[i] = "?"
+		if d.kind == postgres {
+			args[i] = "$" + strconv.Itoa(i+1)
+		}
+	}
+
+	return args
 }
