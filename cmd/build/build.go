@@ -34,7 +34,7 @@ func init() {
 			ctx := context.Background()
 
 			var log *logging.Logger
-			if params.silent {
+			if !params.silent {
 				log = logging.NewLogger(params.logging)
 			}
 
