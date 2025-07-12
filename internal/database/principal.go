@@ -12,7 +12,7 @@ type Principal struct {
 	CreatedAt string
 }
 
-func UpsertPrincipal(ctx context.Context, db *Database, principal Principal) error {
+func (db *Database) UpsertPrincipal(ctx context.Context, principal Principal) error {
 
 	tx, err := db.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -21,7 +21,7 @@ func UpsertPrincipal(ctx context.Context, db *Database, principal Principal) err
 
 	defer tx.Rollback()
 
-	if err := UpsertPrincipalTx(ctx, tx, principal); err != nil {
+	if err := db.UpsertPrincipalTx(ctx, tx, principal); err != nil {
 		return err
 	}
 
@@ -32,19 +32,15 @@ func UpsertPrincipal(ctx context.Context, db *Database, principal Principal) err
 	return nil
 }
 
-func UpsertPrincipalTx(ctx context.Context, tx *sql.Tx, principal Principal) error {
-	query := `
-	INSERT OR REPLACE INTO principals (id, role)
-	VALUES ($1, $2)
-`
-	_, err := tx.ExecContext(ctx, query, principal.Id, principal.Role)
-	if err != nil {
+func (db *Database) UpsertPrincipalTx(ctx context.Context, tx *sql.Tx, principal Principal) error {
+	if err := db.upsert(ctx, tx, "principals", []string{"id", "role"}, []string{"id"}, principal.Id, principal.Role); err != nil {
 		return fmt.Errorf("failed to insert principal: %w", err)
 	}
+
 	return nil
 }
 
-func GetPrincipalId(ctx context.Context, db *Database, apiKey string) (string, error) {
+func (db *Database) GetPrincipalId(ctx context.Context, apiKey string) (string, error) {
 
 	query := `
 		SELECT principals.id FROM principals JOIN tokens ON tokens.name = principals.id WHERE tokens.api_key = ?

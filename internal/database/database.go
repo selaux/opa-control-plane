@@ -25,10 +25,17 @@ import (
 	_ "modernc.org/sqlite"
 )
 
+const (
+	sqlite = iota
+	postgres
+	mysql
+)
+
 // Database implements the database operations. It will hide any differences between the varying SQL databases from the rest of the codebase.
 type Database struct {
 	db     *sql.DB
 	config *config.Database
+	kind   int
 }
 
 type ListOptions struct {
@@ -128,9 +135,11 @@ func (d *Database) InitDB(ctx context.Context, persistenceDir string) error {
 			}
 
 			dsn = fmt.Sprintf("host=%s port=%d user=%s password=%s dbname=%s sslmode=require", dbHost, port, dbUser, password, dbName)
+			d.kind = postgres
 
 		case "mysql":
 			dsn = fmt.Sprintf("%s:%s@tcp(%s)/%s?tls=true&allowCleartextPasswords=true", dbUser, password, endpoint, dbName)
+			d.kind = mysql
 
 		default:
 			return fmt.Errorf("unsupported AWS RDS driver: %s", driver)
@@ -158,6 +167,8 @@ func (d *Database) InitDB(ctx context.Context, persistenceDir string) error {
 			dsn = filepath.Join(persistenceDir, "sqlite.db")
 		}
 
+		d.kind = sqlite
+
 		var err error
 		d.db, err = sql.Open("sqlite", dsn)
 		if err != nil {
@@ -171,115 +182,118 @@ func (d *Database) InitDB(ctx context.Context, persistenceDir string) error {
 		return errors.New("unsupported database connection type")
 	}
 
-	stmts := []string{
-		`CREATE TABLE IF NOT EXISTS bundles (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			name TEXT NOT NULL UNIQUE,
-			labels TEXT,
-			s3url TEXT,
-			s3region TEXT,
-			s3bucket TEXT,
-			s3key TEXT,
-			filepath TEXT,
-			excluded TEXT
-		);`,
-		`CREATE TABLE IF NOT EXISTS sources (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			name TEXT NOT NULL UNIQUE,
-			builtin TEXT,
-			repo TEXT NOT NULL,
-			ref TEXT,
-			gitcommit TEXT,
-			path TEXT,
-			git_included_files TEXT,
-			git_excluded_files TEXT
-		);`,
-		`CREATE TABLE IF NOT EXISTS stacks (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			name TEXT NOT NULL UNIQUE,
-			selector TEXT NOT NULL
-		);`,
-		`CREATE TABLE IF NOT EXISTS secrets (
-			name TEXT PRIMARY KEY,
-			value TEXT
-		);`,
-		`CREATE TABLE IF NOT EXISTS tokens (
-			name TEXT PRIMARY KEY,
-			api_key TEXT NOT NULL
-		);`,
-		`CREATE TABLE IF NOT EXISTS bundles_secrets (
-			bundle_name TEXT NOT NULL,
-			secret_name TEXT NOT NULL,
-			ref_type TEXT NOT NULL,
-			PRIMARY KEY (bundle_name, secret_name),
-			FOREIGN KEY (bundle_name) REFERENCES bundles(name),
-			FOREIGN KEY (secret_name) REFERENCES secrets(name)
-		);`,
-		`CREATE TABLE IF NOT EXISTS bundles_requirements (
-			bundle_name TEXT NOT NULL,
-			source_name TEXT NOT NULL,
-			PRIMARY KEY (bundle_name, source_name),
-			FOREIGN KEY (bundle_name) REFERENCES bundles(name),
-			FOREIGN KEY (source_name) REFERENCES sources(name)
-		);`,
-		`CREATE TABLE IF NOT EXISTS stacks_requirements (
-			stack_name TEXT NOT NULL,
-			source_name TEXT NOT NULL,
-			PRIMARY KEY (stack_name, source_name),
-			FOREIGN KEY (stack_name) REFERENCES stacks(name),
-			FOREIGN KEY (source_name) REFERENCES sources(name)
-		);`,
-		`CREATE TABLE IF NOT EXISTS sources_requirements (
-			source_name TEXT NOT NULL,
-			requirement_name TEXT NOT NULL,
-			PRIMARY KEY (source_name, requirement_name),
-			FOREIGN KEY (source_name) REFERENCES sources(name),
-			FOREIGN KEY (requirement_name) REFERENCES sources(name)
-		);`,
-		`CREATE TABLE IF NOT EXISTS sources_secrets (
-			source_name TEXT NOT NULL,
-			secret_name TEXT NOT NULL,
-			ref_type TEXT NOT NULL,
-			PRIMARY KEY (source_name, secret_name),
-			FOREIGN KEY (source_name) REFERENCES sources(name),
-			FOREIGN KEY (secret_name) REFERENCES secrets(name)
-		);`,
-		`CREATE TABLE IF NOT EXISTS sources_data (
-			source_name TEXT NOT NULL,
-			path TEXT NOT NULL,
-			data BLOB NOT NULL,
-			PRIMARY KEY (source_name, path),
-			FOREIGN KEY (source_name) REFERENCES sources(name)
-		);`,
-		`CREATE TABLE IF NOT EXISTS sources_datasources (
-			name TEXT NOT NULL,
-			source_name TEXT NOT NULL,
-			type TEXT NOT NULL,
-			path TEXT NOT NULL,
-			config TEXT NOT NULL,
-			transform_query TEXT NOT NULL,
-			PRIMARY KEY (source_name, name),
-			FOREIGN KEY (source_name) REFERENCES sources(name)
-		);`,
-		`CREATE TABLE IF NOT EXISTS principals (
-			id TEXT PRIMARY KEY,
-			role TEXT NOT NULL,
-			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-		);`,
-		`CREATE TABLE IF NOT EXISTS resource_permissions (
-			name TEXT NOT NULL,
-			resource TEXT NOT NULL,
-			principal_id TEXT NOT NULL,
-			role TEXT,
-			permission TEXT,
-			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-			PRIMARY KEY (name, resource),
-			FOREIGN KEY (principal_id) REFERENCES principals(id) ON DELETE CASCADE
-		);`,
+	tables := []sqlTable{
+		createSQLTable("bundles").
+			WithAutoincrementPrimaryKeyColumn("id").
+			WithNonNullUniqueTextColumn("name").
+			WithTextColumn("labels").
+			WithTextColumn("s3url").
+			WithTextColumn("s3region").
+			WithTextColumn("s3bucket").
+			WithTextColumn("s3key").
+			WithTextColumn("filepath").
+			WithTextColumn("excluded"),
+		createSQLTable("bundles").
+			WithAutoincrementPrimaryKeyColumn("id").
+			WithNonNullUniqueTextColumn("name").
+			WithTextColumn("labels").
+			WithTextColumn("s3url").
+			WithTextColumn("s3region").
+			WithTextColumn("s3bucket").
+			WithTextColumn("s3key").
+			WithTextColumn("filepath").
+			WithTextColumn("excluded"),
+		createSQLTable("sources").
+			WithAutoincrementPrimaryKeyColumn("id").
+			WithNonNullUniqueTextColumn("name").
+			WithTextColumn("builtin").
+			WithNonNullTextColumn("repo").
+			WithTextColumn("ref").
+			WithTextColumn("gitcommit").
+			WithTextColumn("path").
+			WithTextColumn("git_included_files").
+			WithTextColumn("git_excluded_files"),
+		createSQLTable("stacks").
+			WithAutoincrementPrimaryKeyColumn("id").
+			WithNonNullUniqueTextColumn("name").
+			WithNonNullTextColumn("selector"),
+		createSQLTable("secrets").
+			WithPrimaryKeyTextColumn("name").
+			WithTextColumn("value"),
+		createSQLTable("tokens").
+			WithPrimaryKeyTextColumn("name").
+			WithNonNullTextColumn("api_key"),
+		createSQLTable("bundles_secrets").
+			WithNonNullTextColumn("bundle_name").
+			WithNonNullTextColumn("secret_name").
+			WithNonNullTextColumn("ref_type").
+			WithPrimaryKey("bundle_name", "secret_name").
+			WithForeignKey("bundle_name", "bundles(name)").
+			WithForeignKey("secret_name", "secrets(name)"),
+		createSQLTable("bundles_requirements").
+			WithNonNullTextColumn("bundle_name").
+			WithNonNullTextColumn("source_name").
+			WithPrimaryKey("bundle_name", "source_name").
+			WithForeignKey("bundle_name", "bundles(name)").
+			WithForeignKey("source_name", "sources(name)"),
+		createSQLTable("stacks_requirements").
+			WithNonNullTextColumn("stack_name").
+			WithNonNullTextColumn("source_name").
+			WithPrimaryKey("stack_name", "source_name").
+			WithForeignKey("stack_name", "stacks(name)").
+			WithForeignKey("source_name", "sources(name)"),
+		createSQLTable("sources_requirements").
+			WithNonNullTextColumn("source_name").
+			WithNonNullTextColumn("requirement_name").
+			WithPrimaryKey("source_name", "requirement_name").
+			WithForeignKey("source_name", "sources(name)").
+			WithForeignKey("requirement_name", "sources(name)"),
+		createSQLTable("sources_secrets").
+			WithNonNullTextColumn("source_name").
+			WithNonNullTextColumn("secret_name").
+			WithNonNullTextColumn("ref_type").
+			WithPrimaryKey("source_name", "secret_name").
+			WithForeignKey("source_name", "sources(name)").
+			WithForeignKey("secret_name", "secrets(name)"),
+		createSQLTable("sources_secrets").
+			WithNonNullTextColumn("source_name").
+			WithNonNullTextColumn("secret_name").
+			WithNonNullTextColumn("ref_type").
+			WithPrimaryKey("source_name", "secret_name").
+			WithForeignKey("source_name", "sources(name)").
+			WithForeignKey("secret_name", "secrets(name)"),
+		createSQLTable("sources_data").
+			WithNonNullTextColumn("source_name").
+			WithNonNullTextColumn("path").
+			WithNonNullBlobColumn("data").
+			WithPrimaryKey("source_name", "path").
+			WithForeignKey("source_name", "sources(name)"),
+		createSQLTable("sources_datasources").
+			WithNonNullTextColumn("name").
+			WithNonNullTextColumn("source_name").
+			WithNonNullTextColumn("type").
+			WithNonNullTextColumn("path").
+			WithNonNullTextColumn("config").
+			WithNonNullTextColumn("transform_query").
+			WithPrimaryKey("source_name", "name").
+			WithForeignKey("source_name", "sources(name)"),
+		createSQLTable("principals").
+			WithPrimaryKeyTextColumn("id").
+			WithNonNullTextColumn("role").
+			WithTimestampDefaultCurrentTimeColumn("created_at"),
+		createSQLTable("resource_permissions").
+			WithNonNullTextColumn("name").
+			WithNonNullTextColumn("resource").
+			WithNonNullTextColumn("principal_id").
+			WithTextColumn("role").
+			WithTextColumn("permission").
+			WithTimestampDefaultCurrentTimeColumn("created_at").
+			WithPrimaryKey("name", "resource").
+			WithForeignKeyOnDeleteCascade("principal_id", "principals(id)"),
 	}
 
-	for _, stmt := range stmts {
-		_, err := d.db.Exec(stmt)
+	for _, table := range tables {
+		_, err := d.db.Exec(table.SQL(d.kind))
 		if err != nil {
 			return err
 		}
@@ -315,11 +329,17 @@ func (d *Database) SourcesDataGet(ctx context.Context, sourceName, path string, 
 		return nil, false, err
 	}
 
-	rows, err := tx.Query(`SELECT
+	args := []string{"?", "?"}
+	if d.kind == postgres {
+		args[0] = "$1"
+		args[1] = "$2"
+	}
+
+	rows, err := tx.Query(fmt.Sprintf(`SELECT
 	data
 FROM
 	sources_data
-WHERE source_name = ? AND path = ? AND `+expr.SQL(), sourceName, path)
+WHERE source_name = %s AND path = %s AND `+expr.SQL(), args[0], args[1]), sourceName, path)
 	if err != nil {
 		return nil, false, err
 	}
@@ -371,7 +391,7 @@ func (d *Database) SourcesDataPut(ctx context.Context, sourceName, path string, 
 		return err
 	}
 
-	if _, err := tx.Exec(`INSERT OR REPLACE INTO sources_data (source_name, path, data) VALUES (?, ?, ?)`, sourceName, path, bs); err != nil {
+	if err := d.upsert(ctx, tx, "sources_data", []string{"source_name", "path", "data"}, []string{"source_name", "path"}, sourceName, path, bs); err != nil {
 		return err
 	}
 
@@ -404,7 +424,14 @@ func (d *Database) SourcesDataDelete(ctx context.Context, sourceName, path strin
 	if err != nil {
 		return err
 	}
-	if _, err := tx.Exec(`DELETE FROM sources_data WHERE source_name = ? AND path = ? AND `+expr.SQL(), sourceName, path); err != nil {
+
+	args := []string{"?", "?"}
+	if d.kind == postgres {
+		args[0] = "$1"
+		args[1] = "$2"
+	}
+
+	if _, err := tx.Exec(fmt.Sprintf(`DELETE FROM sources_data WHERE source_name = %s AND path = %s AND `+expr.SQL(), args[0], args[1]), sourceName, path); err != nil {
 		return err
 	}
 
@@ -526,17 +553,30 @@ func (d *Database) ListBundles(ctx context.Context, principal string, opts ListO
 	var args []any
 
 	if opts.name != "" {
-		query += " AND (bundles.name = ?)"
+		arg := "?"
+		if d.kind == postgres {
+			arg = "$" + strconv.Itoa(len(args)+1)
+		}
+		query += fmt.Sprintf(" AND (bundles.name = %s)", arg)
 		args = append(args, opts.name)
 	}
 
 	if after := opts.cursor(); after > 0 {
-		query += " AND (bundles.id > ?)"
+		arg := "?"
+		if d.kind == postgres {
+			arg = "$" + strconv.Itoa(len(args)+1)
+		}
+
+		query += fmt.Sprintf(" AND (bundles.id > %s)", arg)
 		args = append(args, after)
 	}
 	query += " ORDER BY bundles.id"
 	if opts.Limit > 0 {
-		query += " LIMIT ?"
+		arg := "?"
+		if d.kind == postgres {
+			arg = "$" + strconv.Itoa(len(args)+1)
+		}
+		query += fmt.Sprintf(" LIMIT %s", arg)
 		args = append(args, opts.Limit)
 	}
 
@@ -696,17 +736,29 @@ WHERE ((sources_secrets.ref_type = 'git_credentials' AND secrets.value IS NOT NU
 	var args []any
 
 	if opts.name != "" {
-		query += " AND (sources.name = ?)"
+		arg := "?"
+		if d.kind == postgres {
+			arg = "$" + strconv.Itoa(len(args)+1)
+		}
+		query += fmt.Sprintf(" AND (sources.name = %s)", arg)
 		args = append(args, opts.name)
 	}
 
 	if after := opts.cursor(); after > 0 {
-		query += " AND (sources.id > ?)"
+		arg := "?"
+		if d.kind == postgres {
+			arg = "$" + strconv.Itoa(len(args)+1)
+		}
+		query += fmt.Sprintf(" AND (sources.id > %s)", arg)
 		args = append(args, after)
 	}
 	query += " ORDER BY sources.id"
 	if opts.Limit > 0 {
-		query += " LIMIT ?"
+		arg := "?"
+		if d.kind == postgres {
+			arg = "$" + strconv.Itoa(len(args)+1)
+		}
+		query += fmt.Sprintf(" LIMIT %s", arg)
 		args = append(args, opts.Limit)
 	}
 
@@ -890,17 +942,29 @@ func (d *Database) ListStacks(ctx context.Context, principal string, opts ListOp
 	var args []any
 
 	if opts.name != "" {
-		query += " AND (stacks.name = ?)"
+		arg := "?"
+		if d.kind == postgres {
+			arg = "$" + strconv.Itoa(len(args)+1)
+		}
+		query += fmt.Sprintf(" AND (stacks.name = %s)", arg)
 		args = append(args, opts.name)
 	}
 
 	if after := opts.cursor(); after > 0 {
-		query += " AND (stacks.id > ?)"
+		arg := "?"
+		if d.kind == postgres {
+			arg = "$" + strconv.Itoa(len(args)+1)
+		}
+		query += fmt.Sprintf(" AND (stacks.id > %s)", arg)
 		args = append(args, after)
 	}
 	query += " ORDER BY stacks.id"
 	if opts.Limit > 0 {
-		query += " LIMIT ?"
+		arg := "?"
+		if d.kind == postgres {
+			arg = "$" + strconv.Itoa(len(args)+1)
+		}
+		query += fmt.Sprintf(" LIMIT %s", arg)
 		args = append(args, opts.Limit)
 	}
 
@@ -967,13 +1031,17 @@ func (d *Database) ListStacks(ctx context.Context, principal string, opts ListOp
 }
 
 func (d *Database) QuerySourceData(sourceName string) (*DataCursor, error) {
-	rows, err := d.db.Query(`SELECT
+	arg := "?"
+	if d.kind == postgres {
+		arg = "$1"
+	}
+	rows, err := d.db.Query(fmt.Sprintf(`SELECT
 	path,
 	data
 FROM
 	sources_data
 WHERE
-	source_name = ?`, sourceName)
+	source_name = %s`, arg), sourceName)
 	if err != nil {
 		return nil, err
 	}
@@ -1036,14 +1104,15 @@ func (d *Database) UpsertBundle(ctx context.Context, principal string, bundle *c
 		return err
 	}
 
-	if _, err := tx.Exec(`INSERT OR REPLACE INTO bundles (name, labels, s3url, s3region, s3bucket, s3key, filepath, excluded) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+	if err := d.upsert(ctx, tx, "bundles", []string{"name", "labels", "s3url", "s3region", "s3bucket", "s3key", "filepath", "excluded"}, []string{"name"},
 		bundle.Name, string(labels), s3url, s3region, s3bucket, s3key, filepath, string(excluded)); err != nil {
 		return err
 	}
 
 	if bundle.ObjectStorage.AmazonS3 != nil {
 		if bundle.ObjectStorage.AmazonS3.Credentials != nil {
-			if _, err := tx.Exec(`INSERT OR REPLACE INTO bundles_secrets (bundle_name, secret_name, ref_type) VALUES (?, ?, ?)`, bundle.Name, bundle.ObjectStorage.AmazonS3.Credentials.Name, "aws"); err != nil {
+			if err := d.upsert(ctx, tx, "bundles_secrets", []string{"bundle_name", "secret_name", "ref_type"}, []string{"bundle_name", "secret_name"},
+				bundle.Name, bundle.ObjectStorage.AmazonS3.Credentials.Name, "aws"); err != nil {
 				return err
 			}
 		}
@@ -1052,7 +1121,8 @@ func (d *Database) UpsertBundle(ctx context.Context, principal string, bundle *c
 	for _, src := range bundle.Requirements {
 		if src.Source != nil {
 			// TODO: add support for mounts on requirements; currently that is only used internally for stacks.
-			if _, err := tx.Exec(`INSERT OR REPLACE INTO bundles_requirements (bundle_name, source_name) VALUES (?, ?)`, bundle.Name, src.Source); err != nil {
+			if err := d.upsert(ctx, tx, "bundles_requirements", []string{"bundle_name", "source_name"}, []string{"bundle_name", "source_name"},
+				bundle.Name, src.Source); err != nil {
 				return err
 			}
 		}
@@ -1088,12 +1158,14 @@ func (d *Database) UpsertSource(ctx context.Context, principal string, source *c
 		return err
 	}
 
-	if _, err := tx.Exec(`INSERT OR REPLACE INTO sources (name, builtin, repo, ref, gitcommit, path, git_included_files, git_excluded_files) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, source.Name, source.Builtin, source.Git.Repo, source.Git.Reference, source.Git.Commit, source.Git.Path, string(includedFiles), string(excludedFiles)); err != nil {
+	if err := d.upsert(ctx, tx, "sources", []string{"name", "builtin", "repo", "ref", "gitcommit", "path", "git_included_files", "git_excluded_files"}, []string{"name"},
+		source.Name, source.Builtin, source.Git.Repo, source.Git.Reference, source.Git.Commit, source.Git.Path, string(includedFiles), string(excludedFiles)); err != nil {
 		return err
 	}
 
 	if source.Git.Credentials != nil {
-		if _, err := tx.Exec(`INSERT OR REPLACE INTO sources_secrets (source_name, secret_name, ref_type) VALUES (?, ?, ?)`, source.Name, source.Git.Credentials.Name, "git_credentials"); err != nil {
+		if err := d.upsert(ctx, tx, "sources_secrets", []string{"source_name", "secret_name", "ref_type"}, []string{"source_name", "secret_name"},
+			source.Name, source.Git.Credentials.Name, "git_credentials"); err != nil {
 			return err
 		}
 	}
@@ -1103,8 +1175,10 @@ func (d *Database) UpsertSource(ctx context.Context, principal string, source *c
 		if err != nil {
 			return err
 		}
-		if _, err := tx.Exec(`INSERT OR REPLACE INTO sources_datasources (name, source_name, type, path, config, transform_query) VALUES (?, ?, ?, ?, ?, ?)`,
-			datasource.Name, source.Name, datasource.Type, datasource.Path, string(bs), datasource.TransformQuery); err != nil {
+
+		if err := d.upsert(ctx, tx, "sources_datasources", []string{"source_name", "name", "type", "path", "config", "transform_query"},
+			[]string{"source_name", "name"},
+			source.Name, datasource.Name, datasource.Type, datasource.Path, string(bs), datasource.TransformQuery); err != nil {
 			return err
 		}
 	}
@@ -1115,24 +1189,20 @@ func (d *Database) UpsertSource(ctx context.Context, principal string, source *c
 	}
 
 	for path, data := range files {
-		if _, err := tx.Exec(`INSERT OR REPLACE INTO sources_data (source_name, path, data) VALUES (?, ?, ?)`, source.Name, path, data); err != nil {
+		if err := d.upsert(ctx, tx, "sources_data", []string{"source_name", "path", "data"}, []string{"source_name", "path"}, source.Name, path, []byte(data)); err != nil {
 			return err
 		}
 	}
 
 	for _, r := range source.Requirements {
 		if r.Source != nil {
-			if _, err := tx.Exec(`INSERT OR REPLACE INTO sources_requirements (source_name, requirement_name) VALUES (?, ?)`, source.Name, r.Source); err != nil {
+			if err := d.upsert(ctx, tx, "sources_requirements", []string{"source_name", "requirement_name"}, []string{"source_name", "requirement_name"}, source.Name, r.Source); err != nil {
 				return err
 			}
 		}
 	}
 
-	if err := tx.Commit(); err != nil {
-		return err
-	}
-
-	return nil
+	return tx.Commit()
 }
 
 func (d *Database) UpsertSecret(ctx context.Context, principal string, secret *config.Secret) error {
@@ -1153,11 +1223,12 @@ func (d *Database) UpsertSecret(ctx context.Context, principal string, secret *c
 		if err != nil {
 			return err
 		}
-		if _, err := tx.Exec(`INSERT OR REPLACE INTO secrets (name, value) VALUES (?, ?)`, secret.Name, string(bs)); err != nil {
+
+		if err := d.upsert(ctx, tx, "secrets", []string{"name", "value"}, []string{"name"}, secret.Name, string(bs)); err != nil {
 			return err
 		}
 	} else {
-		if _, err := tx.Exec(`INSERT OR REPLACE INTO secrets (name) VALUES (?)`, secret.Name); err != nil {
+		if err := d.upsert(ctx, tx, "secrets", []string{"name", "value"}, []string{"name"}, secret.Name, nil); err != nil {
 			return err
 		}
 	}
@@ -1187,14 +1258,14 @@ func (d *Database) UpsertStack(ctx context.Context, principal string, stack *con
 		return err
 	}
 
-	if _, err := tx.Exec(`INSERT OR REPLACE INTO stacks (name, selector) VALUES (?, ?)`, stack.Name, string(bs)); err != nil {
+	if err := d.upsert(ctx, tx, "stacks", []string{"name", "selector"}, []string{"name"}, stack.Name, string(bs)); err != nil {
 		return err
 	}
 
 	for _, r := range stack.Requirements {
 		if r.Source != nil {
 			// TODO: add support for mounts on requirements; currently that is only used internally for stacks.
-			if _, err := tx.Exec(`INSERT OR REPLACE INTO stacks_requirements (stack_name, source_name) VALUES (?, ?)`, stack.Name, r.Source); err != nil {
+			if err := d.upsert(ctx, tx, "stacks_requirements", []string{"stack_name", "source_name"}, []string{"stack_name", "source_name"}, stack.Name, r.Source); err != nil {
 				return err
 			}
 		}
@@ -1220,7 +1291,7 @@ func (d *Database) UpsertToken(ctx context.Context, principal string, token *con
 		return err
 	}
 
-	if _, err := tx.Exec(`INSERT OR REPLACE INTO tokens (name, api_key) VALUES (?, ?)`, token.Name, token.APIKey); err != nil {
+	if err := d.upsert(ctx, tx, "tokens", []string{"name", "api_key"}, []string{"name"}, token.Name, token.APIKey); err != nil {
 		return err
 	}
 
@@ -1228,7 +1299,7 @@ func (d *Database) UpsertToken(ctx context.Context, principal string, token *con
 		return fmt.Errorf("exactly one scope must be provided for token %q", token.Name)
 	}
 
-	if err := UpsertPrincipalTx(ctx, tx, Principal{Id: token.Name, Role: token.Scopes[0].Role}); err != nil {
+	if err := d.UpsertPrincipalTx(ctx, tx, Principal{Id: token.Name, Role: token.Scopes[0].Role}); err != nil {
 		return err
 	}
 
@@ -1256,7 +1327,7 @@ func (d *Database) prepareUpsert(ctx context.Context, tx *sql.Tx, principal, res
 			Resource:   resource,
 			Permission: permCreate,
 		}
-		if _, err := tx.Exec(`INSERT OR REPLACE INTO resource_permissions (name, resource, principal_id, role) VALUES (?, ?, ?, ?)`, name, resource, principal, "owner"); err != nil {
+		if err := d.upsert(ctx, tx, "resource_permissions", []string{"name", "resource", "principal_id", "role"}, []string{"name", "resource"}, name, resource, principal, "owner"); err != nil {
 			return err
 		}
 	} else {
@@ -1272,11 +1343,59 @@ func (d *Database) prepareUpsert(ctx context.Context, tx *sql.Tx, principal, res
 
 func (d *Database) resourceExists(ctx context.Context, tx *sql.Tx, table string, name string) error {
 	var exists any
-	if err := tx.QueryRowContext(ctx, fmt.Sprintf("SELECT 1 FROM %v as T WHERE T.name = ?", table), name).Scan(&exists); err != nil {
+	arg := "?"
+	if d.kind == postgres {
+		arg = "$1"
+	}
+
+	if err := tx.QueryRowContext(ctx, fmt.Sprintf("SELECT 1 FROM %v as T WHERE T.name = %s", table, arg), name).Scan(&exists); err != nil {
 		if err == sql.ErrNoRows {
 			return ErrNotFound
 		}
 		return err
 	}
 	return nil
+}
+
+func (d *Database) upsert(ctx context.Context, tx *sql.Tx, table string, columns []string, primaryKey []string, values ...any) error {
+	var query string
+	switch d.kind {
+	case sqlite:
+		query = fmt.Sprintf(`INSERT OR REPLACE INTO %s (%s) VALUES (%s)`, table, strings.Join(columns, ", "),
+			strings.Join(slices.Repeat([]string{"?"}, len(values)), ", "))
+
+	case postgres:
+		set := make([]string, 0, len(columns))
+	next:
+		for i := range columns {
+			for j := range primaryKey {
+				if columns[i] == primaryKey[j] {
+					continue next // do not update primary key columns
+				}
+			}
+			set = append(set, fmt.Sprintf("%s = EXCLUDED.%s", columns[i], columns[i]))
+		}
+
+		var values []string
+		for i := range columns {
+			values = append(values, fmt.Sprintf("$%d", i+1))
+		}
+
+		if len(set) == 0 {
+			query = fmt.Sprintf(`INSERT INTO %s (%s) VALUES (%s) ON CONFLICT (%s) DO NOTHING`, table, strings.Join(columns, ", "),
+				strings.Join(values, ", "),
+				strings.Join(primaryKey, ", "))
+		} else {
+			query = fmt.Sprintf(`INSERT INTO %s (%s) VALUES (%s) ON CONFLICT (%s) DO UPDATE SET %s`, table, strings.Join(columns, ", "),
+				strings.Join(values, ", "),
+				strings.Join(primaryKey, ", "),
+				strings.Join(set, ", "))
+		}
+
+	case mysql:
+		panic("upsert not implemented") // TODO
+	}
+
+	_, err := tx.ExecContext(ctx, query, values...)
+	return err
 }

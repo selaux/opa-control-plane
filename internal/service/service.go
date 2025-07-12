@@ -93,7 +93,7 @@ func (s *Service) Run(ctx context.Context) error {
 		return err
 	}
 
-	if err := database.UpsertPrincipal(ctx, &s.database, database.Principal{Id: internalPrincipal, Role: "administrator"}); err != nil {
+	if err := s.database.UpsertPrincipal(ctx, database.Principal{Id: internalPrincipal, Role: "administrator"}); err != nil {
 		return err
 	}
 

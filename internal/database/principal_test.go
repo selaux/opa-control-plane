@@ -15,7 +15,7 @@ func TestCascadingDeletesForPrincipalsAndResourcePermissions(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := UpsertPrincipal(ctx, &db, Principal{Id: "test", Role: "administrator"}); err != nil {
+	if err := db.UpsertPrincipal(ctx, Principal{Id: "test", Role: "administrator"}); err != nil {
 		t.Fatal(err)
 	}
 

@@ -20,7 +20,7 @@ func TestServerSourcesData(t *testing.T) {
 	ts := initTestServer(t, db)
 	defer ts.Close()
 
-	if err := database.UpsertPrincipal(ctx, db, database.Principal{Id: "internaladmin", Role: "administrator"}); err != nil {
+	if err := db.UpsertPrincipal(ctx, database.Principal{Id: "internaladmin", Role: "administrator"}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -133,7 +133,7 @@ func TestServerBundleOwners(t *testing.T) {
 	ts := initTestServer(t, db)
 	defer ts.Close()
 
-	if err := database.UpsertPrincipal(ctx, db, database.Principal{Id: "internal", Role: "administrator"}); err != nil {
+	if err := db.UpsertPrincipal(ctx, database.Principal{Id: "internal", Role: "administrator"}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -186,7 +186,7 @@ func TestServerSourceOwners(t *testing.T) {
 	ts := initTestServer(t, db)
 	defer ts.Close()
 
-	if err := database.UpsertPrincipal(ctx, db, database.Principal{Id: "internal", Role: "administrator"}); err != nil {
+	if err := db.UpsertPrincipal(ctx, database.Principal{Id: "internal", Role: "administrator"}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -231,7 +231,7 @@ func TestServerStackOwners(t *testing.T) {
 	ts := initTestServer(t, db)
 	defer ts.Close()
 
-	if err := database.UpsertPrincipal(ctx, db, database.Principal{Id: "internal", Role: "administrator"}); err != nil {
+	if err := db.UpsertPrincipal(ctx, database.Principal{Id: "internal", Role: "administrator"}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -274,7 +274,7 @@ func TestServerSourcePagination(t *testing.T) {
 	ts := initTestServer(t, db)
 	defer ts.Close()
 
-	if err := database.UpsertPrincipal(ctx, db, database.Principal{Id: "internal", Role: "administrator"}); err != nil {
+	if err := db.UpsertPrincipal(ctx, database.Principal{Id: "internal", Role: "administrator"}); err != nil {
 		t.Fatal(err)
 	}
 

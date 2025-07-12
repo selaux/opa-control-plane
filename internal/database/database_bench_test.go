@@ -27,7 +27,7 @@ func BenchmarkPaginationFinalPageLatency(b *testing.B) {
 				b.Fatal(err)
 			}
 
-			if err := database.UpsertPrincipal(ctx, &db, database.Principal{Id: "admin", Role: "administrator"}); err != nil {
+			if err := db.UpsertPrincipal(ctx, database.Principal{Id: "admin", Role: "administrator"}); err != nil {
 				b.Fatal(err)
 			}
 
