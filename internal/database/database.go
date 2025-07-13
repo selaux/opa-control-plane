@@ -17,7 +17,7 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/feature/rds/auth"
 	_ "github.com/go-sql-driver/mysql"
-	_ "github.com/jackc/pgx/v5/stdlib" // database/sql compatible driver for pgxg
+	_ "github.com/jackc/pgx/v5/stdlib" // database/sql compatible driver for pgx
 	"github.com/styrainc/lighthouse/internal/authz"
 	"github.com/styrainc/lighthouse/internal/aws"
 	"github.com/styrainc/lighthouse/internal/config"
@@ -182,119 +182,8 @@ func (d *Database) InitDB(ctx context.Context, persistenceDir string) error {
 		return errors.New("unsupported database connection type")
 	}
 
-	tables := []sqlTable{
-		createSQLTable("bundles").
-			WithAutoincrementPrimaryKeyColumn("id").
-			WithNonNullUniqueTextColumn("name").
-			WithTextColumn("labels").
-			WithTextColumn("s3url").
-			WithTextColumn("s3region").
-			WithTextColumn("s3bucket").
-			WithTextColumn("s3key").
-			WithTextColumn("filepath").
-			WithTextColumn("excluded"),
-		createSQLTable("bundles").
-			WithAutoincrementPrimaryKeyColumn("id").
-			WithNonNullUniqueTextColumn("name").
-			WithTextColumn("labels").
-			WithTextColumn("s3url").
-			WithTextColumn("s3region").
-			WithTextColumn("s3bucket").
-			WithTextColumn("s3key").
-			WithTextColumn("filepath").
-			WithTextColumn("excluded"),
-		createSQLTable("sources").
-			WithAutoincrementPrimaryKeyColumn("id").
-			WithNonNullUniqueTextColumn("name").
-			WithTextColumn("builtin").
-			WithNonNullTextColumn("repo").
-			WithTextColumn("ref").
-			WithTextColumn("gitcommit").
-			WithTextColumn("path").
-			WithTextColumn("git_included_files").
-			WithTextColumn("git_excluded_files"),
-		createSQLTable("stacks").
-			WithAutoincrementPrimaryKeyColumn("id").
-			WithNonNullUniqueTextColumn("name").
-			WithNonNullTextColumn("selector"),
-		createSQLTable("secrets").
-			WithPrimaryKeyTextColumn("name").
-			WithTextColumn("value"),
-		createSQLTable("tokens").
-			WithPrimaryKeyTextColumn("name").
-			WithNonNullTextColumn("api_key"),
-		createSQLTable("bundles_secrets").
-			WithNonNullTextColumn("bundle_name").
-			WithNonNullTextColumn("secret_name").
-			WithNonNullTextColumn("ref_type").
-			WithPrimaryKey("bundle_name", "secret_name").
-			WithForeignKey("bundle_name", "bundles(name)").
-			WithForeignKey("secret_name", "secrets(name)"),
-		createSQLTable("bundles_requirements").
-			WithNonNullTextColumn("bundle_name").
-			WithNonNullTextColumn("source_name").
-			WithPrimaryKey("bundle_name", "source_name").
-			WithForeignKey("bundle_name", "bundles(name)").
-			WithForeignKey("source_name", "sources(name)"),
-		createSQLTable("stacks_requirements").
-			WithNonNullTextColumn("stack_name").
-			WithNonNullTextColumn("source_name").
-			WithPrimaryKey("stack_name", "source_name").
-			WithForeignKey("stack_name", "stacks(name)").
-			WithForeignKey("source_name", "sources(name)"),
-		createSQLTable("sources_requirements").
-			WithNonNullTextColumn("source_name").
-			WithNonNullTextColumn("requirement_name").
-			WithPrimaryKey("source_name", "requirement_name").
-			WithForeignKey("source_name", "sources(name)").
-			WithForeignKey("requirement_name", "sources(name)"),
-		createSQLTable("sources_secrets").
-			WithNonNullTextColumn("source_name").
-			WithNonNullTextColumn("secret_name").
-			WithNonNullTextColumn("ref_type").
-			WithPrimaryKey("source_name", "secret_name").
-			WithForeignKey("source_name", "sources(name)").
-			WithForeignKey("secret_name", "secrets(name)"),
-		createSQLTable("sources_secrets").
-			WithNonNullTextColumn("source_name").
-			WithNonNullTextColumn("secret_name").
-			WithNonNullTextColumn("ref_type").
-			WithPrimaryKey("source_name", "secret_name").
-			WithForeignKey("source_name", "sources(name)").
-			WithForeignKey("secret_name", "secrets(name)"),
-		createSQLTable("sources_data").
-			WithNonNullTextColumn("source_name").
-			WithNonNullTextColumn("path").
-			WithNonNullBlobColumn("data").
-			WithPrimaryKey("source_name", "path").
-			WithForeignKey("source_name", "sources(name)"),
-		createSQLTable("sources_datasources").
-			WithNonNullTextColumn("name").
-			WithNonNullTextColumn("source_name").
-			WithNonNullTextColumn("type").
-			WithNonNullTextColumn("path").
-			WithNonNullTextColumn("config").
-			WithNonNullTextColumn("transform_query").
-			WithPrimaryKey("source_name", "name").
-			WithForeignKey("source_name", "sources(name)"),
-		createSQLTable("principals").
-			WithPrimaryKeyTextColumn("id").
-			WithNonNullTextColumn("role").
-			WithTimestampDefaultCurrentTimeColumn("created_at"),
-		createSQLTable("resource_permissions").
-			WithNonNullTextColumn("name").
-			WithNonNullTextColumn("resource").
-			WithNonNullTextColumn("principal_id").
-			WithTextColumn("role").
-			WithTextColumn("permission").
-			WithTimestampDefaultCurrentTimeColumn("created_at").
-			WithPrimaryKey("name", "resource").
-			WithForeignKeyOnDeleteCascade("principal_id", "principals(id)"),
-	}
-
-	for _, table := range tables {
-		_, err := d.db.Exec(table.SQL(d.kind))
-		if err != nil {
+	for _, table := range schema {
+		if _, err := d.db.Exec(table.SQL(d.kind)); err != nil {
 			return err
 		}
 	}
@@ -329,12 +218,11 @@ func (d *Database) SourcesDataGet(ctx context.Context, sourceName, path string, 
 		return nil, false, err
 	}
 
-	args := d.args(2)
 	rows, err := tx.Query(fmt.Sprintf(`SELECT
 	data
 FROM
 	sources_data
-WHERE source_name = %s AND path = %s AND `+expr.SQL(), args[0], args[1]), sourceName, path)
+WHERE source_name = %s AND path = %s AND `+expr.SQL(), d.arg(0), d.arg(1)), sourceName, path)
 	if err != nil {
 		return nil, false, err
 	}
@@ -420,8 +308,7 @@ func (d *Database) SourcesDataDelete(ctx context.Context, sourceName, path strin
 		return err
 	}
 
-	args := d.args(2)
-	if _, err := tx.Exec(fmt.Sprintf(`DELETE FROM sources_data WHERE source_name = %s AND path = %s AND `+expr.SQL(), args[0], args[1]), sourceName, path); err != nil {
+	if _, err := tx.Exec(fmt.Sprintf(`DELETE FROM sources_data WHERE source_name = %s AND path = %s AND `+expr.SQL(), d.arg(0), d.arg(1)), sourceName, path); err != nil {
 		return err
 	}
 

@@ -2,6 +2,116 @@ package database
 
 import "strings"
 
+var schema = []sqlTable{
+	createSQLTable("bundles").
+		IntegerPrimaryKeyAutoincrementColumn("id").
+		TextNonNullUniqueColumn("name").
+		TextColumn("labels").
+		TextColumn("s3url").
+		TextColumn("s3region").
+		TextColumn("s3bucket").
+		TextColumn("s3key").
+		TextColumn("filepath").
+		TextColumn("excluded"),
+	createSQLTable("bundles").
+		IntegerPrimaryKeyAutoincrementColumn("id").
+		TextNonNullUniqueColumn("name").
+		TextColumn("labels").
+		TextColumn("s3url").
+		TextColumn("s3region").
+		TextColumn("s3bucket").
+		TextColumn("s3key").
+		TextColumn("filepath").
+		TextColumn("excluded"),
+	createSQLTable("sources").
+		IntegerPrimaryKeyAutoincrementColumn("id").
+		TextNonNullUniqueColumn("name").
+		TextColumn("builtin").
+		TextNonNullColumn("repo").
+		TextColumn("ref").
+		TextColumn("gitcommit").
+		TextColumn("path").
+		TextColumn("git_included_files").
+		TextColumn("git_excluded_files"),
+	createSQLTable("stacks").
+		IntegerPrimaryKeyAutoincrementColumn("id").
+		TextNonNullUniqueColumn("name").
+		TextNonNullColumn("selector"),
+	createSQLTable("secrets").
+		TextPrimaryKeyColumn("name").
+		TextColumn("value"),
+	createSQLTable("tokens").
+		TextPrimaryKeyColumn("name").
+		TextNonNullColumn("api_key"),
+	createSQLTable("bundles_secrets").
+		TextNonNullColumn("bundle_name").
+		TextNonNullColumn("secret_name").
+		TextNonNullColumn("ref_type").
+		PrimaryKey("bundle_name", "secret_name").
+		ForeignKey("bundle_name", "bundles(name)").
+		ForeignKey("secret_name", "secrets(name)"),
+	createSQLTable("bundles_requirements").
+		TextNonNullColumn("bundle_name").
+		TextNonNullColumn("source_name").
+		PrimaryKey("bundle_name", "source_name").
+		ForeignKey("bundle_name", "bundles(name)").
+		ForeignKey("source_name", "sources(name)"),
+	createSQLTable("stacks_requirements").
+		TextNonNullColumn("stack_name").
+		TextNonNullColumn("source_name").
+		PrimaryKey("stack_name", "source_name").
+		ForeignKey("stack_name", "stacks(name)").
+		ForeignKey("source_name", "sources(name)"),
+	createSQLTable("sources_requirements").
+		TextNonNullColumn("source_name").
+		TextNonNullColumn("requirement_name").
+		PrimaryKey("source_name", "requirement_name").
+		ForeignKey("source_name", "sources(name)").
+		ForeignKey("requirement_name", "sources(name)"),
+	createSQLTable("sources_secrets").
+		TextNonNullColumn("source_name").
+		TextNonNullColumn("secret_name").
+		TextNonNullColumn("ref_type").
+		PrimaryKey("source_name", "secret_name").
+		ForeignKey("source_name", "sources(name)").
+		ForeignKey("secret_name", "secrets(name)"),
+	createSQLTable("sources_secrets").
+		TextNonNullColumn("source_name").
+		TextNonNullColumn("secret_name").
+		TextNonNullColumn("ref_type").
+		PrimaryKey("source_name", "secret_name").
+		ForeignKey("source_name", "sources(name)").
+		ForeignKey("secret_name", "secrets(name)"),
+	createSQLTable("sources_data").
+		TextNonNullColumn("source_name").
+		TextNonNullColumn("path").
+		BlobNonNullColumn("data").
+		PrimaryKey("source_name", "path").
+		ForeignKey("source_name", "sources(name)"),
+	createSQLTable("sources_datasources").
+		TextNonNullColumn("name").
+		TextNonNullColumn("source_name").
+		TextNonNullColumn("type").
+		TextNonNullColumn("path").
+		TextNonNullColumn("config").
+		TextNonNullColumn("transform_query").
+		PrimaryKey("source_name", "name").
+		ForeignKey("source_name", "sources(name)"),
+	createSQLTable("principals").
+		TextPrimaryKeyColumn("id").
+		TextNonNullColumn("role").
+		TimestampDefaultCurrentTimeColumn("created_at"),
+	createSQLTable("resource_permissions").
+		TextNonNullColumn("name").
+		TextNonNullColumn("resource").
+		TextNonNullColumn("principal_id").
+		TextColumn("role").
+		TextColumn("permission").
+		TimestampDefaultCurrentTimeColumn("created_at").
+		PrimaryKey("name", "resource").
+		ForeignKeyOnDeleteCascade("principal_id", "principals(id)"),
+}
+
 type sqlColumn struct {
 	Name                    string
 	Type                    sqlDataType
@@ -111,47 +221,47 @@ func (t sqlTable) WithColumn(col sqlColumn) sqlTable {
 	return t
 }
 
-func (t sqlTable) WithAutoincrementPrimaryKeyColumn(name string) sqlTable {
+func (t sqlTable) IntegerPrimaryKeyAutoincrementColumn(name string) sqlTable {
 	t.columns = append(t.columns, sqlColumn{Name: name, Type: sqlInteger{}, AutoIncrementPrimaryKey: true})
 	return t
 }
 
-func (t sqlTable) WithNonNullUniqueTextColumn(name string) sqlTable {
+func (t sqlTable) TextNonNullUniqueColumn(name string) sqlTable {
 	t.columns = append(t.columns, sqlColumn{Name: name, Type: sqlText{}, NotNull: true, Unique: true})
 	return t
 }
 
-func (t sqlTable) WithTextColumn(name string) sqlTable {
+func (t sqlTable) TextColumn(name string) sqlTable {
 	t.columns = append(t.columns, sqlColumn{Name: name, Type: sqlText{}})
 	return t
 }
 
-func (t sqlTable) WithPrimaryKeyTextColumn(name string) sqlTable {
+func (t sqlTable) TextPrimaryKeyColumn(name string) sqlTable {
 	t.columns = append(t.columns, sqlColumn{Name: name, Type: sqlText{}, PrimaryKey: true})
 	return t
 }
 
-func (t sqlTable) WithNonNullTextColumn(name string) sqlTable {
+func (t sqlTable) TextNonNullColumn(name string) sqlTable {
 	t.columns = append(t.columns, sqlColumn{Name: name, Type: sqlText{}, NotNull: true})
 	return t
 }
 
-func (t sqlTable) WithNonNullBlobColumn(name string) sqlTable {
+func (t sqlTable) BlobNonNullColumn(name string) sqlTable {
 	t.columns = append(t.columns, sqlColumn{Name: name, Type: sqlBlob{}, NotNull: true})
 	return t
 }
 
-func (t sqlTable) WithTimestampDefaultCurrentTimeColumn(name string) sqlTable {
+func (t sqlTable) TimestampDefaultCurrentTimeColumn(name string) sqlTable {
 	t.columns = append(t.columns, sqlColumn{Name: name, Type: sqlTimestamp{}, Default: "CURRENT_TIMESTAMP"})
 	return t
 }
 
-func (t sqlTable) WithPrimaryKey(columns ...string) sqlTable {
+func (t sqlTable) PrimaryKey(columns ...string) sqlTable {
 	t.primaryKeyColumns = columns
 	return t
 }
 
-func (t sqlTable) WithForeignKey(column string, references string) sqlTable {
+func (t sqlTable) ForeignKey(column string, references string) sqlTable {
 	t.foreignKeys = append(t.foreignKeys, sqlForeignKey{
 		Column:     column,
 		References: references,
@@ -159,7 +269,7 @@ func (t sqlTable) WithForeignKey(column string, references string) sqlTable {
 	return t
 }
 
-func (t sqlTable) WithForeignKeyOnDeleteCascade(column string, references string) sqlTable {
+func (t sqlTable) ForeignKeyOnDeleteCascade(column string, references string) sqlTable {
 	t.foreignKeys = append(t.foreignKeys, sqlForeignKey{
 		Column:          column,
 		References:      references,
