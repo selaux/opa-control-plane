@@ -58,5 +58,5 @@ func New(invisible bool, max int, desc string) *Bar {
 }
 
 func Var(fs *pflag.FlagSet, yes *bool) {
-	fs.BoolVarP(yes, "silent", "s", false, "Silence output and do not report progress.")
+	fs.BoolVarP(yes, "non-interactive", "", false, "Do not show progress meters")
 }

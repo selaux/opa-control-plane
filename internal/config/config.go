@@ -502,6 +502,11 @@ func (s *Selector) Get(key string) ([]string, bool) {
 	return v, ok
 }
 
+func (s *Selector) Keys() []string {
+	s.init()
+	return slices.Collect(maps.Keys(s.s))
+}
+
 func (s *Selector) Set(key string, value []string) error {
 	s.init()
 

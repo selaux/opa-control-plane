@@ -3,8 +3,12 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"maps"
 	"os"
+	"slices"
+	"sort"
 
+	"github.com/olekukonko/tablewriter"
 	"github.com/spf13/cobra"
 	"github.com/styrainc/lighthouse/cmd"
 	"github.com/styrainc/lighthouse/cmd/internal/flags"
@@ -17,7 +21,7 @@ import (
 )
 
 type buildParams struct {
-	silent            bool
+	noninteractive    bool
 	configFile        []string
 	persistenceDir    string
 	resetPersistence  bool
@@ -35,7 +39,7 @@ func init() {
 			ctx := context.Background()
 
 			var log *logging.Logger
-			if !params.silent {
+			if params.noninteractive {
 				log = logging.NewLogger(params.logging)
 			}
 
@@ -59,11 +63,15 @@ func init() {
 				WithBuiltinFS(util.NewEscapeFS(libraries.FS)).
 				WithSingleShot(true).
 				WithLogger(log).
-				WithSilent(params.silent)
+				WithNoninteractive(params.noninteractive)
 
 			if err := svc.Run(ctx); err != nil {
 				fmt.Fprintln(os.Stderr, "unexpected error:", err)
 				os.Exit(1)
+			}
+
+			if !params.noninteractive {
+				printReport(svc.Report())
 			}
 		},
 	}
@@ -72,10 +80,32 @@ func init() {
 	build.Flags().StringVarP(&params.persistenceDir, "data-dir", "d", "data", "Path to the persistence directory")
 	build.Flags().BoolVarP(&params.resetPersistence, "reset-persistence", "", false, "Reset the persistence directory (for development purposes)")
 	build.Flags().BoolVarP(&params.mergeConflictFail, "merge-conflict-fail", "", false, "Fail on config merge conflicts")
-	progress.Var(build.Flags(), &params.silent)
+	progress.Var(build.Flags(), &params.noninteractive)
 	logging.VarP(build, &params.logging)
 
 	cmd.RootCommand.AddCommand(
 		build,
 	)
+}
+
+func printReport(r *service.Report) {
+
+	table := tablewriter.NewWriter(os.Stderr)
+	table.SetAutoWrapText(false)
+	table.SetHeader([]string{"Bundle", "Status", "Message"})
+	sorted := slices.Collect(maps.Keys(r.Bundles))
+	sort.Strings(sorted)
+	var success int
+	for _, name := range sorted {
+		if r.Bundles[name].State == service.BuildStateSuccess {
+			success++
+		} else {
+			table.Append([]string{name, r.Bundles[name].State.String(), r.Bundles[name].Message})
+		}
+	}
+	fmt.Fprintf(os.Stderr, "%d/%d bundles built and pushed successfully\n", success, len(r.Bundles))
+	if success != len(r.Bundles) {
+		table.Render()
+		os.Exit(1)
+	}
 }

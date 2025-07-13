@@ -8,14 +8,19 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
+	"sort"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/akedrou/textdiff"
+	"github.com/olekukonko/tablewriter"
 	"github.com/open-policy-agent/opa/ast"
 	"github.com/open-policy-agent/opa/bundle"
 	"github.com/open-policy-agent/opa/sdk"
@@ -32,6 +37,11 @@ import (
 
 var log *logging.Logger
 
+const (
+	OutputFormatJSON   = "json"
+	OutputFormatPretty = "pretty"
+)
+
 type Options struct {
 	ConfigFile           []string
 	URL                  string
@@ -43,7 +53,8 @@ type Options struct {
 	MergeConflictFail    bool
 	Logging              logging.Config
 	Output               io.Writer
-	Silent               bool
+	Noninteractive       bool
+	Format               string
 }
 
 func init() {
@@ -70,8 +81,9 @@ func init() {
 	backtest.Flags().StringVarP(&opts.PolicyType, "policy-type", "", "", "Specify policy type to backtest against (e.g., validating, mutating, etc.)")
 	backtest.Flags().IntVarP(&opts.MaxEvalTimeInflation, "max-eval-time-inflation", "", 100, "Maximum allowed increase in decision evaluation time (in percents, <0 to disable)")
 	backtest.Flags().BoolVarP(&opts.MergeConflictFail, "merge-conflict-fail", "", false, "Fail on config merge conflicts")
+	backtest.Flags().StringVarP(&opts.Format, "format", "", OutputFormatPretty, "Set output format (json, pretty)")
 	logging.VarP(backtest, &opts.Logging)
-	progress.Var(backtest.Flags(), &opts.Silent)
+	progress.Var(backtest.Flags(), &opts.Noninteractive)
 
 	cmd.RootCommand.AddCommand(
 		backtest,
@@ -80,26 +92,54 @@ func init() {
 }
 
 type Report struct {
-	ExtraSystems     []string                `json:"extra_systems,omitempty"`
-	MissingDecisions []string                `json:"missing_decisions,omitempty"`
-	Systems          map[string]SystemReport `json:"systems,omitempty"`
+	Bundles map[string]BundleReport `json:"bundles,omitempty"`
 }
 
-type SystemReport struct {
-	Status  string         `json:"status,omitempty"`
+type ReportStatus int
+
+const (
+	ReportStatusUnknown ReportStatus = iota
+	ReportStatusError
+	ReportStatusResultDiff
+	ReportStatusLatencyInflation
+	ReportStatusPassed
+	ReportStatusSkipped
+)
+
+func (s ReportStatus) String() string {
+	switch s {
+	case ReportStatusError:
+		return "ERROR"
+	case ReportStatusResultDiff:
+		return "RESULT_DIFF"
+	case ReportStatusLatencyInflation:
+		return "LATENCY_INFLATION"
+	case ReportStatusPassed:
+		return "PASSED"
+	case ReportStatusSkipped:
+		return "SKIPPED"
+	case ReportStatusUnknown:
+		fallthrough
+	default:
+		return "UNKNOWN"
+	}
+}
+
+type BundleReport struct {
+	Status  ReportStatus   `json:"status"`
 	Message string         `json:"message,omitempty"`
 	Details []DecisionDiff `json:"details,omitempty"`
 }
 
 type DecisionDiff struct {
-	Reason string `json:"reason"`
-	Path   string `json:"path"`
+	Error error  `json:"error"`
+	Path  string `json:"path"`
 }
 
 func Run(opts Options) error {
 	ctx := context.Background()
 
-	if opts.Silent {
+	if opts.Noninteractive {
 		log = logging.NewLogger(opts.Logging)
 	}
 
@@ -123,47 +163,89 @@ func Run(opts Options) error {
 		return fmt.Errorf("please provide Styra URL with -u/--url")
 	}
 
-	styra := das.Client{
+	styra := &das.Client{
 		URL:     url,
 		Headers: opts.Headers,
 		Token:   opts.Token,
 		Client:  http.DefaultClient}
 
 	report := Report{
-		Systems: map[string]SystemReport{},
+		Bundles: map[string]BundleReport{},
 	}
 
-	bar := progress.New(opts.Silent, len(cfg.Bundles), fmt.Sprintf("running backtest against %v", opts.ConfigFile))
-
-	for _, b := range cfg.Bundles {
-		log.Infof("Backtesting bundle %q", b.Name)
-		if err := backtestBundle(ctx, opts, &styra, b, &report); err != nil {
-			report.Systems[b.Name] = SystemReport{
-				Status:  "error",
-				Message: err.Error(),
+	func() {
+		bar := progress.New(opts.Noninteractive, len(cfg.Bundles), "running backtest")
+		defer bar.Finish()
+		for _, b := range cfg.Bundles {
+			log.Infof("Backtesting bundle %q", b.Name)
+			if err := backtestBundle(ctx, opts, styra, b, &report); err != nil {
+				report.Bundles[b.Name] = BundleReport{
+					Status:  ReportStatusError,
+					Message: err.Error(),
+				}
 			}
+			bar.Add(1)
+		}
+	}()
+
+	switch opts.Format {
+	case OutputFormatJSON:
+		bs, err = json.MarshalIndent(report, "", "  ")
+		if err != nil {
+			return err
 		}
 
-		bar.Add(1)
+		fmt.Fprintln(opts.Output, string(bs))
+
+	case OutputFormatPretty:
+		printReport(opts.Output, cfg, report)
 	}
-
-	bar.Finish()
-
-	bs, err = json.MarshalIndent(report, "", "  ")
-	if err != nil {
-		return err
-	}
-
-	fmt.Fprintln(opts.Output, string(bs))
 
 	return nil
+}
+
+func printReport(w io.Writer, root *config.Root, report Report) {
+
+	sorted := slices.Collect(maps.Keys(root.Bundles))
+	sort.Slice(sorted, func(i, j int) bool {
+		a := report.Bundles[sorted[i]]
+		b := report.Bundles[sorted[j]]
+		if a.Status != b.Status {
+			return a.Status < b.Status
+		}
+		if a.Message != b.Message {
+			return a.Message < b.Message
+		}
+		return sorted[i] < sorted[j]
+	})
+
+	var success int
+
+	for _, name := range sorted {
+		if report.Bundles[name].Status == ReportStatusPassed {
+			success++
+		}
+	}
+
+	fmt.Fprintf(w, "%d/%d bundles backtested successfully\n", success, len(root.Bundles))
+
+	table := tablewriter.NewWriter(w)
+	table.SetAutoWrapText(false)
+	table.SetHeader([]string{"Name", "Status", "Message"})
+
+	for _, name := range sorted {
+		sr := report.Bundles[name]
+		table.Append([]string{name, sr.Status.String(), sr.Message})
+	}
+
+	table.Render()
 }
 
 func backtestBundle(ctx context.Context, opts Options, styra *das.Client, b *config.Bundle, report *Report) error {
 
 	systemId, ok := b.Labels["system-id"]
 	if !ok {
-		report.ExtraSystems = append(report.ExtraSystems, b.Name)
+		report.Bundles[b.Name] = BundleReport{Status: ReportStatusSkipped, Message: "No system id configured"}
 		return nil
 	}
 
@@ -179,7 +261,7 @@ func backtestBundle(ctx context.Context, opts Options, styra *das.Client, b *con
 	}}); err != nil {
 		return err
 	} else if resp.StatusCode == http.StatusNotFound {
-		report.ExtraSystems = append(report.ExtraSystems, b.Name)
+		report.Bundles[b.Name] = BundleReport{Status: ReportStatusSkipped, Message: fmt.Sprintf("System %v does not exist", systemId)}
 		return nil
 	} else if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("unexpected status code for system %v: %v", systemId, resp.StatusCode)
@@ -208,7 +290,7 @@ func backtestBundle(ctx context.Context, opts Options, styra *das.Client, b *con
 	}
 
 	if len(decisions.Items) == 0 {
-		report.MissingDecisions = append(report.MissingDecisions, b.Name)
+		report.Bundles[b.Name] = BundleReport{Status: ReportStatusSkipped, Message: "No decisions found for system"}
 		return nil
 	}
 
@@ -259,17 +341,17 @@ func backtestBundle(ctx context.Context, opts Options, styra *das.Client, b *con
 	// Start OPA SDK
 
 	config := fmt.Sprintf(`{
-                "services": {
-                        "test": {
-                                "url": %q
-                        }
-                },
-                "bundles": {
-                        "test": {
-                                "resource": "/bundle.tar.gz"
-                        }
-                }
-        }`, ts.URL)
+				"services": {
+						"test": {
+								"url": %q
+						}
+				},
+				"bundles": {
+						"test": {
+								"resource": "/bundle.tar.gz"
+						}
+				}
+		}`, ts.URL)
 
 	ready := make(chan struct{})
 	sdkopts := sdk.Options{
@@ -297,7 +379,23 @@ func backtestBundle(ctx context.Context, opts Options, styra *das.Client, b *con
 
 	// Re-evaluate decisions
 
-	for _, d := range decisions.Items {
+	tempDir, err := os.MkdirTemp("", "lighthouse-backtest-"+b.Name)
+	if err != nil {
+		return err
+	}
+
+	bundleFile, err := os.Create(filepath.Join(tempDir, "bundle.tar.gz"))
+	if err != nil {
+		return err
+	}
+
+	defer bundleFile.Close()
+
+	if err := bundle.NewWriter(bundleFile).DisableFormat(true).Write(a); err != nil {
+		return err
+	}
+
+	for i, d := range decisions.Items {
 
 		options := sdk.DecisionOptions{
 			Path: d.Path,
@@ -320,30 +418,50 @@ func backtestBundle(ctx context.Context, opts Options, styra *das.Client, b *con
 			result = &r.Result
 		}
 
-		if err := compareResults(&d, result, time.Now().Sub(start), opts.MaxEvalTimeInflation); err != nil {
-			path, innerErr := saveFailure(&a, d)
-			if innerErr != nil {
-				return innerErr
-			}
-			diffs = append(diffs, DecisionDiff{Reason: err.Error(), Path: path})
+		err = compareResults(&d, result, time.Since(start), opts.MaxEvalTimeInflation)
+		if err == nil {
+			continue
 		}
+
+		path := filepath.Join(tempDir, strconv.Itoa(i))
+		if innerErr := os.MkdirAll(path, 0755); innerErr != nil {
+			return innerErr
+		}
+
+		if innerErr := saveFailure(path, d); innerErr != nil {
+			return innerErr
+		}
+
+		diffs = append(diffs, DecisionDiff{Error: err, Path: path})
 	}
 
 	if len(diffs) == 0 {
-		report.Systems[b.Name] = SystemReport{
-			Status:  "passed",
-			Message: fmt.Sprintf("evaluated %v decisions in %v and found no difference(s)", len(decisions.Items), time.Since(t0)),
+		report.Bundles[b.Name] = BundleReport{
+			Status:  ReportStatusPassed,
+			Message: fmt.Sprintf("%d/%d decisions were identical (took %v)", len(decisions.Items), len(decisions.Items), time.Since(t0)),
+		}
+		return nil
+	}
+
+	var nonErrorDiffs, errorDiffs int
+	for _, d := range diffs {
+		if _, ok := d.Error.(*compareErr); !ok {
+			errorDiffs++
+		} else {
+			nonErrorDiffs++
+		}
+	}
+
+	if errorDiffs > 0 {
+		report.Bundles[b.Name] = BundleReport{
+			Status:  ReportStatusError,
+			Message: fmt.Sprintf("%d/%d decisions generated errors. Details: %v", errorDiffs, len(decisions.Items), filepath.Dir(diffs[0].Path)),
+			Details: diffs,
 		}
 	} else {
-		var reportLimit string
-		nDiffs := len(diffs)
-		if len(diffs) > 10 {
-			diffs = diffs[:10]
-			reportLimit = " (report limit: 10)"
-		}
-		report.Systems[b.Name] = SystemReport{
-			Status:  "failed",
-			Message: fmt.Sprintf("evaluated %v decisions in %v and found %v difference(s)%v", len(decisions.Items), time.Since(t0), nDiffs, reportLimit),
+		report.Bundles[b.Name] = BundleReport{
+			Status:  diffs[0].Error.(*compareErr).Status,
+			Message: fmt.Sprintf("%d/%d decisions differed. Details: %v", nonErrorDiffs, len(decisions.Items), filepath.Dir(diffs[0].Path)),
 			Details: diffs,
 		}
 	}
@@ -351,27 +469,11 @@ func backtestBundle(ctx context.Context, opts Options, styra *das.Client, b *con
 	return nil
 }
 
-func saveFailure(b *bundle.Bundle, d das.V1Decision) (string, error) {
+func saveFailure(dir string, d das.V1Decision) error {
 
-	path, err := os.MkdirTemp("", "lighthouse-backtest")
+	decisionFile, err := os.Create(filepath.Join(dir, "decision.json"))
 	if err != nil {
-		return "", err
-	}
-
-	bundleFile, err := os.Create(filepath.Join(path, "bundle.tar.gz"))
-	if err != nil {
-		return "", err
-	}
-
-	defer bundleFile.Close()
-
-	if err := bundle.NewWriter(bundleFile).DisableFormat(true).Write(*b); err != nil {
-		return "", err
-	}
-
-	decisionFile, err := os.Create(filepath.Join(path, "decision.json"))
-	if err != nil {
-		return "", err
+		return err
 	}
 
 	defer decisionFile.Close()
@@ -379,12 +481,12 @@ func saveFailure(b *bundle.Bundle, d das.V1Decision) (string, error) {
 	enc := json.NewEncoder(decisionFile)
 	enc.SetIndent("", "  ")
 	if err := enc.Encode(d); err != nil {
-		return "", err
+		return err
 	}
 
-	inputFile, err := os.Create(filepath.Join(path, "input.json"))
+	inputFile, err := os.Create(filepath.Join(dir, "input.json"))
 	if err != nil {
-		return "", err
+		return err
 	}
 
 	defer inputFile.Close()
@@ -392,23 +494,40 @@ func saveFailure(b *bundle.Bundle, d das.V1Decision) (string, error) {
 	enc = json.NewEncoder(inputFile)
 	enc.SetIndent("", "  ")
 	if enc.Encode(d.Input) != nil {
-		return "", err
+		return err
 	}
 
-	return path, nil
+	return nil
+}
+
+type compareErr struct {
+	Status  ReportStatus `json:"status"`
+	Message string       `json:"message"`
+}
+
+func (e *compareErr) Error() string {
+	return e.Message
+}
+
+func resultDiffErr(msg string) error {
+	return &compareErr{Message: msg, Status: ReportStatusResultDiff}
+}
+
+func latencyInflationErr(msg string) error {
+	return &compareErr{Message: msg, Status: ReportStatusLatencyInflation}
 }
 
 func compareResults(d *das.V1Decision, r *interface{}, t time.Duration, maxEvalInflation int) error {
 
 	if d.Result == nil {
 		if r != nil {
-			return errors.New("logged decision was undefined but bundle decision was not")
+			return resultDiffErr("logged decision was undefined but bundle decision was not")
 		}
 		return nil
 	}
 
 	if r == nil {
-		return errors.New("logged decision was defined but bundle decision was not")
+		return resultDiffErr("logged decision was defined but bundle decision was not")
 	}
 
 	a, err := ast.InterfaceToValue(*r)
@@ -433,12 +552,12 @@ func compareResults(d *das.V1Decision, r *interface{}, t time.Duration, maxEvalI
 			return err
 		}
 
-		return errors.New(textdiff.Unified("Expected", "Found", string(bBytes), string(aBytes)))
+		return resultDiffErr(textdiff.Unified("Expected", "Found", string(bBytes), string(aBytes)))
 	}
 
 	if maxEvalInflation >= 0 {
 		if o := time.Duration(d.Metrics.TimerRegoQueryEvalNs); o*time.Duration(maxEvalInflation+100)/100 < t {
-			return fmt.Errorf("bundle decision took over %d%% longer than original decision to evaluate", maxEvalInflation)
+			return latencyInflationErr(fmt.Sprintf("bundle decision took over %d%% longer than original decision to evaluate", maxEvalInflation))
 		}
 	}
 

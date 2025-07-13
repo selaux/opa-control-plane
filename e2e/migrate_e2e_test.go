@@ -386,14 +386,14 @@ func TestMigration(t *testing.T) {
 				}
 
 				err = migrate.Run(migrate.Options{
-					URL:         tc.styraURL,
-					Token:       styraToken,
-					SystemId:    tc.systemId,
-					Prune:       true,
-					Datasources: tc.datasources,
-					EmbedFiles:  true,
-					Output:      f,
-					Silent:      true,
+					URL:            tc.styraURL,
+					Token:          styraToken,
+					SystemId:       tc.systemId,
+					Prune:          true,
+					Datasources:    tc.datasources,
+					EmbedFiles:     true,
+					Output:         f,
+					Noninteractive: true,
 				})
 				if err != nil {
 					t.Fatal(err)
@@ -453,7 +453,8 @@ func TestMigration(t *testing.T) {
 					PolicyType:           tc.policyType,
 					MaxEvalTimeInflation: maxEvalTimeInflation,
 					Output:               buf,
-					Silent:               true,
+					Noninteractive:       true,
+					Format:               backtest.OutputFormatJSON,
 				}); err != nil {
 					t.Fatal(err)
 				}
@@ -466,9 +467,9 @@ func TestMigration(t *testing.T) {
 					t.Fatal(err)
 				}
 
-				if r.Systems[tc.bundleName].Status != "passed" {
+				if r.Bundles[tc.bundleName].Status != backtest.ReportStatusPassed {
 					t.Logf("Dumping output:\n%v", string(buf.Bytes()))
-					t.Fatalf("expected %q system to be successful", tc.bundleName)
+					t.Fatalf("expected %q to be successful", tc.bundleName)
 				}
 
 			})

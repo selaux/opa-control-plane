@@ -5,6 +5,7 @@ import (
 	"context"
 	"time"
 
+	"github.com/open-policy-agent/opa/ast"
 	"github.com/styrainc/lighthouse/internal/builder"
 	"github.com/styrainc/lighthouse/internal/config"
 	"github.com/styrainc/lighthouse/internal/logging"
@@ -23,6 +24,7 @@ var (
 // constructs a bundle using the builder package, and uploads the resulting
 // bundle to an S3-compatible object storage service.
 type BundleWorker struct {
+	bundleDir     string
 	bundleConfig  *config.Bundle
 	sourceConfigs config.Sources
 	stackConfigs  config.Stacks
@@ -34,6 +36,7 @@ type BundleWorker struct {
 	singleShot    bool
 	log           *logging.Logger
 	bar           *progress.Bar
+	status        Status
 }
 
 type Synchronizer interface {
@@ -41,8 +44,9 @@ type Synchronizer interface {
 	Close(ctx context.Context)
 }
 
-func NewBundleWorker(b *config.Bundle, sources []*config.Source, stacks []*config.Stack, logger *logging.Logger, bar *progress.Bar) *BundleWorker {
+func NewBundleWorker(bundleDir string, b *config.Bundle, sources []*config.Source, stacks []*config.Stack, logger *logging.Logger, bar *progress.Bar) *BundleWorker {
 	return &BundleWorker{
+		bundleDir:     bundleDir,
 		bundleConfig:  b,
 		sourceConfigs: sources,
 		stackConfigs:  stacks,
@@ -102,20 +106,23 @@ func (w *BundleWorker) Execute(ctx context.Context) time.Time {
 	// Wipe any old files synchronized during the previous run to avoid deleted files in database/http from reappearing to bundle bundles.
 	for _, src := range w.sources {
 		if err := src.Wipe(); err != nil {
-			return w.warn(ctx, "failed to remove a directory for bundle %q: %v", w.bundleConfig.Name, err)
+			w.log.Warnf("failed to remove a directory for bundle %q: %v", w.bundleConfig.Name, err)
+			return w.report(ctx, BuildStateInternalError, err)
 		}
 	}
 
 	for _, synchronizer := range w.synchronizers {
 		err := synchronizer.Execute(ctx)
 		if err != nil {
-			return w.warn(ctx, "failed to synchronize bundle %q: %v", w.bundleConfig.Name, err)
+			w.log.Warnf("failed to synchronize bundle %q: %v", w.bundleConfig.Name, err)
+			return w.report(ctx, BuildStateSyncFailed, err)
 		}
 	}
 
 	for _, src := range w.sources {
 		if err := src.Transform(ctx); err != nil {
-			return w.warn(ctx, "failed to evaluate source %q for bundle %q: %v", src.Name, w.bundleConfig.Name, err)
+			w.log.Warnf("failed to evaluate source %q for bundle %q: %v", src.Name, w.bundleConfig.Name, err)
+			return w.report(ctx, BuildStateTransformFailed, err)
 		}
 	}
 
@@ -128,32 +135,33 @@ func (w *BundleWorker) Execute(ctx context.Context) time.Time {
 
 	err := b.Build(ctx)
 	if err != nil {
-		return w.warn(ctx, "failed to build a bundle %q: %v", w.bundleConfig.Name, err)
+		w.log.Warnf("failed to build a bundle %q: %v", w.bundleConfig.Name, err)
+		return w.report(ctx, BuildStateBuildFailed, err)
 	}
 
 	if w.storage != nil {
 		if err := w.storage.Upload(ctx, bytes.NewReader(buffer.Bytes())); err != nil {
-			return w.warn(ctx, "failed to upload bundle %q: %v", w.bundleConfig.Name, err)
+			w.log.Warnf("failed to upload bundle %q: %v", w.bundleConfig.Name, err)
+			return w.report(ctx, BuildStatePushFailed, err)
 		}
 
-		return w.success(ctx, "Bundle %q built and uploaded.", w.bundleConfig.Name)
+		w.log.Debugf("Bundle %q built and uploaded.", w.bundleConfig.Name)
+		return w.report(ctx, BuildStateSuccess, nil)
 	}
 
-	return w.success(ctx, "Bundle %q built.", w.bundleConfig.Name)
+	w.log.Debugf("Bundle %q built.", w.bundleConfig.Name)
+	return w.report(ctx, BuildStateSuccess, nil)
 }
 
-func (w *BundleWorker) success(ctx context.Context, msg string, args ...interface{}) time.Time {
-	w.log.Debugf(msg, args...)
-
-	if w.singleShot {
-		return w.die(ctx)
+func (w *BundleWorker) report(ctx context.Context, state BuildState, err error) time.Time {
+	w.status.State = state
+	if err != nil {
+		if _, ok := err.(ast.Errors); ok {
+			w.status.Message = "Run 'opa build " + w.bundleDir + "' to see errors"
+		} else {
+			w.status.Message = err.Error()
+		}
 	}
-
-	return time.Now().Add(successDelay)
-}
-
-func (w *BundleWorker) warn(ctx context.Context, msg string, args ...interface{}) time.Time {
-	w.log.Warnf(msg, args...)
 
 	if w.singleShot {
 		return w.die(ctx)

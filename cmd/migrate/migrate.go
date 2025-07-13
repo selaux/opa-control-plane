@@ -9,20 +9,23 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/olekukonko/tablewriter"
 	"github.com/open-policy-agent/opa/ast"
 	"github.com/spf13/cobra"
+	"gopkg.in/yaml.v3"
+
 	"github.com/styrainc/lighthouse/cmd"
 	"github.com/styrainc/lighthouse/cmd/internal/das"
 	"github.com/styrainc/lighthouse/internal/config"
 	"github.com/styrainc/lighthouse/internal/logging"
 	"github.com/styrainc/lighthouse/internal/progress"
 	"github.com/styrainc/lighthouse/libraries"
-	"gopkg.in/yaml.v3"
 )
 
 var log *logging.Logger
@@ -453,7 +456,7 @@ var baseLibPackageIndex = func() map[string]*libraryPackageIndex {
 }()
 
 type Options struct {
-	Silent            bool
+	Noninteractive    bool
 	Token             string
 	URL               string
 	Headers           []string
@@ -513,12 +516,79 @@ func init() {
 	migrate.Flags().StringVarP(&params.FilesystemRootDir, "filesystem-root-dir", "", "bundles", "Set root directory for filesystem object storage")
 	migrate.Flags().StringVarP(&params.S3BucketName, "s3-bucket-name", "", "BUCKET_NAME", "Set placeholder AWS S3 bucket name for object storage")
 	migrate.Flags().StringVarP(&params.S3BucketRegion, "s3-bucket-region", "", "BUCKET_REGION", "Set placeholder AWS S3 bucket region for object storage")
-	progress.Var(migrate.Flags(), &params.Silent)
+	progress.Var(migrate.Flags(), &params.Noninteractive)
 	logging.VarP(migrate, &params.Logging)
 
 	cmd.RootCommand.AddCommand(
 		migrate,
 	)
+}
+
+type MigrateStatus int
+
+const (
+	MigrateStatusUnknown MigrateStatus = iota
+	MigrateStatusReview
+	MigrateStatusSuccess
+)
+
+func (s MigrateStatus) String() string {
+	switch s {
+	case MigrateStatusReview:
+		return "REVIEW"
+	case MigrateStatusSuccess:
+		return "SUCCESS"
+	case MigrateStatusUnknown:
+		fallthrough
+	default:
+		return "UNKNOWN"
+	}
+}
+
+type Kind int
+
+const (
+	KindSystem Kind = iota
+	KindStack
+	KindLibrary
+)
+
+func (k Kind) String() string {
+	switch k {
+	case KindSystem:
+		return "System"
+	case KindStack:
+		return "Stack"
+	case KindLibrary:
+		return "Library"
+	default:
+		return "Unknown"
+	}
+}
+
+type row struct {
+	name    string
+	kind    Kind
+	file    string
+	status  MigrateStatus
+	message string
+}
+
+func (r row) LessThan(other row) bool {
+	if r.kind != other.kind {
+		return r.kind < other.kind
+	}
+	if r.status != other.status {
+		return r.status < other.status
+	}
+	if r.message != other.message {
+		return r.message < other.message
+	}
+	return r.file < other.file
+}
+
+func (r row) StringSlice() []string {
+	return []string{r.name, r.kind.String(), r.file, r.status.String(), r.message}
 }
 
 func Run(params Options) error {
@@ -529,7 +599,7 @@ func Run(params Options) error {
 		nf.AssignSafeName(lib.Name)
 	}
 
-	if params.Silent {
+	if params.Noninteractive {
 		log = logging.NewLogger(params.Logging)
 	}
 
@@ -558,7 +628,7 @@ func Run(params Options) error {
 	output.Metadata.ExportedFrom = params.URL
 	output.Metadata.ExportedAt = time.Now().UTC().Format(time.RFC3339)
 
-	state, err := fetchDASState(params.Silent, &c, dasFetchOptions{SystemId: params.SystemId})
+	state, err := fetchDASState(params.Noninteractive, &c, dasFetchOptions{SystemId: params.SystemId})
 	if err != nil {
 		return err
 	}
@@ -580,27 +650,7 @@ func Run(params Options) error {
 		return err
 	}
 
-	if params.Prune {
-		stacks, sources, secrets := pruneConfig(&output)
-		sort.Slice(stacks, func(i, j int) bool {
-			return stacks[i].Name < stacks[j].Name
-		})
-		sort.Slice(sources, func(i, j int) bool {
-			return sources[i].Name < sources[j].Name
-		})
-		sort.Slice(secrets, func(i, j int) bool {
-			return secrets[i].Name < secrets[j].Name
-		})
-		for _, stack := range stacks {
-			log.Debugf("Removed unused stack %q", stack.Name)
-		}
-		for _, lib := range sources {
-			log.Debugf("Removed unused source %q", lib.Name)
-		}
-		for _, s := range secrets {
-			log.Debugf("Removed unused secret %q", s.Name)
-		}
-	}
+	removedStacks, removedSources, _ := pruneConfig(&output, params.Prune)
 
 	files := make(map[string]string)
 
@@ -701,14 +751,109 @@ func Run(params Options) error {
 		}
 
 		log.Infof("Finished downloading resources from DAS. Writing configuration files under %v", rootAbs)
-		files, err := splitConfig(rootAbs, output)
+		allFiles, bundleFileNames, stackFileNames, sourceFileNames, err := splitConfig(rootAbs, output)
 		if err != nil {
 			return err
 		}
-		for name, content := range files {
+
+		for name, content := range allFiles {
 			if err := os.WriteFile(name, content, 0644); err != nil {
 				return err
 			}
+		}
+
+		if !params.Noninteractive {
+
+			table := tablewriter.NewWriter(os.Stderr)
+			table.SetAutoWrapText(false)
+			table.SetHeader([]string{"Name", "Type", "Config", "Status", "Message"})
+
+			var rows []row
+
+			for _, system := range state.SystemsById {
+				name := system.SanitizedName()
+				var msgs []string
+				for key := range output.Bundles[name].Labels {
+					if strings.HasPrefix(key, staticStackSelectorPrefix) {
+						msgs = append(msgs, fmt.Sprintf("Remove label %q once stack selector fixed", key))
+						break
+					}
+				}
+				var status MigrateStatus
+				if len(msgs) == 0 {
+					status = MigrateStatusSuccess
+				} else {
+					status = MigrateStatusReview
+				}
+
+				rows = append(rows, row{system.Name, KindSystem, bundleFileNames[name], status, strings.Join(msgs, "; ")})
+			}
+
+			for _, stack := range state.StacksById {
+				name := stack.SanitizedName()
+				if _, ok := stackFileNames[name]; ok {
+					var msgs []string
+					pruned := slices.ContainsFunc(removedStacks, func(x *config.Stack) bool {
+						return x.Name == name
+					})
+					if pruned {
+						msgs = append(msgs, "Stack did not match any systems")
+					}
+					for _, key := range output.Stacks[name].Selector.Keys() {
+						if strings.HasPrefix(key, staticStackSelectorPrefix) {
+							msgs = append(msgs, "Stack selector logic could not be migrated")
+						}
+					}
+					var status MigrateStatus
+					if len(msgs) == 0 {
+						status = MigrateStatusSuccess
+					} else {
+						status = MigrateStatusReview
+					}
+
+					rows = append(rows, row{stack.Name, KindStack, stackFileNames[name], status, strings.Join(msgs, "; ")})
+				}
+			}
+
+			for _, library := range state.LibrariesById {
+				name := library.SanitizedName()
+				if _, ok := sourceFileNames[name]; ok {
+					var msgs []string
+					pruned := slices.ContainsFunc(removedSources, func(x *config.Source) bool {
+						return x.Name == name
+					})
+					if pruned {
+						msgs = append(msgs, "Library is not used by any systems, stacks, or other libraries")
+					}
+					var status MigrateStatus
+					if len(msgs) == 0 {
+						status = MigrateStatusSuccess
+					} else {
+						status = MigrateStatusReview
+					}
+					rows = append(rows, row{library.Id, KindLibrary, sourceFileNames[name], status, strings.Join(msgs, "; ")})
+				}
+			}
+
+			sort.Slice(rows, func(i, j int) bool {
+				return rows[i].LessThan(rows[j])
+			})
+
+			strings := make([][]string, len(rows))
+			success := make(map[Kind]int)
+
+			for i := range rows {
+				if rows[i].status == MigrateStatusSuccess {
+					success[rows[i].kind]++
+				}
+				strings[i] = rows[i].StringSlice()
+			}
+
+			table.AppendBulk(strings)
+			fmt.Fprintf(os.Stderr, "%d/%d systems migrated successfully\n", success[KindSystem], len(state.SystemsById))
+			fmt.Fprintf(os.Stderr, "%d/%d stacks migrated successfully\n", success[KindStack], len(state.StacksById))
+			fmt.Fprintf(os.Stderr, "%d/%d libraries migrated successfully\n", success[KindLibrary], len(state.LibrariesById))
+			table.Render()
 		}
 	}
 
@@ -717,7 +862,7 @@ func Run(params Options) error {
 
 func migrateLibraries(params Options, state *dasState, c *das.Client, nf *nameFactory, output *config.Root) (*libraryPackageIndex, error) {
 
-	bar := progress.New(params.Silent, len(state.LibrariesById), "migrating libraries")
+	bar := progress.New(params.Noninteractive, len(state.LibrariesById), "migrating libraries")
 	defer bar.Finish()
 
 	index := newLibraryPackageIndex()
@@ -762,7 +907,7 @@ func migrateLibraries(params Options, state *dasState, c *das.Client, nf *nameFa
 }
 
 func migrateSystems(params Options, state *dasState, c *das.Client, nf *nameFactory, output *config.Root) error {
-	bar := progress.New(params.Silent, len(state.SystemsById), "migrating systems")
+	bar := progress.New(params.Noninteractive, len(state.SystemsById), "migrating systems")
 	defer bar.Finish()
 
 	for _, system := range state.SystemsById {
@@ -786,7 +931,7 @@ func migrateSystems(params Options, state *dasState, c *das.Client, nf *nameFact
 
 func migrateStacks(params Options, state *dasState, c *das.Client, nf *nameFactory, output *config.Root) error {
 
-	bar := progress.New(params.Silent, len(state.StacksById), "migrating stacks")
+	bar := progress.New(params.Noninteractive, len(state.StacksById), "migrating stacks")
 	defer bar.Finish()
 
 	for id, stack := range state.StacksById {
@@ -817,9 +962,22 @@ func migrateStacks(params Options, state *dasState, c *das.Client, nf *nameFacto
 	return nil
 }
 
-func splitConfig(outputDir string, output config.Root) (map[string][]byte, error) {
+func splitConfig(outputDir string, output config.Root) (map[string][]byte, map[string]string, map[string]string, map[string]string, error) {
+
+	cwd, err := os.Getwd()
+	if err != nil {
+		return nil, nil, nil, nil, err
+	}
+
+	relDir, err := filepath.Rel(cwd, outputDir)
+	if err != nil {
+		return nil, nil, nil, nil, err
+	}
 
 	configs := make(map[string]config.Root)
+	bundleFiles := make(map[string]string, len(output.Bundles))
+	stackFiles := make(map[string]string, len(output.Stacks))
+	sourceFiles := make(map[string]string, len(output.Sources))
 
 	for name, b := range output.Bundles {
 		srcName := *b.Requirements[0].Source
@@ -829,7 +987,9 @@ func splitConfig(outputDir string, output config.Root) (map[string][]byte, error
 			Bundles: map[string]*config.Bundle{name: b},
 			Sources: map[string]*config.Source{srcName: src},
 		}
-		configs["config-system-"+name+".yaml"] = root
+		f := "system-" + name + ".yaml"
+		configs[f] = root
+		bundleFiles[name] = filepath.Join(relDir, f)
 	}
 
 	for name, s := range output.Stacks {
@@ -840,13 +1000,17 @@ func splitConfig(outputDir string, output config.Root) (map[string][]byte, error
 			Stacks:  map[string]*config.Stack{name: s},
 			Sources: map[string]*config.Source{srcName: src},
 		}
-		configs["config-stack-"+name+".yaml"] = root
+		f := "stack-" + name + ".yaml"
+		configs[f] = root
+		stackFiles[name] = filepath.Join(relDir, f)
 	}
 
 	for name, s := range output.Sources {
-		configs["config-source-"+name+".yaml"] = config.Root{
+		f := "source-" + name + ".yaml"
+		configs[f] = config.Root{
 			Sources: map[string]*config.Source{name: s},
 		}
+		sourceFiles[name] = filepath.Join(relDir, f)
 	}
 
 	for name, s := range output.Secrets {
@@ -859,7 +1023,7 @@ func splitConfig(outputDir string, output config.Root) (map[string][]byte, error
 	for name, original := range output.Sources {
 		files, err := original.Files()
 		if err != nil {
-			return nil, err
+			return nil, nil, nil, nil, err
 		}
 
 		if len(files) > 0 {
@@ -879,12 +1043,12 @@ func splitConfig(outputDir string, output config.Root) (map[string][]byte, error
 		root.Metadata = output.Metadata
 		bs, err := yaml.Marshal(root)
 		if err != nil {
-			return nil, err
+			return nil, nil, nil, nil, err
 		}
 		result[filepath.Join(outputDir, name)] = bs
 	}
 
-	return result, nil
+	return result, bundleFiles, stackFiles, sourceFiles, nil
 }
 
 func migrateV1Library(nf *nameFactory, client *das.Client, state *dasState, v1 *das.V1Library, migrateDSContent bool) (*config.Source, []*config.Secret, error) {
@@ -1589,7 +1753,7 @@ func getRequirementsForPolicies(policies []*das.V1Policy, index *libraryPackageI
 	return rs, nil
 }
 
-func pruneConfig(root *config.Root) ([]*config.Stack, []*config.Source, []*config.Secret) {
+func pruneConfig(root *config.Root, doPrune bool) ([]*config.Stack, []*config.Source, []*config.Secret) {
 
 	var removedStacks []*config.Stack
 	var removedSources []*config.Source
@@ -1603,7 +1767,9 @@ func pruneConfig(root *config.Root) ([]*config.Stack, []*config.Source, []*confi
 			}
 		}
 		if !found {
-			delete(root.Stacks, stack.Name)
+			if doPrune {
+				delete(root.Stacks, stack.Name)
+			}
 			removedStacks = append(removedStacks, stack)
 		}
 	}
@@ -1642,7 +1808,9 @@ func pruneConfig(root *config.Root) ([]*config.Stack, []*config.Source, []*confi
 			}
 		})
 		if !found {
-			delete(root.Sources, src.Name)
+			if doPrune {
+				delete(root.Sources, src.Name)
+			}
 			removedSources = append(removedSources, src)
 		}
 	}
@@ -1656,7 +1824,9 @@ func pruneConfig(root *config.Root) ([]*config.Stack, []*config.Source, []*confi
 
 	for _, s := range root.Secrets {
 		if _, ok := credentials[s.Name]; !ok {
-			delete(root.Secrets, s.Name)
+			if doPrune {
+				delete(root.Secrets, s.Name)
+			}
 			removedSecrets = append(removedSecrets, s)
 		}
 	}

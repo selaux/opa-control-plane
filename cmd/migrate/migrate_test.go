@@ -145,7 +145,7 @@ func TestPruneConfig(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	stacks, sources, secrets := pruneConfig(root)
+	stacks, sources, secrets := pruneConfig(root, true)
 	expStacks := []string{"stack2"}
 	expSrcs := []string{"libUNUSED1", "libUNUSED2", "libUNUSED3"}
 	expSecrets := []string{"sec6", "sec7"}

@@ -35,15 +35,55 @@ type Service struct {
 	database       database.Database
 	builtinFS      fs.FS
 	singleShot     bool
+	report         *Report
 	log            *logging.Logger
-	silent         bool
+	noninteractive bool
+}
+
+type Report struct {
+	Bundles map[string]Status
+}
+
+type BuildState int
+
+const (
+	BuildStateInternalError BuildState = iota
+	BuildStateSuccess
+	BuildStateSyncFailed
+	BuildStateTransformFailed
+	BuildStateBuildFailed
+	BuildStatePushFailed
+)
+
+func (s BuildState) String() string {
+	switch s {
+	case BuildStateSuccess:
+		return "SUCCESS"
+	case BuildStateSyncFailed:
+		return "SYNC_FAILED"
+	case BuildStateTransformFailed:
+		return "TRANSFORM_FAILED"
+	case BuildStateBuildFailed:
+		return "BUILD_FAILED"
+	case BuildStatePushFailed:
+		return "PUSH_FAILED"
+	case BuildStateInternalError:
+		fallthrough
+	default:
+		return "INTERNAL_ERROR"
+	}
+}
+
+type Status struct {
+	State   BuildState
+	Message string
 }
 
 func New() *Service {
 	return &Service{
-		pool:    pool.New(10),
-		workers: make(map[string]*BundleWorker),
-		silent:  true,
+		pool:           pool.New(10),
+		workers:        make(map[string]*BundleWorker),
+		noninteractive: true,
 	}
 }
 
@@ -76,8 +116,8 @@ func (s *Service) WithLogger(logger *logging.Logger) *Service {
 	return s
 }
 
-func (s *Service) WithSilent(yes bool) *Service {
-	s.silent = yes
+func (s *Service) WithNoninteractive(yes bool) *Service {
+	s.noninteractive = yes
 	return s
 }
 
@@ -113,11 +153,25 @@ shutdown:
 		w.UpdateConfig(nil, nil, nil)
 	}
 
+	if s.singleShot {
+		s.report = &Report{
+			Bundles: make(map[string]Status, len(s.workers)),
+		}
+		for _, w := range s.workers {
+			s.report.Bundles[w.bundleConfig.Name] = w.status
+		}
+	}
+
 	return nil
+
+}
+
+func (s *Service) Report() *Report {
+	return s.report
 }
 
 func (s *Service) initDB(ctx context.Context) error {
-	bar := progress.New(s.silent, -1, "loading configuration")
+	bar := progress.New(s.noninteractive, -1, "loading configuration")
 	defer bar.Finish()
 
 	root, err := config.Parse(bytes.NewBuffer(s.config))
@@ -199,7 +253,7 @@ func (s *Service) launchWorkers(ctx context.Context) {
 	//             ├── datasources/       # Source-specific HTTP datasources
 	//             └── repo/              # Source git repository
 
-	bar := progress.New(s.silent, len(bundles), "building and pushing bundles")
+	bar := progress.New(s.noninteractive, len(bundles), "building and pushing bundles")
 
 	for _, b := range bundles {
 		if w, ok := s.workers[b.Name]; ok {
@@ -239,7 +293,7 @@ func (s *Service) launchWorkers(ctx context.Context) {
 			continue
 		}
 
-		w := NewBundleWorker(b, sourceDefs, stacks, s.log, bar).
+		w := NewBundleWorker(bundleDir, b, sourceDefs, stacks, s.log, bar).
 			WithSources(sources).
 			WithSynchronizers(syncs).
 			WithStorage(storage).
