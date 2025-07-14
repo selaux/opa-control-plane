@@ -44,6 +44,32 @@ func (nf *nameFactory) AssignSafeName(basename string) string {
 	return fmt.Sprintf("%s-%d", basename, count)
 }
 
+var systemTypeMapping = map[string]string{
+	"kubernetes":                "kubernetes:v1",
+	"kubernetes:v2":             "kubernetes:v2",
+	"envoy":                     "envoy:v1",
+	"template.envoy:2.1":        "template.envoy:2.1",
+	"template.envoy:2.0":        "template.envoy:2.0",
+	"template.istio:1.0":        "template.istio:1.0",
+	"template.kuma:1.0":         "template.kuma:1.0",
+	"template.kong-gateway:1.0": "template.kong-gateway:1.0",
+	"template.terraform:2.0":    "template.terraform:2.0",
+	"template.entitlements:1.0": "template.entitlements:1.0",
+}
+
+var stackTypeMapping = map[string]string{
+	"kubernetes":                "kubernetes:v1-stack",
+	"kubernetes:v2":             "kubernetes:v2-stack",
+	"envoy":                     "envoy:v1-stack",
+	"template.envoy:2.1":        "template.envoy:2.1-stack",
+	"template.envoy:2.0":        "template.envoy:2.0-stack",
+	"template.istio:1.0":        "template.istio:1.0-stack",
+	"template.kuma:1.0":         "template.kuma:1.0-stack",
+	"template.kong-gateway:1.0": "template.kong-gateway:1.0-stack",
+	"template.terraform:2.0":    "template.terraform:2.0-stack",
+	"template.entitlements:1.0": "template.entitlements:1.0-stack",
+}
+
 var systemTypeLibraries = []*config.Source{
 	{
 		Name: "template.envoy:2.1",
@@ -66,7 +92,7 @@ var systemTypeLibraries = []*config.Source{
 		},
 	},
 	{
-		Name: "envoy",
+		Name: "envoy:v1",
 		Requirements: []config.Requirement{
 			{Source: strptr("envoy:v1-entrypoint-application")},
 			{Source: strptr("envoy:v1-entrypoint-egress")},
@@ -116,7 +142,7 @@ var systemTypeLibraries = []*config.Source{
 		},
 	},
 	{
-		Name: "kubernetes",
+		Name: "kubernetes:v1",
 		Requirements: []config.Requirement{
 			{Source: strptr("kubernetes:v1-entrypoint-main")},
 			{Source: strptr("kubernetes:v2-entrypoint-log")}, // kubernetes v1 and v2 share the same log policy
@@ -144,80 +170,91 @@ var systemTypeLibraries = []*config.Source{
 	},
 }
 
-func getSystemTypeLib(t string) *config.Source {
-	for _, l := range systemTypeLibraries {
-		if l.Name == t {
-			return l
-		}
-	}
-	return nil
-}
-
-var stackTypeLibraries = map[string]*config.Source{
-	"template.envoy:2.1": {
+var stackTypeLibraries = []*config.Source{
+	{
 		Name: "template.envoy:2.1-stack",
 		Requirements: []config.Requirement{
 			{Source: strptr("match-v1")},
 		},
 	},
-	"template.envoy:2.0": {
+	{
 		Name: "template.envoy:2.0-stack",
 		Requirements: []config.Requirement{
 			{Source: strptr("match-v1")},
 		},
 	},
-	"envoy": {
+	{
 		Name: "envoy:v1-stack",
 		Requirements: []config.Requirement{
 			{Source: strptr("match-v1")},
 		},
 	},
-	"template.istio:1.0": {
+	{
 		Name: "template.istio:1.0-stack",
 		Requirements: []config.Requirement{
 			{Source: strptr("match-v1")},
 		},
 	},
-	"template.kuma:1.0": {
+	{
 		Name: "template.kuma:1.0-stack",
 		Requirements: []config.Requirement{
 			{Source: strptr("match-v1")},
 		},
 	},
-	"template.kong-gateway:1.0": {
+	{
 		Name: "template.kong-gateway:1.0-stack",
 		Requirements: []config.Requirement{
 			{Source: strptr("match-v1")},
 		},
 	},
-	"kubernetes:v2": {
+	{
 		Name: "kubernetes:v2-stack",
 		Requirements: []config.Requirement{
 			{Source: strptr("kubernetes:v2-library")},
 			{Source: strptr("match-v1")},
 		},
 	},
-	"kubernetes": {
+	{
 		Name: "kubernetes:v1-stack",
 		Requirements: []config.Requirement{
 			{Source: strptr("kubernetes:v2-library")}, // kubernetes v1 and v2 share the same library
 			{Source: strptr("match-v1")},
 		},
 	},
-	"template.terraform:2.0": {
+	{
 		Name: "template.terraform:2.0-stack",
 		Requirements: []config.Requirement{
 			{Source: strptr("template.terraform:2.0-library")},
 			{Source: strptr("match-v1")},
 		},
 	},
-	"template.entitlements:1.0": {
+	{
 		Name: "template.entitlements:1.0-stack",
 		Requirements: []config.Requirement{
 			{Source: strptr("template.entitlements:1.0-library")},
 			{Source: strptr("match-v1")},
 		},
 	},
+}
+
+func getSystemTypeLib(t string) *config.Source {
+	name := systemTypeMapping[t]
+	for _, l := range systemTypeLibraries {
+		if l.Name == name {
+			return l
+		}
+	}
+	return nil
+}
+
+func getStackTypeLib(t string) *config.Source {
+	name := stackTypeMapping[t]
+	for _, l := range stackTypeLibraries {
+		if l.Name == name {
+			return l
+		}
+	}
+	return nil
 }
 
 var baseLibraries = []*config.Source{
@@ -1366,7 +1403,7 @@ func migrateV1Stack(nf *nameFactory, c *das.Client, state *dasState, v1 *das.V1S
 
 	policies := state.StackPolicies[v1.Id]
 	var files config.Files
-	files, src.Requirements = migrateV1Policies(stackTypeLibraries[v1.Type], "", policies, gitRoots)
+	files, src.Requirements = migrateV1Policies(getStackTypeLib(v1.Type), "", policies, gitRoots)
 	for path, content := range files {
 		src.SetEmbeddedFile(path, content)
 	}
