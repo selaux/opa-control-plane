@@ -670,16 +670,18 @@ func Run(params Options) error {
 		return err
 	}
 
-	index, err := migrateLibraries(params, state, &c, nf, &output)
+	hasSecrets := make(map[string]struct{}, len(state.LibrariesById)+len(state.SystemsById)+len(state.StacksById))
+
+	index, err := migrateLibraries(params, state, &c, nf, &output, hasSecrets)
 	if err != nil {
 		return err
 	}
 
-	if err := migrateSystems(params, state, &c, nf, &output); err != nil {
+	if err := migrateSystems(params, state, &c, nf, &output, hasSecrets); err != nil {
 		return err
 	}
 
-	if err := migrateStacks(params, state, &c, nf, &output); err != nil {
+	if err := migrateStacks(params, state, &c, nf, &output, hasSecrets); err != nil {
 		return err
 	}
 
@@ -816,6 +818,10 @@ func Run(params Options) error {
 						break
 					}
 				}
+				if _, ok := hasSecrets[system.Id]; ok {
+					msgs = append(msgs, "Configure secrets before running build")
+				}
+
 				var status MigrateStatus
 				if len(msgs) == 0 {
 					status = MigrateStatusSuccess
@@ -841,6 +847,9 @@ func Run(params Options) error {
 							msgs = append(msgs, "Stack selector logic could not be migrated")
 						}
 					}
+					if _, ok := hasSecrets[stack.Id]; ok {
+						msgs = append(msgs, "Configure secrets before running build")
+					}
 					var status MigrateStatus
 					if len(msgs) == 0 {
 						status = MigrateStatusSuccess
@@ -861,6 +870,10 @@ func Run(params Options) error {
 					})
 					if pruned {
 						msgs = append(msgs, "Library is not used by any systems, stacks, or other libraries")
+					} else {
+						if _, ok := hasSecrets[library.Id]; ok {
+							msgs = append(msgs, "Configure secrets before running build")
+						}
 					}
 					var status MigrateStatus
 					if len(msgs) == 0 {
@@ -897,7 +910,7 @@ func Run(params Options) error {
 	return nil
 }
 
-func migrateLibraries(params Options, state *dasState, c *das.Client, nf *nameFactory, output *config.Root) (*libraryPackageIndex, error) {
+func migrateLibraries(params Options, state *dasState, c *das.Client, nf *nameFactory, output *config.Root, hasSecrets map[string]struct{}) (*libraryPackageIndex, error) {
 
 	bar := progress.New(params.Noninteractive, len(state.LibrariesById), "migrating libraries")
 	defer bar.Finish()
@@ -913,6 +926,7 @@ func migrateLibraries(params Options, state *dasState, c *das.Client, nf *nameFa
 		output.Sources[sc.Name] = sc
 		for _, s := range secrets {
 			output.Secrets[s.Name] = s
+			hasSecrets[id] = struct{}{}
 		}
 
 		for _, p := range state.LibraryPolicies[id] {
@@ -943,7 +957,7 @@ func migrateLibraries(params Options, state *dasState, c *das.Client, nf *nameFa
 	return index, nil
 }
 
-func migrateSystems(params Options, state *dasState, c *das.Client, nf *nameFactory, output *config.Root) error {
+func migrateSystems(params Options, state *dasState, c *das.Client, nf *nameFactory, output *config.Root, hasSecrets map[string]struct{}) error {
 	bar := progress.New(params.Noninteractive, len(state.SystemsById), "migrating systems")
 	defer bar.Finish()
 
@@ -958,6 +972,7 @@ func migrateSystems(params Options, state *dasState, c *das.Client, nf *nameFact
 
 		for _, s := range secrets {
 			output.Secrets[s.Name] = s
+			hasSecrets[system.Id] = struct{}{}
 		}
 
 		bar.Add(1)
@@ -966,7 +981,7 @@ func migrateSystems(params Options, state *dasState, c *das.Client, nf *nameFact
 	return nil
 }
 
-func migrateStacks(params Options, state *dasState, c *das.Client, nf *nameFactory, output *config.Root) error {
+func migrateStacks(params Options, state *dasState, c *das.Client, nf *nameFactory, output *config.Root, hasSecrets map[string]struct{}) error {
 
 	bar := progress.New(params.Noninteractive, len(state.StacksById), "migrating stacks")
 	defer bar.Finish()
@@ -982,6 +997,7 @@ func migrateStacks(params Options, state *dasState, c *das.Client, nf *nameFacto
 
 		for _, s := range secrets {
 			output.Secrets[s.Name] = s
+			hasSecrets[id] = struct{}{}
 		}
 
 		if _, ok := sc.Selector.Get(staticStackSelectorPrefix + id); ok {
