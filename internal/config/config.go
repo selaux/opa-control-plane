@@ -985,13 +985,16 @@ type SQLDatabase struct {
 }
 
 type AmazonRDS struct {
-	Region           string     `json:"region" yaml:"region"`
-	Endpoint         string     `json:"endpoint" yaml:"endpoint"` // hostname:port
-	Driver           string     `json:"driver" yaml:"driver"`     // mysql or postgres
-	DatabaseUser     string     `json:"database_user" yaml:"database_user"`
-	DatabaseName     string     `json:"database_name" yaml:"database_name"`
-	Credentials      *SecretRef `json:"credentials,omitempty" yaml:"credentials,omitempty"`
-	RootCertificates string     `json:"root_certificates,omitempty" yaml:"root_certificates,omitempty"` // PEM-encoded root certificates to verify RDS TLS connection, if any.
+	Region       string     `json:"region" yaml:"region"`
+	Endpoint     string     `json:"endpoint" yaml:"endpoint"` // hostname:port
+	Driver       string     `json:"driver" yaml:"driver"`     // mysql or postgres
+	DatabaseUser string     `json:"database_user" yaml:"database_user"`
+	DatabaseName string     `json:"database_name" yaml:"database_name"`
+	Credentials  *SecretRef `json:"credentials,omitempty" yaml:"credentials,omitempty"`
+	// RootCertificates points to PEM-encoded root certificate bundle file. If empty, the default system
+	// root CA certificates are used. For RDS, you can download the appropriate bundle for your region
+	// from here: https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/UsingWithRDS.SSL.html#UsingWithRDS.SSL.CertificatesAllRegions
+	RootCertificates string `json:"root_certificates,omitempty" yaml:"root_certificates,omitempty"`
 }
 
 func setEqual[K comparable, V any](a, b []V, key func(V) K, eq func(a, b V) bool) bool {
