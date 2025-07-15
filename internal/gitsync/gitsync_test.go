@@ -49,7 +49,7 @@ func TestGitsync(t *testing.T) {
 		Repo:      testRepositoryPath,
 		Reference: &ref,
 		Commit:    nil,
-	})
+	}, "")
 
 	ctx := context.Background()
 	err = s.Execute(ctx)

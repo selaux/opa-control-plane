@@ -282,7 +282,7 @@ func (s *Service) launchWorkers(ctx context.Context) {
 				SyncBuiltin(&syncs, l.Builtin, s.builtinFS, path.Join(srcDir, "builtin")).
 				SyncSourceSQL(&syncs, l.Name, &s.database, path.Join(srcDir, "database")).
 				SyncDatasources(&syncs, l.Datasources, path.Join(srcDir, "datasources")).
-				SyncGit(&syncs, l.Git, path.Join(srcDir, "repo")).
+				SyncGit(&syncs, l.Name, l.Git, path.Join(srcDir, "repo")).
 				AddRequirements(l.Requirements)
 
 			sources = append(sources, &src.Source)
@@ -354,14 +354,14 @@ func (src *source) addDir(dir string, wipe bool, includedFiles []string, exclude
 	})
 }
 
-func (src *source) SyncGit(syncs *[]Synchronizer, git config.Git, repoDir string) *source {
+func (src *source) SyncGit(syncs *[]Synchronizer, sourceName string, git config.Git, repoDir string) *source {
 	if git.Repo != "" {
 		srcDir := repoDir
 		if git.Path != nil {
 			srcDir = path.Join(srcDir, *git.Path)
 		}
 		src.addDir(srcDir, false, git.IncludedFiles, git.ExcludedFiles)
-		*syncs = append(*syncs, gitsync.New(repoDir, git))
+		*syncs = append(*syncs, gitsync.New(repoDir, git, sourceName))
 	}
 
 	return src

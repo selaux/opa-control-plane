@@ -42,24 +42,25 @@ func init() {
 }
 
 type Synchronizer struct {
-	path   string
-	config config.Git
-	gh     github
+	path       string
+	config     config.Git
+	gh         github
+	sourceName string
 }
 
 // New creates a new Synchronizer instance. It is expected the threadpooling is outside of this package.
 // The synchronizer does not validate the path holds the same repository as the config. Therefore, the caller
 // should guarantee that the path is unique for each repository and that the path is not used by multiple
 // Synchronizer instances. If the path does not exist, it will be created.
-func New(path string, config config.Git) *Synchronizer {
-	return &Synchronizer{path: path, config: config}
+func New(path string, config config.Git, sourceName string) *Synchronizer {
+	return &Synchronizer{path: path, config: config, sourceName: sourceName}
 }
 
 // Execute performs the synchronization of the configured Git repository. If the repository does not exist
 // on disk, clone it. If it does exist, pull the latest changes and rebase the local branch onto the remote branch.
 func (s *Synchronizer) Execute(ctx context.Context) error {
 	if err := s.execute(ctx); err != nil {
-		return fmt.Errorf("git synchronizer: %v: %w", s.config.Repo, err)
+		return fmt.Errorf("source %q: git synchronizer: %v: %w", s.sourceName, s.config.Repo, err)
 	}
 	return nil
 }
@@ -154,6 +155,10 @@ func (s *Synchronizer) auth(ctx context.Context) (transport.AuthMethod, error) {
 	value, err := secret.Get(ctx)
 	if err != nil {
 		return nil, err
+	}
+
+	if len(value) == 0 {
+		return nil, fmt.Errorf("secret %q is not configured", secret.Name)
 	}
 
 	switch value["type"] {

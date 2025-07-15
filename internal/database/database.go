@@ -646,7 +646,7 @@ LEFT JOIN
 	secrets ON sources_secrets.secret_name = secrets.name
 LEFT JOIN
 	sources_requirements ON sources.name = sources_requirements.source_name
-WHERE ((sources_secrets.ref_type = 'git_credentials' AND secrets.value IS NOT NULL) OR sources_secrets.ref_type IS NULL) AND (` + expr.SQL() + ")"
+WHERE (sources_secrets.ref_type = 'git_credentials' OR sources_secrets.ref_type IS NULL) AND (` + expr.SQL() + ")"
 
 	var args []any
 
@@ -724,16 +724,14 @@ WHERE ((sources_secrets.ref_type = 'git_credentials' AND secrets.value IS NOT NU
 			}
 		}
 
-		if row.secretName != nil {
+		if row.secretRefType != nil && *row.secretRefType == "git_credentials" && row.secretName != nil {
 			s := config.Secret{Name: *row.secretName}
-			if err := json.Unmarshal([]byte(*row.secretValue), &s.Value); err != nil {
-				return nil, "", err
+			if row.secretValue != nil {
+				if err := json.Unmarshal([]byte(*row.secretValue), &s.Value); err != nil {
+					return nil, "", err
+				}
 			}
-
-			switch *row.secretRefType {
-			case "git_credentials":
-				src.Git.Credentials = s.Ref()
-			}
+			src.Git.Credentials = s.Ref()
 		}
 
 		if row.requirementName != nil {
