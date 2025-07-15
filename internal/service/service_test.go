@@ -1,11 +1,13 @@
 package service_test
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"path/filepath"
 	"testing"
 
+	"github.com/styrainc/lighthouse/internal/config"
 	"github.com/styrainc/lighthouse/internal/logging"
 	"github.com/styrainc/lighthouse/internal/service"
 )
@@ -41,13 +43,18 @@ func TestUnconfiguredSecretHandling(t *testing.T) {
 
 	log := logging.NewLogger(logging.Config{Level: logging.LevelDebug})
 
+	config, err := config.Parse(bytes.NewBuffer(bs))
+	if err != nil {
+		log.Fatalf("configuration error: %v", err)
+	}
+
 	svc := service.New().
-		WithConfig(bs).
+		WithConfig(config).
 		WithPersistenceDir(filepath.Join(t.TempDir(), "data")).
 		WithSingleShot(true).
 		WithLogger(log)
 
-	err := svc.Run(context.Background())
+	err = svc.Run(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
