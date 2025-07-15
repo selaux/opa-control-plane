@@ -145,7 +145,11 @@ func (d *Database) InitDB(ctx context.Context) error {
 				return fmt.Errorf("invalid port number in endpoint, expected host:port, got %s", endpoint)
 			}
 
-			dsn = fmt.Sprintf("host=%s port=%d user=%s password=%s dbname=%s sslmode=require", dbHost, port, dbUser, password, dbName)
+			if config.DSN != "" {
+				dsn = config.DSN
+			} else {
+				dsn = fmt.Sprintf("host=%s port=%d user=%s password=%s dbname=%s sslmode=require", dbHost, port, dbUser, password, dbName)
+			}
 			d.kind = postgres
 
 		case "mysql":
@@ -167,8 +171,12 @@ func (d *Database) InitDB(ctx context.Context) error {
 				tlsConfigName = "custom"
 			}
 
-			dsn = fmt.Sprintf("%s:%s@tcp(%s)/%s?tls=%s&allowCleartextPasswords=true&allowOldPasswords=true&allowNativePasswords=true",
-				dbUser, password, endpoint, dbName, tlsConfigName)
+			if config.DSN != "" {
+				dsn = config.DSN
+			} else {
+				dsn = fmt.Sprintf("%s:%s@tcp(%s)/%s?tls=%s&allowCleartextPasswords=true&allowOldPasswords=true&allowNativePasswords=true",
+					dbUser, password, endpoint, dbName, tlsConfigName)
+			}
 
 			d.kind = mysql
 		default:

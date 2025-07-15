@@ -1010,6 +1010,7 @@ type AmazonRDS struct {
 	Driver       string     `json:"driver" yaml:"driver"`     // mysql or postgres
 	DatabaseUser string     `json:"database_user" yaml:"database_user"`
 	DatabaseName string     `json:"database_name" yaml:"database_name"`
+	DSN          string     `json:"dsn" yaml:"dsn"`
 	Credentials  *SecretRef `json:"credentials,omitempty" yaml:"credentials,omitempty"`
 	// RootCertificates points to PEM-encoded root certificate bundle file. If empty, the default system
 	// root CA certificates are used. For RDS, you can download the appropriate bundle for your region
