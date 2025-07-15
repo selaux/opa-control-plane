@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"log"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
@@ -404,9 +405,14 @@ func TestMigration(t *testing.T) {
 					t.Fatal(err)
 				}
 
+				config, err := config.Parse(bytes.NewBuffer(merged))
+				if err != nil {
+					log.Fatalf("configuration error: %v", err)
+				}
+
 				svc := service.New().
 					WithBuiltinFS(util.NewEscapeFS(libraries.FS)).
-					WithConfig(merged).
+					WithConfig(config).
 					WithPersistenceDir(filepath.Join(dir, "data")).
 					WithLogger(logging.NewLogger(logging.Config{Level: logging.LevelDebug}))
 
