@@ -6,10 +6,12 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"io/ioutil"
 	"log"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strconv"
 	"testing"
 	"text/template"
@@ -17,10 +19,13 @@ import (
 
 	"github.com/johannesboyne/gofakes3"
 	"github.com/johannesboyne/gofakes3/backend/s3mem"
+	"github.com/open-policy-agent/opa/bundle"
+	"github.com/open-policy-agent/opa/rego"
 	"github.com/styrainc/lighthouse/cmd/backtest"
 	"github.com/styrainc/lighthouse/cmd/migrate"
 	"github.com/styrainc/lighthouse/internal/config"
 	"github.com/styrainc/lighthouse/internal/logging"
+	"github.com/styrainc/lighthouse/internal/s3"
 	"github.com/styrainc/lighthouse/internal/service"
 	"github.com/styrainc/lighthouse/internal/test/tempfs"
 	"github.com/styrainc/lighthouse/internal/util"
@@ -42,8 +47,12 @@ func TestMigration(t *testing.T) {
 		styraTokenEnvName string // default STYRA_TOKEN
 		bundleName        string
 		extraConfigs      map[string]string
-		policyType        string // used to filter decisions for backtest
-		datasources       bool   // indicates whether to include datasource content in migration
+		policyType        string   // used to filter decisions for backtest
+		datasources       bool     // indicates whether to include datasource content in migration
+		skipBacktest      bool     // indicates backtest should be skipped
+		queries           []string // queries to execute after migrating and building
+		inputs            []string // inputs to provide to test queries
+		decisions         []string // decisions to expect from test queries
 	}{
 		{
 			name:       "envoy21",
@@ -338,6 +347,34 @@ func TestMigration(t *testing.T) {
 				}`,
 			},
 		},
+		{
+			name:              "library without rego",
+			styraURL:          "https://test.styra.com",
+			styraTokenEnvName: "STYRA_TOKEN_2",
+			systemId:          "d11309cff921437cab7a25ed87c927cb",
+			bundleName:        "e2e-system-with-data-lib-dep",
+			skipBacktest:      true,
+			datasources:       true,
+			queries:           []string{`data.rules.main`},
+			inputs:            []string{`{"foo": "bar"}`},
+			decisions:         []string{"true"},
+			extraConfigs: map[string]string{
+				"config.d/2-storage.yaml": `{
+					bundles: {
+						"e2e-system-with-data-lib-dep": {
+							object_storage: {
+								aws: {
+									url: {{ .URL }},
+									bucket: test,
+									region: mock-region,
+									key: bundle.tar.gz,
+								},
+							},
+						},
+					},
+				}`,
+			},
+		},
 	}
 
 	type templateParams struct {
@@ -380,6 +417,10 @@ func TestMigration(t *testing.T) {
 			tempfs.WithTempFS(t, files, func(t *testing.T, dir string) {
 
 				t.Logf("Root directory: %v", dir)
+
+				if err := os.MkdirAll(filepath.Join(dir, "config.d"), 0755); err != nil {
+					t.Fatal(err)
+				}
 
 				f, err := os.Create(filepath.Join(dir, "config.d", "0-config.yaml"))
 				if err != nil {
@@ -426,7 +467,7 @@ func TestMigration(t *testing.T) {
 					return svc.Run(ctx)
 				})
 
-				for {
+				func() {
 					time.Sleep(time.Millisecond * 100)
 					var obj *gofakes3.Object
 					var err error
@@ -437,45 +478,92 @@ func TestMigration(t *testing.T) {
 					if err != nil {
 						t.Fatal(err)
 					}
-					break
-				}
+				}()
 
 				buf := bytes.NewBuffer(nil)
 
-				maxEvalTimeInflation := 100
-				if v := os.Getenv("BACKTEST_MAX_EVAL_TIME_INFLATION"); v != "" {
-					n, err := strconv.Atoi(v)
+				if !tc.skipBacktest {
+
+					maxEvalTimeInflation := 100
+					if v := os.Getenv("BACKTEST_MAX_EVAL_TIME_INFLATION"); v != "" {
+						n, err := strconv.Atoi(v)
+						if err != nil {
+							t.Fatal(err)
+						}
+						maxEvalTimeInflation = n
+					}
+
+					if err := backtest.Run(backtest.Options{
+						ConfigFile:           []string{filepath.Join(dir, "config.d")},
+						URL:                  tc.styraURL,
+						Token:                styraToken,
+						NumDecisions:         100,
+						PolicyType:           tc.policyType,
+						MaxEvalTimeInflation: maxEvalTimeInflation,
+						Output:               buf,
+						Noninteractive:       true,
+						Format:               backtest.OutputFormatJSON,
+					}); err != nil {
+						t.Fatal(err)
+					}
+
+					cancel()
+					<-stopped
+
+					var r backtest.Report
+					if err := json.Unmarshal(buf.Bytes(), &r); err != nil {
+						t.Fatal(err)
+					}
+
+					if r.Bundles[tc.bundleName].Status != backtest.ReportStatusPassed {
+						t.Logf("Dumping output:\n%v", buf.String())
+						t.Fatalf("expected %q to be successful", tc.bundleName)
+					}
+				}
+
+				if len(tc.queries) > 0 {
+
+					s, err := s3.New(ctx, config.Bundles[tc.bundleName].ObjectStorage)
 					if err != nil {
 						t.Fatal(err)
 					}
-					maxEvalTimeInflation = n
-				}
 
-				if err := backtest.Run(backtest.Options{
-					ConfigFile:           []string{filepath.Join(dir, "config.d")},
-					URL:                  tc.styraURL,
-					Token:                styraToken,
-					NumDecisions:         100,
-					PolicyType:           tc.policyType,
-					MaxEvalTimeInflation: maxEvalTimeInflation,
-					Output:               buf,
-					Noninteractive:       true,
-					Format:               backtest.OutputFormatJSON,
-				}); err != nil {
-					t.Fatal(err)
-				}
+					r, err := s.Download(ctx)
+					if err != nil {
+						t.Fatal(err)
+					}
 
-				cancel()
-				<-stopped
+					bs, err := ioutil.ReadAll(r)
+					if err != nil {
+						t.Fatal(err)
+					}
 
-				var r backtest.Report
-				if err := json.Unmarshal(buf.Bytes(), &r); err != nil {
-					t.Fatal(err)
-				}
+					a, err := bundle.NewReader(bytes.NewReader(bs)).Read()
+					if err != nil {
+						t.Fatal(err)
+					}
 
-				if r.Bundles[tc.bundleName].Status != backtest.ReportStatusPassed {
-					t.Logf("Dumping output:\n%v", string(buf.Bytes()))
-					t.Fatalf("expected %q to be successful", tc.bundleName)
+					for i := range tc.queries {
+						var input any
+						if err := json.Unmarshal([]byte(tc.inputs[i]), &input); err != nil {
+							t.Fatal(err)
+						}
+						var decision any
+						if err := json.Unmarshal([]byte(tc.decisions[i]), &decision); err != nil {
+							t.Fatal(err)
+						}
+						rs, err := rego.New(
+							rego.ParsedBundle("bundle.tar.gz", &a),
+							rego.Query(tc.queries[i]),
+							rego.Input(input),
+						).Eval(ctx)
+						if err != nil {
+							t.Fatal(err)
+						}
+						if !reflect.DeepEqual(rs[0].Expressions[0].Value, decision) {
+							t.Fatalf("expected %v but got %v", decision, rs[0].Expressions[0])
+						}
+					}
 				}
 
 			})

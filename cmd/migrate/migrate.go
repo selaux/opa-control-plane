@@ -929,6 +929,10 @@ func migrateLibraries(params Options, state *dasState, c *das.Client, nf *nameFa
 			hasSecrets[id] = struct{}{}
 		}
 
+		for _, ds := range library.Datasources {
+			index.Add(ds.Id, sc.Name)
+		}
+
 		for _, p := range state.LibraryPolicies[id] {
 			index.Add(p.Package, sc.Name)
 		}
