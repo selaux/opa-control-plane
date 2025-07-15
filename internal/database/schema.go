@@ -5,7 +5,7 @@ import "strings"
 var schema = []sqlTable{
 	createSQLTable("bundles").
 		IntegerPrimaryKeyAutoincrementColumn("id").
-		TextNonNullUniqueColumn("name").
+		VarCharNonNullUniqueColumn("name").
 		TextColumn("labels").
 		TextColumn("s3url").
 		TextColumn("s3region").
@@ -15,7 +15,7 @@ var schema = []sqlTable{
 		TextColumn("excluded"),
 	createSQLTable("bundles").
 		IntegerPrimaryKeyAutoincrementColumn("id").
-		TextNonNullUniqueColumn("name").
+		VarCharNonNullUniqueColumn("name").
 		TextColumn("labels").
 		TextColumn("s3url").
 		TextColumn("s3region").
@@ -25,7 +25,7 @@ var schema = []sqlTable{
 		TextColumn("excluded"),
 	createSQLTable("sources").
 		IntegerPrimaryKeyAutoincrementColumn("id").
-		TextNonNullUniqueColumn("name").
+		VarCharNonNullUniqueColumn("name").
 		TextColumn("builtin").
 		TextNonNullColumn("repo").
 		TextColumn("ref").
@@ -35,62 +35,62 @@ var schema = []sqlTable{
 		TextColumn("git_excluded_files"),
 	createSQLTable("stacks").
 		IntegerPrimaryKeyAutoincrementColumn("id").
-		TextNonNullUniqueColumn("name").
+		VarCharNonNullUniqueColumn("name").
 		TextNonNullColumn("selector"),
 	createSQLTable("secrets").
-		TextPrimaryKeyColumn("name").
+		VarCharPrimaryKeyColumn("name").
 		TextColumn("value"),
 	createSQLTable("tokens").
-		TextPrimaryKeyColumn("name").
+		VarCharPrimaryKeyColumn("name").
 		TextNonNullColumn("api_key"),
 	createSQLTable("bundles_secrets").
-		TextNonNullColumn("bundle_name").
-		TextNonNullColumn("secret_name").
+		VarCharNonNullColumn("bundle_name").
+		VarCharNonNullColumn("secret_name").
 		TextNonNullColumn("ref_type").
 		PrimaryKey("bundle_name", "secret_name").
 		ForeignKey("bundle_name", "bundles(name)").
 		ForeignKey("secret_name", "secrets(name)"),
 	createSQLTable("bundles_requirements").
-		TextNonNullColumn("bundle_name").
-		TextNonNullColumn("source_name").
+		VarCharNonNullColumn("bundle_name").
+		VarCharNonNullColumn("source_name").
 		PrimaryKey("bundle_name", "source_name").
 		ForeignKey("bundle_name", "bundles(name)").
 		ForeignKey("source_name", "sources(name)"),
 	createSQLTable("stacks_requirements").
-		TextNonNullColumn("stack_name").
-		TextNonNullColumn("source_name").
+		VarCharNonNullColumn("stack_name").
+		VarCharNonNullColumn("source_name").
 		PrimaryKey("stack_name", "source_name").
 		ForeignKey("stack_name", "stacks(name)").
 		ForeignKey("source_name", "sources(name)"),
 	createSQLTable("sources_requirements").
-		TextNonNullColumn("source_name").
-		TextNonNullColumn("requirement_name").
+		VarCharNonNullColumn("source_name").
+		VarCharNonNullColumn("requirement_name").
 		PrimaryKey("source_name", "requirement_name").
 		ForeignKey("source_name", "sources(name)").
 		ForeignKey("requirement_name", "sources(name)"),
 	createSQLTable("sources_secrets").
-		TextNonNullColumn("source_name").
-		TextNonNullColumn("secret_name").
+		VarCharNonNullColumn("source_name").
+		VarCharNonNullColumn("secret_name").
 		TextNonNullColumn("ref_type").
 		PrimaryKey("source_name", "secret_name").
 		ForeignKey("source_name", "sources(name)").
 		ForeignKey("secret_name", "secrets(name)"),
 	createSQLTable("sources_secrets").
-		TextNonNullColumn("source_name").
-		TextNonNullColumn("secret_name").
+		VarCharNonNullColumn("source_name").
+		VarCharNonNullColumn("secret_name").
 		TextNonNullColumn("ref_type").
 		PrimaryKey("source_name", "secret_name").
 		ForeignKey("source_name", "sources(name)").
 		ForeignKey("secret_name", "secrets(name)"),
 	createSQLTable("sources_data").
-		TextNonNullColumn("source_name").
-		TextNonNullColumn("path").
+		VarCharNonNullColumn("source_name").
+		VarCharNonNullColumn("path").
 		BlobNonNullColumn("data").
 		PrimaryKey("source_name", "path").
 		ForeignKey("source_name", "sources(name)"),
 	createSQLTable("sources_datasources").
-		TextNonNullColumn("name").
-		TextNonNullColumn("source_name").
+		VarCharNonNullColumn("name").
+		VarCharNonNullColumn("source_name").
 		TextNonNullColumn("type").
 		TextNonNullColumn("path").
 		TextNonNullColumn("config").
@@ -98,13 +98,13 @@ var schema = []sqlTable{
 		PrimaryKey("source_name", "name").
 		ForeignKey("source_name", "sources(name)"),
 	createSQLTable("principals").
-		TextPrimaryKeyColumn("id").
+		VarCharPrimaryKeyColumn("id").
 		TextNonNullColumn("role").
 		TimestampDefaultCurrentTimeColumn("created_at"),
 	createSQLTable("resource_permissions").
-		TextNonNullColumn("name").
-		TextNonNullColumn("resource").
-		TextNonNullColumn("principal_id").
+		VarCharNonNullColumn("name").
+		VarCharNonNullColumn("resource").
+		VarCharNonNullColumn("principal_id").
 		TextColumn("role").
 		TextColumn("permission").
 		TimestampDefaultCurrentTimeColumn("created_at").
@@ -130,6 +130,7 @@ type sqlInteger struct{}
 type sqlText struct{}
 type sqlBlob struct{}
 type sqlTimestamp struct{}
+type sqlVarChar struct{}
 
 func (c sqlInteger) SQL(kind int) string {
 	switch kind {
@@ -163,6 +164,19 @@ func (c sqlBlob) SQL(kind int) string {
 
 func (c sqlTimestamp) SQL(kind int) string {
 	return "TIMESTAMP"
+}
+
+func (c sqlVarChar) SQL(kind int) string {
+	switch kind {
+	case sqlite:
+		return "TEXT"
+	case postgres:
+		return "VARCHAR(255)"
+	case mysql:
+		return "VARCHAR(255)"
+	}
+
+	panic("unknown kind")
 }
 
 func (c sqlColumn) SQL(kind int) string {
@@ -231,6 +245,11 @@ func (t sqlTable) TextNonNullUniqueColumn(name string) sqlTable {
 	return t
 }
 
+func (t sqlTable) VarCharNonNullUniqueColumn(name string) sqlTable {
+	t.columns = append(t.columns, sqlColumn{Name: name, Type: sqlVarChar{}, NotNull: true, Unique: true})
+	return t
+}
+
 func (t sqlTable) TextColumn(name string) sqlTable {
 	t.columns = append(t.columns, sqlColumn{Name: name, Type: sqlText{}})
 	return t
@@ -241,8 +260,18 @@ func (t sqlTable) TextPrimaryKeyColumn(name string) sqlTable {
 	return t
 }
 
+func (t sqlTable) VarCharPrimaryKeyColumn(name string) sqlTable {
+	t.columns = append(t.columns, sqlColumn{Name: name, Type: sqlVarChar{}, PrimaryKey: true})
+	return t
+}
+
 func (t sqlTable) TextNonNullColumn(name string) sqlTable {
 	t.columns = append(t.columns, sqlColumn{Name: name, Type: sqlText{}, NotNull: true})
+	return t
+}
+
+func (t sqlTable) VarCharNonNullColumn(name string) sqlTable {
+	t.columns = append(t.columns, sqlColumn{Name: name, Type: sqlVarChar{}, NotNull: true})
 	return t
 }
 
