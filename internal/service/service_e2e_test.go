@@ -22,6 +22,7 @@ import (
 	"github.com/johannesboyne/gofakes3/backend/s3mem"
 	"github.com/open-policy-agent/opa/ast"
 	"github.com/open-policy-agent/opa/bundle"
+	"github.com/styrainc/lighthouse/internal/config"
 	"github.com/styrainc/lighthouse/internal/logging"
 	"github.com/styrainc/lighthouse/internal/service"
 	"github.com/styrainc/lighthouse/internal/test/libraries"
@@ -89,13 +90,18 @@ func TestService(t *testing.T) {
 					"http_url": httpTS.URL,
 				})
 
-				config := formatTemplate(t, test.Config, test.ContentParameters)
-				writeFile(t, configPath, config)
+				cfg := formatTemplate(t, test.Config, test.ContentParameters)
+				writeFile(t, configPath, cfg)
 				writeGitRepo(t, remoteGitDir, test.GitFiles, test.ContentParameters)
+
+				root, err := config.Parse(strings.NewReader(cfg))
+				if err != nil {
+					t.Fatal(err)
+				}
 
 				// Run the service with the config file and persistence dir and expect bundle to have been written to S3
 				svc := service.New().
-					WithConfig([]byte(config)).
+					WithConfig(root).
 					WithPersistenceDir(persistenceDir).
 					WithBuiltinFS(util.NewEscapeFS(libraries.FS)).
 					WithSingleShot(true).

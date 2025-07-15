@@ -1,7 +1,6 @@
 package service
 
 import (
-	"bytes"
 	"context"
 	"crypto/md5"
 	"encoding/hex"
@@ -28,7 +27,7 @@ const internalPrincipal = "internal"
 const reconfigurationInterval = 15 * time.Second
 
 type Service struct {
-	config         []byte
+	config         *config.Root
 	persistenceDir string
 	pool           *pool.Pool
 	workers        map[string]*BundleWorker
@@ -92,8 +91,9 @@ func (s *Service) WithPersistenceDir(d string) *Service {
 	return s
 }
 
-func (s *Service) WithConfig(bs []byte) *Service {
-	s.config = bs
+func (s *Service) WithConfig(config *config.Root) *Service {
+	s.config = config
+	s.database = *s.database.WithConfig(config.Database)
 	return s
 }
 
@@ -175,13 +175,6 @@ func (s *Service) initDB(ctx context.Context) error {
 	bar := progress.New(s.noninteractive, -1, "loading configuration")
 	defer bar.Finish()
 
-	root, err := config.Parse(bytes.NewBuffer(s.config))
-	if err != nil {
-		return err
-	}
-
-	s.database = *s.database.WithConfig(root.Database)
-
 	if err := s.database.InitDB(ctx, s.persistenceDir); err != nil {
 		return err
 	}
@@ -190,7 +183,7 @@ func (s *Service) initDB(ctx context.Context) error {
 		return err
 	}
 
-	if err := s.database.LoadConfig(ctx, bar, internalPrincipal, root); err != nil {
+	if err := s.database.LoadConfig(ctx, bar, internalPrincipal, s.config); err != nil {
 		return fmt.Errorf("load config failed: %w", err)
 	}
 

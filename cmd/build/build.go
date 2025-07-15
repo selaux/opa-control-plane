@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"maps"
@@ -57,9 +58,14 @@ func init() {
 				log.Fatalf("configuration error: %v", err)
 			}
 
+			config, err := config.Parse(bytes.NewBuffer(bs))
+			if err != nil {
+				log.Fatalf("configuration error: %v", err)
+			}
+
 			svc := service.New().
 				WithPersistenceDir(params.persistenceDir).
-				WithConfig(bs).
+				WithConfig(config).
 				WithBuiltinFS(util.NewEscapeFS(libraries.FS)).
 				WithSingleShot(true).
 				WithLogger(log).
