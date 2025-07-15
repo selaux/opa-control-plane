@@ -2,6 +2,7 @@ package database_test
 
 import (
 	"context"
+	"log"
 	"path/filepath"
 	"reflect"
 	"testing"
@@ -9,37 +10,126 @@ import (
 	"github.com/styrainc/lighthouse/internal/config"
 	"github.com/styrainc/lighthouse/internal/database"
 	"github.com/styrainc/lighthouse/internal/service"
+	"github.com/testcontainers/testcontainers-go"
+	"github.com/testcontainers/testcontainers-go/modules/mysql"
+	"github.com/testcontainers/testcontainers-go/modules/postgres"
 )
 
 func TestDatabaseSourcesData(t *testing.T) {
 	ctx := context.Background()
 
-	configs := map[string]config.Root{
-		"sqlite-memory-only": config.Root{
-			Database: &config.Database{
-				SQL: &config.SQLDatabase{
-					Driver: "sqlite3",
-					DSN:    database.SQLiteMemoryOnlyDSN,
-				},
+	type Setup struct {
+		Setup    func(ctx context.Context, t *testing.T) testcontainers.Container
+		Database func(ctx context.Context, ctr testcontainers.Container) *config.Root
+	}
+
+	configs := map[string]Setup{
+		"sqlite-memory-only": {
+			Database: func(ctx context.Context, ctr testcontainers.Container) *config.Root {
+				return &config.Root{
+					Database: &config.Database{
+						SQL: &config.SQLDatabase{
+							Driver: "sqlite3",
+							DSN:    database.SQLiteMemoryOnlyDSN,
+						},
+					},
+				}
 			},
 		},
-		"sqlite-persistence": config.Root{
-			Database: &config.Database{
-				SQL: &config.SQLDatabase{
-					Driver: "sqlite3",
-					DSN:    filepath.Join(t.TempDir(), "test.db"),
-				},
+		"sqlite-persistence": {
+			Database: func(context.Context, testcontainers.Container) *config.Root {
+				return &config.Root{
+					Database: &config.Database{
+						SQL: &config.SQLDatabase{
+							Driver: "sqlite3",
+							DSN:    filepath.Join(t.TempDir(), "test.db"),
+						},
+					},
+				}
+			},
+		},
+		"postgres": {
+			Setup: func(ctx context.Context, t *testing.T) testcontainers.Container {
+				ctr, err := postgres.Run(
+					ctx,
+					"postgres:16-alpine",
+					postgres.WithDatabase("db"),
+					postgres.WithUsername("user"),
+					postgres.WithPassword("password"),
+					postgres.BasicWaitStrategies(),
+					postgres.WithSQLDriver("pgx"),
+				)
+				if err != nil {
+					t.Fatal("failed to start postgres container:", err)
+				}
+				return ctr
+			},
+			Database: func(ctx context.Context, container testcontainers.Container) *config.Root {
+				dsn, err := container.(*postgres.PostgresContainer).ConnectionString(ctx)
+				if err != nil {
+					t.Fatalf("failed to get postgres connection string: %v", err)
+				}
+
+				return &config.Root{
+					Database: &config.Database{
+						SQL: &config.SQLDatabase{
+							Driver: "postgres",
+							DSN:    dsn,
+						},
+					},
+				}
+			},
+		},
+		"mysql": {
+			Setup: func(ctx context.Context, t *testing.T) testcontainers.Container {
+				ctr, err := mysql.Run(ctx,
+					"mysql:8.0",
+					mysql.WithDatabase("db"),
+					mysql.WithUsername("user"),
+					mysql.WithPassword("password"),
+				)
+				if err != nil {
+					t.Fatal("failed to start mysql container:", err)
+				}
+				return ctr
+			},
+			Database: func(ctx context.Context, container testcontainers.Container) *config.Root {
+				dsn, err := container.(*mysql.MySQLContainer).ConnectionString(ctx)
+				if err != nil {
+					t.Fatalf("failed to get mysql connection string: %v", err)
+				}
+
+				return &config.Root{
+					Database: &config.Database{
+						SQL: &config.SQLDatabase{
+							Driver: "mysql",
+							DSN:    dsn,
+						},
+					},
+				}
 			},
 		},
 	}
 
 	for databaseType, databaseConfig := range configs {
 		func() {
-			db := service.New().WithConfig(&databaseConfig).Database()
+			var ctr testcontainers.Container
+			if databaseConfig.Setup != nil {
+				ctr = databaseConfig.Setup(ctx, t)
+				defer func() {
+					if err := testcontainers.TerminateContainer(ctr); err != nil {
+						log.Printf("failed to terminate container: %s", err)
+					}
+				}()
+			}
+
+			db := service.New().WithConfig(databaseConfig.Database(ctx, ctr)).Database()
 			err := db.InitDB(ctx)
 			if err != nil {
 				t.Fatalf("expected no error, got %v", err)
 			}
+
+			defer db.CloseDB()
 
 			if err := db.UpsertPrincipal(ctx, database.Principal{Id: "admin", Role: "administrator"}); err != nil {
 				t.Fatal(err)
@@ -48,8 +138,6 @@ func TestDatabaseSourcesData(t *testing.T) {
 			if err := db.UpsertSource(ctx, "admin", &config.Source{Name: "system1"}); err != nil {
 				t.Fatal(err)
 			}
-
-			defer db.CloseDB()
 
 			data1 := map[string]interface{}{
 				"key": "value1",
