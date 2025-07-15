@@ -985,12 +985,13 @@ type SQLDatabase struct {
 }
 
 type AmazonRDS struct {
-	Region       string     `json:"region" yaml:"region"`
-	Endpoint     string     `json:"endpoint" yaml:"endpoint"` // hostname:port
-	Driver       string     `json:"driver" yaml:"driver"`     // mysql or postgres
-	DatabaseUser string     `json:"database_user" yaml:"database_user"`
-	DatabaseName string     `json:"database_name" yaml:"database_name"`
-	Credentials  *SecretRef `json:"credentials,omitempty" yaml:"credentials,omitempty"`
+	Region           string     `json:"region" yaml:"region"`
+	Endpoint         string     `json:"endpoint" yaml:"endpoint"` // hostname:port
+	Driver           string     `json:"driver" yaml:"driver"`     // mysql or postgres
+	DatabaseUser     string     `json:"database_user" yaml:"database_user"`
+	DatabaseName     string     `json:"database_name" yaml:"database_name"`
+	Credentials      *SecretRef `json:"credentials,omitempty" yaml:"credentials,omitempty"`
+	RootCertificates string     `json:"root_certificates,omitempty" yaml:"root_certificates,omitempty"` // PEM-encoded root certificates to verify RDS TLS connection, if any.
 }
 
 func setEqual[K comparable, V any](a, b []V, key func(V) K, eq func(a, b V) bool) bool {

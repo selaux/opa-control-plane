@@ -2,6 +2,8 @@ package database
 
 import (
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"database/sql"
 	"encoding/base64"
 	"encoding/json"
@@ -16,11 +18,12 @@ import (
 	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/feature/rds/auth"
-	_ "github.com/go-sql-driver/mysql"
+	mysqldriver "github.com/go-sql-driver/mysql"
 	_ "github.com/jackc/pgx/v5/stdlib" // database/sql compatible driver for pgx
 	"github.com/styrainc/lighthouse/internal/authz"
 	"github.com/styrainc/lighthouse/internal/aws"
 	"github.com/styrainc/lighthouse/internal/config"
+	"github.com/styrainc/lighthouse/internal/logging"
 	"github.com/styrainc/lighthouse/internal/progress"
 	_ "modernc.org/sqlite"
 )
@@ -36,6 +39,7 @@ type Database struct {
 	db     *sql.DB
 	config *config.Database
 	kind   int
+	log    *logging.Logger
 }
 
 type ListOptions struct {
@@ -70,6 +74,11 @@ func (d *Database) WithConfig(config *config.Database) *Database {
 	return d
 }
 
+func (d *Database) WithLogger(log *logging.Logger) *Database {
+	d.log = log
+	return d
+}
+
 func (d *Database) InitDB(ctx context.Context, persistenceDir string) error {
 	switch {
 	case d.config != nil && d.config.AWSRDS != nil:
@@ -79,6 +88,7 @@ func (d *Database) InitDB(ctx context.Context, persistenceDir string) error {
 		region := config.Region
 		dbUser := config.DatabaseUser
 		dbName := config.DatabaseName
+		rootCertificates := config.RootCertificates
 
 		var password string
 
@@ -138,9 +148,28 @@ func (d *Database) InitDB(ctx context.Context, persistenceDir string) error {
 			d.kind = postgres
 
 		case "mysql":
-			dsn = fmt.Sprintf("%s:%s@tcp(%s)/%s?tls=true&allowCleartextPasswords=true", dbUser, password, endpoint, dbName)
-			d.kind = mysql
+			tlsConfigName := "true"
+			if rootCertificates != "" {
+				rootCertPool := x509.NewCertPool()
+				pem, err := os.ReadFile(rootCertificates)
+				if err != nil {
+					return err
+				}
 
+				if ok := rootCertPool.AppendCertsFromPEM(pem); !ok {
+					return fmt.Errorf("failed to process X.509 root certificate PEM file")
+				}
+
+				mysqldriver.RegisterTLSConfig("custom", &tls.Config{
+					RootCAs: rootCertPool,
+				})
+				tlsConfigName = "custom"
+			}
+
+			dsn = fmt.Sprintf("%s:%s@tcp(%s)/%s?tls=%s&allowCleartextPasswords=true&allowOldPasswords=true&allowNativePasswords=true",
+				dbUser, password, endpoint, dbName, tlsConfigName)
+
+			d.kind = mysql
 		default:
 			return fmt.Errorf("unsupported AWS RDS driver: %s", driver)
 		}
@@ -150,6 +179,8 @@ func (d *Database) InitDB(ctx context.Context, persistenceDir string) error {
 		if err != nil {
 			return err
 		}
+
+		d.log.Debugf("Connected to %s RDS instance at %s", driver, endpoint)
 
 	case d.config == nil:
 		// Default to SQLite3 if no config is provided.
@@ -178,6 +209,7 @@ func (d *Database) InitDB(ctx context.Context, persistenceDir string) error {
 		if _, err := d.db.ExecContext(ctx, "PRAGMA foreign_keys = ON"); err != nil {
 			return err
 		}
+		// TODO: Postgres and MySQL (non-RDS) support.
 	default:
 		return errors.New("unsupported database connection type")
 	}

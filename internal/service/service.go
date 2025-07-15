@@ -113,6 +113,7 @@ func (s *Service) Database() *database.Database {
 
 func (s *Service) WithLogger(logger *logging.Logger) *Service {
 	s.log = logger
+	s.database = *s.database.WithLogger(logger)
 	return s
 }
 
