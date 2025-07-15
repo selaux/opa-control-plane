@@ -41,6 +41,26 @@ type Root struct {
 	Database *Database          `json:"database,omitempty" yaml:"database,omitempty"`
 }
 
+// SetSQLitePersistentByDefault sets the database configuration to use a SQLite
+// database stored in the given persistence directory if no other database configuration
+// exists. This is used for the 'run' command to change its default behavior from other
+// commands.
+func (r *Root) SetSQLitePersistentByDefault(persistenceDir string) {
+	if r.Database == nil {
+		r.Database = &Database{}
+	}
+
+	if r.Database.SQL == nil && r.Database.AWSRDS == nil {
+		r.Database.SQL = &SQLDatabase{}
+	}
+
+	if (r.Database.SQL.Driver == "" ||
+		r.Database.SQL.Driver == "sqlite3" || r.Database.SQL.Driver == "sqlite") && r.Database.SQL.DSN == "" {
+		r.Database.SQL.Driver = "sqlite3"
+		r.Database.SQL.DSN = filepath.Join(persistenceDir, "sqlite.db")
+	}
+}
+
 // UnmarshalYAML implements the yaml.Marshaler interface for the Root struct. This
 // lets us define Lighthouse resources in a more user-friendly way with mappings
 // where keys are the resource names. It is also used to inject the secret store

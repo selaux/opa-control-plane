@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
-	"path/filepath"
 	"strconv"
 	"testing"
 
@@ -22,10 +21,12 @@ func BenchmarkPaginationFinalPageLatency(b *testing.B) {
 
 			ctx := context.Background()
 			var db database.Database
-			err := db.InitDB(ctx, filepath.Join(b.TempDir()+b.Name(), "data"))
+			err := db.InitDB(ctx)
 			if err != nil {
 				b.Fatal(err)
 			}
+
+			defer db.CloseDB()
 
 			if err := db.UpsertPrincipal(ctx, database.Principal{Id: "admin", Role: "administrator"}); err != nil {
 				b.Fatal(err)

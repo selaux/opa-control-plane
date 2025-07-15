@@ -11,7 +11,6 @@ import (
 	"fmt"
 	"maps"
 	"os"
-	"path/filepath"
 	"slices"
 	"sort"
 	"strconv"
@@ -33,6 +32,8 @@ const (
 	postgres
 	mysql
 )
+
+const SQLiteMemoryOnlyDSN = "file::memory:?cache=shared"
 
 // Database implements the database operations. It will hide any differences between the varying SQL databases from the rest of the codebase.
 type Database struct {
@@ -79,7 +80,7 @@ func (d *Database) WithLogger(log *logging.Logger) *Database {
 	return d
 }
 
-func (d *Database) InitDB(ctx context.Context, persistenceDir string) error {
+func (d *Database) InitDB(ctx context.Context) error {
 	switch {
 	case d.config != nil && d.config.AWSRDS != nil:
 		config := d.config.AWSRDS
@@ -183,19 +184,14 @@ func (d *Database) InitDB(ctx context.Context, persistenceDir string) error {
 		d.log.Debugf("Connected to %s RDS instance at %s", driver, endpoint)
 
 	case d.config == nil:
-		// Default to SQLite3 if no config is provided.
+		// Default to memory-only SQLite3 if no config is provided.
 		fallthrough
 	case d.config != nil && d.config.SQL != nil && (d.config.SQL.Driver == "sqlite3" || d.config.SQL.Driver == "sqlite"):
 		var dsn string
 		if d.config != nil && d.config.SQL != nil && d.config.SQL.DSN != "" {
 			dsn = d.config.SQL.DSN
 		} else {
-			err := os.MkdirAll(persistenceDir, 0755)
-			if err != nil {
-				return err
-			}
-
-			dsn = filepath.Join(persistenceDir, "sqlite.db")
+			dsn = SQLiteMemoryOnlyDSN
 		}
 
 		d.kind = sqlite

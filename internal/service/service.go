@@ -175,7 +175,7 @@ func (s *Service) initDB(ctx context.Context) error {
 	bar := progress.New(s.noninteractive, -1, "loading configuration")
 	defer bar.Finish()
 
-	if err := s.database.InitDB(ctx, s.persistenceDir); err != nil {
+	if err := s.database.InitDB(ctx); err != nil {
 		return err
 	}
 

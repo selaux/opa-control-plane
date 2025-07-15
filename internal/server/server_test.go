@@ -331,7 +331,7 @@ func TestServerSourcePagination(t *testing.T) {
 func initTestDB(ctx context.Context, t *testing.T) *database.Database {
 	t.Helper()
 	var db database.Database
-	if err := db.InitDB(ctx, t.TempDir()); err != nil {
+	if err := db.InitDB(ctx); err != nil {
 		t.Fatal(err)
 	}
 	return &db

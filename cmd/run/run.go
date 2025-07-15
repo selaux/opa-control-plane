@@ -57,6 +57,8 @@ func init() {
 				log.Fatalf("configuration error: %v", err)
 			}
 
+			config.SetSQLitePersistentByDefault(params.persistenceDir)
+
 			svc := service.New().
 				WithPersistenceDir(params.persistenceDir).
 				WithConfig(config).

@@ -15,11 +15,19 @@ func TestDatabaseSourcesData(t *testing.T) {
 	ctx := context.Background()
 
 	configs := map[string]config.Root{
-		"sqlite": config.Root{
+		"sqlite-memory-only": config.Root{
 			Database: &config.Database{
 				SQL: &config.SQLDatabase{
 					Driver: "sqlite3",
-					DSN:    ":memory:",
+					DSN:    database.SQLiteMemoryOnlyDSN,
+				},
+			},
+		},
+		"sqlite-persistence": config.Root{
+			Database: &config.Database{
+				SQL: &config.SQLDatabase{
+					Driver: "sqlite3",
+					DSN:    filepath.Join(t.TempDir(), "test.db"),
 				},
 			},
 		},
@@ -28,7 +36,7 @@ func TestDatabaseSourcesData(t *testing.T) {
 	for databaseType, databaseConfig := range configs {
 		func() {
 			db := service.New().WithConfig(&databaseConfig).Database()
-			err := db.InitDB(ctx, filepath.Join(t.TempDir(), "data"))
+			err := db.InitDB(ctx)
 			if err != nil {
 				t.Fatalf("expected no error, got %v", err)
 			}
