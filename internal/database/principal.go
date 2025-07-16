@@ -13,23 +13,9 @@ type Principal struct {
 }
 
 func (db *Database) UpsertPrincipal(ctx context.Context, principal Principal) error {
-
-	tx, err := db.db.BeginTx(ctx, nil)
-	if err != nil {
-		return err
-	}
-
-	defer tx.Rollback()
-
-	if err := db.UpsertPrincipalTx(ctx, tx, principal); err != nil {
-		return err
-	}
-
-	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("failed to commit txn for principal %q: %w", principal.Id, err)
-	}
-
-	return nil
+	return tx1(ctx, db, func(tx *sql.Tx) error {
+		return db.UpsertPrincipalTx(ctx, tx, principal)
+	})
 }
 
 func (db *Database) UpsertPrincipalTx(ctx context.Context, tx *sql.Tx, principal Principal) error {
@@ -42,9 +28,7 @@ func (db *Database) UpsertPrincipalTx(ctx context.Context, tx *sql.Tx, principal
 
 func (db *Database) GetPrincipalId(ctx context.Context, apiKey string) (string, error) {
 
-	query := `
-		SELECT principals.id FROM principals JOIN tokens ON tokens.name = principals.id WHERE tokens.api_key = ?
-	`
+	query := `SELECT principals.id FROM principals JOIN tokens ON tokens.name = principals.id WHERE tokens.api_key = ?`
 
 	row := db.db.QueryRowContext(ctx, query, apiKey)
 	var principalId string
