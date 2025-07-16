@@ -90,6 +90,10 @@ func (r *Root) UnmarshalJSON(bs []byte) error {
 	return r.unmarshal(r)
 }
 
+func (r *Root) Unmarshal() error {
+	return r.unmarshal(r)
+}
+
 func (r *Root) unmarshal(raw *Root) error {
 	for name, token := range raw.Tokens {
 		token.Name = name
@@ -247,7 +251,41 @@ func (a Requirement) Equal(b Requirement) bool {
 type Requirements []Requirement
 
 func (a Requirements) Equal(b Requirements) bool {
-	return slices.EqualFunc(a, b, func(a, b Requirement) bool { return a.Equal(b) })
+	// Ordering of requirements does not matter, so we sort them before comparing.
+
+	if len(a) != len(b) {
+		return false
+	}
+
+	aCpy := slices.Clone(a)
+	bCpy := slices.Clone(b)
+
+	cmp := func(a, b Requirement) int {
+		if a.Source == nil && b.Source == nil {
+			return 0
+		}
+		if a.Source == nil {
+			return -1
+		}
+		if b.Source == nil {
+			return 1
+		}
+
+		if *a.Source < *b.Source {
+			return -1
+		}
+
+		if *a.Source > *b.Source {
+			return 1
+		}
+
+		return 0
+	}
+
+	slices.SortFunc(aCpy, cmp)
+	slices.SortFunc(bCpy, cmp)
+
+	return slices.EqualFunc(aCpy, bCpy, func(a, b Requirement) bool { return a.Equal(b) })
 }
 
 type Files map[string]string
@@ -341,6 +379,7 @@ func (s *Bundle) validate() error {
 func (s *Bundle) Equal(other *Bundle) bool {
 	return fastEqual(s, other, func() bool {
 		return s.Name == other.Name &&
+			maps.Equal(s.Labels, other.Labels) &&
 			s.ObjectStorage.Equal(&other.ObjectStorage) &&
 			s.Requirements.Equal(other.Requirements) &&
 			s.ExcludedFiles.Equal(other.ExcludedFiles)
@@ -446,6 +485,17 @@ func (a Stacks) Equal(b Stacks) bool {
 type Selector struct {
 	s map[string]StringSet
 	m map[string][]glob.Glob // Pre-compiled glob patterns for faster matching
+}
+
+func MustNewSelector(s map[string]StringSet) Selector {
+	ss := Selector{s: make(map[string]StringSet), m: make(map[string][]glob.Glob)}
+	for key, value := range s {
+		if err := ss.Set(key, value); err != nil {
+			panic(err)
+		}
+	}
+
+	return ss
 }
 
 func (s *Selector) PrepareJSONSchema(schema *jsonschema.Schema) error {

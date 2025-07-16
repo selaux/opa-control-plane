@@ -135,10 +135,6 @@ func TestDatabaseSourcesData(t *testing.T) {
 				t.Fatal(err)
 			}
 
-			if err := db.UpsertSource(ctx, "admin", &config.Source{Name: "system1"}); err != nil {
-				t.Fatal(err)
-			}
-
 			data1 := map[string]interface{}{
 				"key": "value1",
 			}
@@ -146,11 +142,123 @@ func TestDatabaseSourcesData(t *testing.T) {
 				"key": "value2",
 			}
 
+			root := config.Root{
+				Bundles: map[string]*config.Bundle{
+					"system1": {
+						Name: "system1",
+						Labels: config.Labels{
+							"env": "test1",
+						},
+						ObjectStorage: config.ObjectStorage{
+							FileSystemStorage: &config.FileSystemStorage{
+								Path: "/path/to/bundle",
+							},
+						},
+						Requirements: config.Requirements{
+							config.Requirement{Source: newString("system1")},
+						},
+						ExcludedFiles: config.StringSet{"excluded-file1.txt", "excluded-file2.txt"},
+					},
+
+					"system2": {
+						Name: "system2",
+						Labels: config.Labels{
+							"env": "test2",
+						},
+						ObjectStorage: config.ObjectStorage{
+							AmazonS3: &config.AmazonS3{
+								Region:      "us-west-2",
+								Key:         "/path/bundle.tgz",
+								Bucket:      "my-bucket",
+								Credentials: &config.SecretRef{Name: "secret1"},
+							},
+						},
+						Requirements: config.Requirements{
+							config.Requirement{Source: newString("system2")},
+						},
+					},
+					"system3": {
+						Name: "system3",
+						Labels: config.Labels{
+							"env": "test3",
+						},
+						ObjectStorage: config.ObjectStorage{
+							FileSystemStorage: &config.FileSystemStorage{
+								Path: "/path/to/bundle",
+							},
+						},
+						Requirements: config.Requirements{
+							config.Requirement{Source: newString("system3")},
+						},
+					},
+				},
+				Stacks: map[string]*config.Stack{
+					"stack1": {
+						Name: "stack1",
+						Selector: config.MustNewSelector(map[string]config.StringSet{
+							"env": {"test1"},
+						}),
+						Requirements: config.Requirements{
+							config.Requirement{Source: newString("system1")},
+							config.Requirement{Source: newString("system2")},
+						},
+					},
+				},
+				Sources: map[string]*config.Source{
+					"system1": {
+						Name:         "system1",
+						Requirements: config.Requirements{},
+					},
+					"system2": {
+						Name:         "system2",
+						Requirements: config.Requirements{},
+					},
+					"system3": {
+						Name:         "system3",
+						Requirements: config.Requirements{},
+					},
+				},
+				Secrets: map[string]*config.Secret{
+					"secret1": &config.Secret{
+						Name: "secret1",
+						Value: map[string]interface{}{
+							"type":     "password",
+							"password": "value",
+						},
+					},
+				},
+				Database: &config.Database{
+					SQL: &config.SQLDatabase{
+						Driver: "sqlite3",
+						DSN:    database.SQLiteMemoryOnlyDSN,
+					},
+				},
+			}
+			if err := root.Unmarshal(); err != nil {
+				t.Fatalf("failed to unmarshal config: %v", err)
+			}
+
 			tests := []*testCase{
-				newTestCase("get non-existing data").Get("system1", "foo", nil),
-				newTestCase("put data").Put("system1", "foo", data1).Get("system1", "foo", data1),
-				newTestCase("update data").Put("system1", "foo", data2).Get("system1", "foo", data2),
-				newTestCase("delete").Delete("system1", "foo").Get("system1", "foo", nil),
+				// bootstrap operations:
+				newTestCase("load config").LoadConfig(root),
+
+				// bundle operations:
+				newTestCase("list bundles").ListBundles([]*config.Bundle{root.Bundles["system1"], root.Bundles["system2"], root.Bundles["system3"]}),
+				newTestCase("get bundle system1").GetBundle("system1", root.Bundles["system1"]),
+
+				// source operations:
+				newTestCase("list sources").ListSources([]*config.Source{root.Sources["system1"], root.Sources["system2"], root.Sources["system3"]}),
+				newTestCase("get source system1").GetSource("system1", root.Sources["system1"]),
+
+				// stack operations:
+				newTestCase("list stacks").ListStacks([]*config.Stack{root.Stacks["stack1"]}),
+				newTestCase("get stack stack1").GetStack("stack1", root.Stacks["stack1"]),
+
+				// source data operations:
+				newTestCase("source/get non-existing  data").SourcesGetData("system1", "foo", nil),
+				newTestCase("source/put surce data").SourcesPutData("system1", "foo", data1).SourcesGetData("system1", "foo", data1),
+				newTestCase("source/update data").SourcesPutData("system1", "foo", data2).SourcesGetData("system1", "foo", data2),
+				newTestCase("source/delete data").SourcesDeleteData("system1", "foo").SourcesGetData("system1", "foo", nil),
 			}
 
 			for _, test := range tests {
@@ -176,7 +284,7 @@ func newTestCase(note string) *testCase {
 	}
 }
 
-func (tc *testCase) Get(srcID, dataID string, expected interface{}) *testCase {
+func (tc *testCase) SourcesGetData(srcID, dataID string, expected interface{}) *testCase {
 	tc.operations = append(tc.operations, func(ctx context.Context, t *testing.T, db *database.Database) {
 		data, found, err := db.SourcesDataGet(ctx, srcID, dataID, "admin")
 		if err != nil {
@@ -199,7 +307,7 @@ func (tc *testCase) Get(srcID, dataID string, expected interface{}) *testCase {
 	return tc
 }
 
-func (tc *testCase) Put(srcID, dataID string, data interface{}) *testCase {
+func (tc *testCase) SourcesPutData(srcID, dataID string, data interface{}) *testCase {
 	tc.operations = append(tc.operations, func(ctx context.Context, t *testing.T, db *database.Database) {
 		if err := db.SourcesDataPut(ctx, srcID, dataID, data, "admin"); err != nil {
 			t.Fatalf("expected no error, got %v", err)
@@ -208,11 +316,209 @@ func (tc *testCase) Put(srcID, dataID string, data interface{}) *testCase {
 	return tc
 }
 
-func (tc *testCase) Delete(srcID, dataID string) *testCase {
+func (tc *testCase) SourcesDeleteData(srcID, dataID string) *testCase {
 	tc.operations = append(tc.operations, func(ctx context.Context, t *testing.T, db *database.Database) {
 		if err := db.SourcesDataDelete(ctx, srcID, dataID, "admin"); err != nil {
 			t.Fatalf("expected no error, got %v", err)
 		}
 	})
 	return tc
+}
+
+func (tc *testCase) LoadConfig(root config.Root) *testCase {
+	tc.operations = append(tc.operations, func(ctx context.Context, t *testing.T, db *database.Database) {
+		if err := db.LoadConfig(ctx, nil, "admin", &root); err != nil {
+			t.Fatalf("expected no error, got %v", err)
+		}
+	})
+	return tc
+}
+
+func (tc *testCase) ListBundles(expected []*config.Bundle) *testCase {
+	tc.operations = append(tc.operations, func(ctx context.Context, t *testing.T, db *database.Database) {
+		cursor := ""
+		var listed []*config.Bundle
+
+		for {
+			var bundles []*config.Bundle
+			var err error
+			limit := 2
+			bundles, cursor, err = db.ListBundles(ctx, "admin", database.ListOptions{Limit: limit, Cursor: cursor})
+			if err != nil {
+				t.Fatalf("expected no error, got %v", err)
+			}
+
+			listed = append(listed, bundles...)
+
+			if len(bundles) < limit {
+				break
+
+			}
+		}
+
+		if len(expected) != len(listed) {
+			t.Fatalf("expected %d bundles but got %d", len(expected), len(listed))
+		}
+
+		for i := range expected {
+			if !listed[i].Equal(expected[i]) {
+				t.Fatalf("expected bundle %q to be equal.", expected[i].Name)
+			}
+		}
+
+	})
+
+	return tc
+}
+
+func (tc *testCase) GetBundle(id string, expected *config.Bundle) *testCase {
+	tc.operations = append(tc.operations, func(ctx context.Context, t *testing.T, db *database.Database) {
+		bundle, err := db.GetBundle(ctx, "admin", id)
+		if err != nil && err != database.ErrNotFound {
+			t.Fatalf("expected no error, got %v", err)
+		}
+
+		switch {
+		case bundle != nil && expected == nil:
+			t.Fatal("expected no bundle to be found")
+		case bundle == nil && expected != nil:
+			t.Fatal("expected bundle to be found")
+		case bundle == nil && expected == nil:
+			// OK
+		case bundle != nil && expected != nil:
+			if !bundle.Equal(expected) {
+				t.Fatalf("expected bundle not found, got %v", bundle)
+			}
+		}
+	})
+
+	return tc
+}
+
+func (tc *testCase) ListSources(expected []*config.Source) *testCase {
+	tc.operations = append(tc.operations, func(ctx context.Context, t *testing.T, db *database.Database) {
+		cursor := ""
+		var listed []*config.Source
+
+		for {
+			var sources []*config.Source
+			var err error
+			limit := 2
+			sources, cursor, err = db.ListSources(ctx, "admin", database.ListOptions{Limit: limit, Cursor: cursor})
+			if err != nil {
+				t.Fatalf("expected no error, got %v", err)
+			}
+
+			listed = append(listed, sources...)
+
+			if len(sources) < limit {
+				break
+
+			}
+		}
+
+		if len(expected) != len(listed) {
+			t.Fatalf("expected %d sources but got %d", len(expected), len(listed))
+		}
+
+		for i := range expected {
+			if !listed[i].Equal(expected[i]) {
+				t.Fatalf("expected source %q to be equal.", expected[i].Name)
+			}
+		}
+
+	})
+
+	return tc
+}
+
+func (tc *testCase) GetSource(id string, expected *config.Source) *testCase {
+	tc.operations = append(tc.operations, func(ctx context.Context, t *testing.T, db *database.Database) {
+		source, err := db.GetSource(ctx, "admin", id)
+		if err != nil && err != database.ErrNotFound {
+			t.Fatalf("expected no error, got %v", err)
+		}
+
+		switch {
+		case source != nil && expected == nil:
+			t.Fatal("expected no source to be found")
+		case source == nil && expected != nil:
+			t.Fatal("expected source to be found")
+		case source == nil && expected == nil:
+			// OK
+		case source != nil && expected != nil:
+			if !source.Equal(expected) {
+				t.Fatalf("expected source not found, got %v", source)
+			}
+		}
+	})
+
+	return tc
+}
+
+func (tc *testCase) ListStacks(expected []*config.Stack) *testCase {
+	tc.operations = append(tc.operations, func(ctx context.Context, t *testing.T, db *database.Database) {
+		cursor := ""
+		var listed []*config.Stack
+
+		for {
+			var stacks []*config.Stack
+			var err error
+			limit := 2
+			stacks, cursor, err = db.ListStacks(ctx, "admin", database.ListOptions{Limit: limit, Cursor: cursor})
+			if err != nil {
+				t.Fatalf("expected no error, got %v", err)
+			}
+
+			listed = append(listed, stacks...)
+
+			if len(stacks) < limit {
+				break
+
+			}
+		}
+
+		if len(expected) != len(listed) {
+			t.Fatalf("expected %d stacks but got %d", len(expected), len(listed))
+		}
+
+		for i := range expected {
+			if !listed[i].Equal(expected[i]) {
+				t.Fatalf("expected stack %q to be equal.", expected[i].Name)
+			}
+		}
+
+	})
+
+	return tc
+}
+
+func (tc *testCase) GetStack(id string, expected *config.Stack) *testCase {
+	tc.operations = append(tc.operations, func(ctx context.Context, t *testing.T, db *database.Database) {
+		stack, err := db.GetStack(ctx, "admin", id)
+		if err != nil && err != database.ErrNotFound {
+			t.Fatalf("expected no error, got %v", err)
+		}
+
+		switch {
+		case stack != nil && expected == nil:
+			t.Fatal("expected no stack to be found")
+		case stack == nil && expected != nil:
+			t.Fatal("expected stack to be found")
+		case stack == nil && expected == nil:
+			// OK
+		case stack != nil && expected != nil:
+			if !stack.Equal(expected) {
+				t.Fatalf("expected stack not found, got %v", stack)
+			}
+		}
+	})
+
+	return tc
+}
+
+// TODO: Query source data
+
+func newString(s string) *string {
+	return &s
 }
