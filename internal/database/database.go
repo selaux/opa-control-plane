@@ -1158,6 +1158,10 @@ func (d *Database) UpsertStack(ctx context.Context, principal string, stack *con
 
 func (d *Database) UpsertToken(ctx context.Context, principal string, token *config.Token) error {
 
+	if len(token.Scopes) != 1 {
+		return fmt.Errorf("exactly one scope must be provided for token %q", token.Name)
+	}
+
 	tx, err := d.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
@@ -1171,10 +1175,6 @@ func (d *Database) UpsertToken(ctx context.Context, principal string, token *con
 
 	if err := d.upsert(ctx, tx, "tokens", []string{"name", "api_key"}, []string{"name"}, token.Name, token.APIKey); err != nil {
 		return err
-	}
-
-	if len(token.Scopes) != 1 {
-		return fmt.Errorf("exactly one scope must be provided for token %q", token.Name)
 	}
 
 	if err := d.UpsertPrincipalTx(ctx, tx, Principal{Id: token.Name, Role: token.Scopes[0].Role}); err != nil {
@@ -1225,6 +1225,10 @@ func (d *Database) resourceExists(ctx context.Context, tx *sql.Tx, table string,
 }
 
 func (d *Database) upsert(ctx context.Context, tx *sql.Tx, table string, columns []string, primaryKey []string, values ...any) error {
+	if err := checkTablePrimaryKey(table, primaryKey); err != nil {
+		return err
+	}
+
 	var query string
 	switch d.kind {
 	case sqlite:
@@ -1233,12 +1237,9 @@ func (d *Database) upsert(ctx context.Context, tx *sql.Tx, table string, columns
 
 	case postgres:
 		set := make([]string, 0, len(columns))
-	next:
 		for i := range columns {
-			for j := range primaryKey {
-				if columns[i] == primaryKey[j] {
-					continue next // do not update primary key columns
-				}
+			if slices.Contains(primaryKey, columns[i]) {
+				continue // do not update primary key columns
 			}
 			set = append(set, fmt.Sprintf("%s = EXCLUDED.%s", columns[i], columns[i]))
 		}

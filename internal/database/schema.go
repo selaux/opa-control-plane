@@ -1,6 +1,10 @@
 package database
 
-import "strings"
+import (
+	"fmt"
+	"slices"
+	"strings"
+)
 
 var schema = []sqlTable{
 	createSQLTable("bundles").
@@ -328,4 +332,34 @@ func (t sqlTable) SQL(kind int) string {
 
 	return `CREATE TABLE IF NOT EXISTS ` + t.name + ` (
 			` + strings.Join(c, ",\n") + `);`
+}
+
+// checkTablePrimaryKey checks if the primary key columns for a table match the schema.
+// It serves to validate that the primary key columns specified in the upsert operation are valid.
+func checkTablePrimaryKey(table string, primaryKey []string) error {
+	for _, t := range schema {
+		if t.name == table {
+			if len(primaryKey) == 1 {
+				for _, col := range t.columns {
+					if col.Name == primaryKey[0] && (col.PrimaryKey || col.Unique) {
+						return nil
+					}
+				}
+
+				return fmt.Errorf("primary key column %q not found in table %q", primaryKey[0], table)
+			}
+
+			if len(primaryKey) != len(t.primaryKeyColumns) {
+				return fmt.Errorf("invalid number of primary key columns for table %q: expected %d, got %d", table, len(t.primaryKeyColumns), len(primaryKey))
+			}
+
+			if !slices.Equal(primaryKey, t.primaryKeyColumns) {
+				return fmt.Errorf("primary key columns %v do not match expected columns %v for table %q", primaryKey, t.primaryKeyColumns, table)
+			}
+
+			return nil
+		}
+	}
+
+	return fmt.Errorf("table %q not found in schema", table)
 }
