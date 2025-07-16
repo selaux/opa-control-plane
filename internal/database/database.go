@@ -277,7 +277,7 @@ func (d *Database) SourcesDataGet(ctx context.Context, sourceName, path string, 
 	data
 FROM
 	sources_data
-WHERE source_name = %s AND path = %s AND `+expr.SQL(), d.arg(0), d.arg(1)), sourceName, path)
+WHERE source_name = %s AND path = %s AND (`+expr.SQL()+")", d.arg(0), d.arg(1)), sourceName, path)
 	if err != nil {
 		return nil, false, err
 	}
@@ -363,7 +363,7 @@ func (d *Database) SourcesDataDelete(ctx context.Context, sourceName, path strin
 		return err
 	}
 
-	if _, err := tx.Exec(fmt.Sprintf(`DELETE FROM sources_data WHERE source_name = %s AND path = %s AND `+expr.SQL(), d.arg(0), d.arg(1)), sourceName, path); err != nil {
+	if _, err := tx.Exec(fmt.Sprintf(`DELETE FROM sources_data WHERE source_name = %s AND path = %s AND (`+expr.SQL()+")", d.arg(0), d.arg(1)), sourceName, path); err != nil {
 		return err
 	}
 
@@ -610,6 +610,7 @@ func (d *Database) GetSource(ctx context.Context, principal string, name string)
 	return sources[0], nil
 }
 
+// ListSources returns a list of sources in the database. Note it does not return the source data.
 func (d *Database) ListSources(ctx context.Context, principal string, opts ListOptions) ([]*config.Source, string, error) {
 	txn, err := d.db.Begin()
 	if err != nil {
@@ -923,8 +924,8 @@ func (d *Database) ListStacks(ctx context.Context, principal string, opts ListOp
 	return sl, nextCursor, nil
 }
 
-func (d *Database) QuerySourceData(sourceName string) (*DataCursor, error) {
-	rows, err := d.db.Query(fmt.Sprintf(`SELECT
+func (d *Database) QuerySourceData(ctx context.Context, sourceName string) (*DataCursor, error) {
+	rows, err := d.db.QueryContext(ctx, fmt.Sprintf(`SELECT
 	path,
 	data
 FROM

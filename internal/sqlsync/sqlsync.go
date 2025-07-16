@@ -13,7 +13,7 @@ import (
 // dumps files stored in SQL database into a directory used by the builder package to construct a bundle.
 type SQLDataSynchronizer struct {
 	path  string
-	query func(string) (*database.DataCursor, error)
+	query func(context.Context, string) (*database.DataCursor, error)
 	id    string
 }
 
@@ -27,7 +27,7 @@ func (s *SQLDataSynchronizer) Execute(ctx context.Context) error {
 		return err
 	}
 
-	cursor, err := s.query(s.id)
+	cursor, err := s.query(ctx, s.id)
 	if err != nil {
 		return err
 	}

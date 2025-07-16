@@ -256,8 +256,13 @@ func TestDatabaseSourcesData(t *testing.T) {
 
 				// source data operations:
 				newTestCase("source/get non-existing  data").SourcesGetData("system1", "foo", nil),
-				newTestCase("source/put surce data").SourcesPutData("system1", "foo", data1).SourcesGetData("system1", "foo", data1),
-				newTestCase("source/update data").SourcesPutData("system1", "foo", data2).SourcesGetData("system1", "foo", data2),
+				newTestCase("source/put source data").SourcesPutData("system1", "foo", data1).SourcesGetData("system1", "foo", data1),
+				newTestCase("source/update data foo").SourcesPutData("system1", "foo", data2).SourcesGetData("system1", "foo", data2),
+				newTestCase("source/update data bar").SourcesPutData("system1", "bar", data1).SourcesGetData("system1", "bar", data1),
+				newTestCase("source/query data").SourcesQueryData("system1", map[string][]byte{
+					"bar": []byte(`{"key":"value1"}`),
+					"foo": []byte(`{"key":"value2"}`),
+				}),
 				newTestCase("source/delete data").SourcesDeleteData("system1", "foo").SourcesGetData("system1", "foo", nil),
 			}
 
@@ -302,6 +307,30 @@ func (tc *testCase) SourcesGetData(srcID, dataID string, expected interface{}) *
 			if !reflect.DeepEqual(expected, data) {
 				t.Fatalf("expected data not found, got %v", data)
 			}
+		}
+	})
+	return tc
+}
+
+func (tc *testCase) SourcesQueryData(srcID string, expected map[string][]byte) *testCase {
+	tc.operations = append(tc.operations, func(ctx context.Context, t *testing.T, db *database.Database) {
+		cursor, err := db.QuerySourceData(ctx, srcID)
+		if err != nil {
+			t.Fatalf("expected no error, got %v", err)
+		}
+
+		data := make(map[string][]byte)
+
+		for cursor.Next() {
+			value, err := cursor.Value()
+			if err != nil {
+				t.Fatalf("expected no error, got %v", err)
+			}
+			data[value.Path] = value.Data
+		}
+
+		if !reflect.DeepEqual(expected, data) {
+			t.Fatalf("expected data not found, got %v", data)
 		}
 	})
 	return tc
