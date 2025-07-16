@@ -546,8 +546,6 @@ func (tc *testCase) GetStack(id string, expected *config.Stack) *testCase {
 	return tc
 }
 
-// TODO: Query source data
-
 func newString(s string) *string {
 	return &s
 }
