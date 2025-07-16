@@ -1018,11 +1018,7 @@ func (d *Database) UpsertBundle(ctx context.Context, principal string, bundle *c
 		}
 	}
 
-	if err := tx.Commit(); err != nil {
-		return err
-	}
-
-	return nil
+	return tx.Commit()
 }
 
 func (d *Database) UpsertSource(ctx context.Context, principal string, source *config.Source) error {
@@ -1123,11 +1119,7 @@ func (d *Database) UpsertSecret(ctx context.Context, principal string, secret *c
 		}
 	}
 
-	if err := tx.Commit(); err != nil {
-		return err
-	}
-
-	return nil
+	return tx.Commit()
 }
 
 func (d *Database) UpsertStack(ctx context.Context, principal string, stack *config.Stack) error {
@@ -1161,11 +1153,7 @@ func (d *Database) UpsertStack(ctx context.Context, principal string, stack *con
 		}
 	}
 
-	if err := tx.Commit(); err != nil {
-		return err
-	}
-
-	return nil
+	return tx.Commit()
 }
 
 func (d *Database) UpsertToken(ctx context.Context, principal string, token *config.Token) error {
@@ -1193,11 +1181,7 @@ func (d *Database) UpsertToken(ctx context.Context, principal string, token *con
 		return err
 	}
 
-	if err := tx.Commit(); err != nil {
-		return err
-	}
-
-	return nil
+	return tx.Commit()
 }
 
 func (d *Database) prepareUpsert(ctx context.Context, tx *sql.Tx, principal, resource, name string, permCreate, permUpdate string) error {
@@ -1211,7 +1195,7 @@ func (d *Database) prepareUpsert(ctx context.Context, tx *sql.Tx, principal, res
 			Permission: permUpdate,
 			Name:       name,
 		}
-	} else if err == ErrNotFound {
+	} else if errors.Is(err, ErrNotFound) {
 		a = authz.Access{
 			Principal:  principal,
 			Resource:   resource,
@@ -1233,13 +1217,11 @@ func (d *Database) prepareUpsert(ctx context.Context, tx *sql.Tx, principal, res
 
 func (d *Database) resourceExists(ctx context.Context, tx *sql.Tx, table string, name string) error {
 	var exists any
-	if err := tx.QueryRowContext(ctx, fmt.Sprintf("SELECT 1 FROM %v as T WHERE T.name = %s", table, d.arg(0)), name).Scan(&exists); err != nil {
-		if err == sql.ErrNoRows {
-			return ErrNotFound
-		}
-		return err
+	err := tx.QueryRowContext(ctx, fmt.Sprintf("SELECT 1 FROM %v as T WHERE T.name = %s", table, d.arg(0)), name).Scan(&exists)
+	if errors.Is(err, sql.ErrNoRows) {
+		return ErrNotFound
 	}
-	return nil
+	return err
 }
 
 func (d *Database) upsert(ctx context.Context, tx *sql.Tx, table string, columns []string, primaryKey []string, values ...any) error {
