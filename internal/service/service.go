@@ -6,7 +6,11 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io/fs"
+	"maps"
 	"path"
+	"slices"
+	"sort"
+	"sync"
 	"time"
 
 	"github.com/styrainc/lighthouse/internal/builder"
@@ -31,6 +35,8 @@ type Service struct {
 	persistenceDir string
 	pool           *pool.Pool
 	workers        map[string]*BundleWorker
+	mu             sync.Mutex
+	failures       map[string]Status
 	database       database.Database
 	builtinFS      fs.FS
 	singleShot     bool
@@ -47,6 +53,7 @@ type BuildState int
 
 const (
 	BuildStateInternalError BuildState = iota
+	BuildStateConfigError
 	BuildStateSuccess
 	BuildStateSyncFailed
 	BuildStateTransformFailed
@@ -56,6 +63,8 @@ const (
 
 func (s BuildState) String() string {
 	switch s {
+	case BuildStateConfigError:
+		return "CONFIG_ERROR"
 	case BuildStateSuccess:
 		return "SUCCESS"
 	case BuildStateSyncFailed:
@@ -82,6 +91,7 @@ func New() *Service {
 	return &Service{
 		pool:           pool.New(10),
 		workers:        make(map[string]*BundleWorker),
+		failures:       make(map[string]Status),
 		noninteractive: true,
 	}
 }
@@ -160,6 +170,9 @@ shutdown:
 		}
 		for _, w := range s.workers {
 			s.report.Bundles[w.bundleConfig.Name] = w.status
+		}
+		for b, status := range s.failures {
+			s.report.Bundles[b] = status
 		}
 	}
 
@@ -248,6 +261,7 @@ func (s *Service) launchWorkers(ctx context.Context) {
 	//             └── repo/              # Source git repository
 
 	bar := progress.New(s.noninteractive, len(bundles), "building and pushing bundles")
+	failures := make(map[string]Status)
 
 	for _, b := range bundles {
 		if w, ok := s.workers[b.Name]; ok {
@@ -264,19 +278,31 @@ func (s *Service) launchWorkers(ctx context.Context) {
 			}
 		}
 
+		deps, overrides, conflicts := getDeps(root.Requirements, sourceDefsByName)
+		if len(conflicts) > 0 {
+			sorted := slices.Collect(maps.Keys(conflicts))
+			sort.Strings(sorted)
+			var extra string
+			if len(sorted) > 1 {
+				extra = " (along with %d other sources)"
+			}
+			failures[b.Name] = Status{State: BuildStateConfigError, Message: fmt.Sprintf("requirements on %q conflict%v", sorted[0], extra)}
+			continue
+		}
+
 		syncs := []Synchronizer{}
 		sources := []*builder.Source{&root.Source}
 		bundleDir := path.Join(s.persistenceDir, md5sum(b.Name))
 
-		for _, l := range getDeps(root.Requirements, sourceDefsByName) {
-			srcDir := path.Join(bundleDir, "sources", l.Name)
+		for _, dep := range deps {
+			srcDir := path.Join(bundleDir, "sources", dep.Name)
 
-			src := newSource(l.Name).
-				SyncBuiltin(&syncs, l.Builtin, s.builtinFS, path.Join(srcDir, "builtin")).
-				SyncSourceSQL(&syncs, l.Name, &s.database, path.Join(srcDir, "database")).
-				SyncDatasources(&syncs, l.Datasources, path.Join(srcDir, "datasources")).
-				SyncGit(&syncs, l.Name, l.Git, path.Join(srcDir, "repo")).
-				AddRequirements(l.Requirements)
+			src := newSource(dep.Name).
+				SyncBuiltin(&syncs, dep.Builtin, s.builtinFS, path.Join(srcDir, "builtin")).
+				SyncSourceSQL(&syncs, dep.Name, &s.database, path.Join(srcDir, "database")).
+				SyncDatasources(&syncs, dep.Datasources, path.Join(srcDir, "datasources")).
+				SyncGit(&syncs, dep.Name, dep.Git, path.Join(srcDir, "repo"), overrides[dep.Name]).
+				AddRequirements(dep.Requirements)
 
 			sources = append(sources, &src.Source)
 		}
@@ -284,6 +310,7 @@ func (s *Service) launchWorkers(ctx context.Context) {
 		storage, err := s3.New(ctx, b.ObjectStorage)
 		if err != nil {
 			s.log.Errorf("error creating object storage client: %s", err.Error())
+			failures[b.Name] = Status{State: BuildStateConfigError, Message: fmt.Sprintf("object storage: %v", err)}
 			continue
 		}
 
@@ -296,6 +323,8 @@ func (s *Service) launchWorkers(ctx context.Context) {
 
 		s.workers[b.Name] = w
 	}
+
+	s.failures = failures
 }
 
 func (s *Service) allWorkersDone() bool {
@@ -307,11 +336,13 @@ func (s *Service) allWorkersDone() bool {
 	return true
 }
 
-func getDeps(rs config.Requirements, byName map[string]*config.Source) []*config.Source {
-	var result []*config.Source
+func getDeps(rs config.Requirements, byName map[string]*config.Source) ([]*config.Source, map[string]string, map[string]struct{}) {
+	var srcs []*config.Source
 	visited := make(map[string]struct{})
+	var all []config.Requirement
 	for len(rs) > 0 {
 		next, tail := rs[0], rs[1:]
+		all = append(all, next)
 		rs = tail
 		if next.Source == nil {
 			continue
@@ -321,11 +352,25 @@ func getDeps(rs config.Requirements, byName map[string]*config.Source) []*config
 			continue
 		} else {
 			visited[*next.Source] = struct{}{}
-			result = append(result, src)
+			srcs = append(srcs, src)
 			rs = append(rs, src.Requirements...)
 		}
 	}
-	return result
+
+	overrides := make(map[string]string)
+	conflicts := make(map[string]struct{})
+
+	for _, r := range all {
+		if r.Source != nil && r.Git.Commit != nil {
+			if x, ok := overrides[*r.Source]; ok && x != *r.Git.Commit {
+				conflicts[*r.Source] = struct{}{}
+			} else {
+				overrides[*r.Source] = *r.Git.Commit
+			}
+		}
+	}
+
+	return srcs, overrides, conflicts
 }
 
 type source struct {
@@ -347,13 +392,16 @@ func (src *source) addDir(dir string, wipe bool, includedFiles []string, exclude
 	})
 }
 
-func (src *source) SyncGit(syncs *[]Synchronizer, sourceName string, git config.Git, repoDir string) *source {
+func (src *source) SyncGit(syncs *[]Synchronizer, sourceName string, git config.Git, repoDir string, reqCommit string) *source {
 	if git.Repo != "" {
 		srcDir := repoDir
 		if git.Path != nil {
 			srcDir = path.Join(srcDir, *git.Path)
 		}
 		src.addDir(srcDir, false, git.IncludedFiles, git.ExcludedFiles)
+		if reqCommit != "" {
+			git.Commit = &reqCommit
+		}
 		*syncs = append(*syncs, gitsync.New(repoDir, git, sourceName))
 	}
 

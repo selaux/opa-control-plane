@@ -251,6 +251,16 @@ func TestDatabase(t *testing.T) {
 						Name:         "system3",
 						Requirements: config.Requirements{},
 					},
+					"system4": {
+						Name: "system4",
+						Requirements: config.Requirements{
+							config.Requirement{Source: newString("system5")},
+						},
+					},
+					"system5": {
+						Name:         "system5",
+						Requirements: config.Requirements{},
+					},
 				},
 				Secrets: map[string]*config.Secret{
 					"secret1": {
@@ -284,7 +294,7 @@ func TestDatabase(t *testing.T) {
 				newTestCase("get bundle system1").GetBundle("system1", root.Bundles["system1"]),
 
 				// source operations:
-				newTestCase("list sources").ListSources([]*config.Source{root.Sources["system1"], root.Sources["system2"], root.Sources["system3"]}),
+				newTestCase("list sources").ListSources([]*config.Source{root.Sources["system1"], root.Sources["system2"], root.Sources["system3"], root.Sources["system5"], root.Sources["system4"]}),
 				newTestCase("get source system1").GetSource("system1", root.Sources["system1"]),
 
 				// stack operations:

@@ -53,18 +53,21 @@ var schema = []sqlTable{
 	createSQLTable("bundles_requirements").
 		VarCharNonNullColumn("bundle_name").
 		VarCharNonNullColumn("source_name").
+		TextColumn("gitcommit").
 		PrimaryKey("bundle_name", "source_name").
 		ForeignKey("bundle_name", "bundles(name)").
 		ForeignKey("source_name", "sources(name)"),
 	createSQLTable("stacks_requirements").
 		VarCharNonNullColumn("stack_name").
 		VarCharNonNullColumn("source_name").
+		TextColumn("gitcommit").
 		PrimaryKey("stack_name", "source_name").
 		ForeignKey("stack_name", "stacks(name)").
 		ForeignKey("source_name", "sources(name)"),
 	createSQLTable("sources_requirements").
 		VarCharNonNullColumn("source_name").
 		VarCharNonNullColumn("requirement_name").
+		TextColumn("gitcommit").
 		PrimaryKey("source_name", "requirement_name").
 		ForeignKey("source_name", "sources(name)").
 		ForeignKey("requirement_name", "sources(name)"),

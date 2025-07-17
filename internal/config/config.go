@@ -241,11 +241,16 @@ type Bundle struct {
 type Labels map[string]string
 
 type Requirement struct {
-	Source *string `json:"source,omitempty" yaml:"source,omitempty"`
+	Source *string        `json:"source,omitempty" yaml:"source,omitempty"`
+	Git    GitRequirement `json:"git,omitempty" yaml:"git,omitempty"`
+}
+
+type GitRequirement struct {
+	Commit *string `json:"commit,omitempty" yaml:"commit,omitempty"`
 }
 
 func (a Requirement) Equal(b Requirement) bool {
-	return stringPtrEqual(a.Source, b.Source)
+	return stringPtrEqual(a.Source, b.Source) && stringPtrEqual(a.Git.Commit, b.Git.Commit)
 }
 
 type Requirements []Requirement
@@ -261,22 +266,10 @@ func (a Requirements) Equal(b Requirements) bool {
 	bCpy := slices.Clone(b)
 
 	cmp := func(a, b Requirement) int {
-		if a.Source == nil && b.Source == nil {
-			return 0
-		}
-		if a.Source == nil {
-			return -1
-		}
-		if b.Source == nil {
-			return 1
-		}
-
-		if *a.Source < *b.Source {
-			return -1
-		}
-
-		if *a.Source > *b.Source {
-			return 1
+		if x := stringPtrCompare(a.Source, b.Source); x != 0 {
+			return x
+		} else if x := stringPtrCompare(a.Git.Commit, b.Git.Commit); x != 0 {
+			return x
 		}
 
 		return 0
@@ -1008,6 +1001,28 @@ func setEqual[K comparable, V any](a, b []V, key func(V) K, eq func(a, b V) bool
 
 func stringPtrEqual(a, b *string) bool {
 	return fastEqual(a, b, func() bool { return *a == *b })
+}
+
+func stringPtrCompare(a, b *string) int {
+	if a == nil && b == nil {
+		return 0
+	}
+	if a == nil {
+		return -1
+	}
+	if b == nil {
+		return 1
+	}
+
+	if *a < *b {
+		return -1
+	}
+
+	if *a > *b {
+		return 1
+	}
+
+	return 0
 }
 
 func fastEqual[V any](a, b *V, slowEqual func() bool) bool {

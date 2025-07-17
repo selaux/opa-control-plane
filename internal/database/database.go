@@ -508,7 +508,8 @@ func (d *Database) ListBundles(ctx context.Context, principal string, opts ListO
 		bundles.excluded,
         secrets.name AS secret_name,
         secrets.value AS secret_value,
-		bundles_requirements.source_name AS req_src
+		bundles_requirements.source_name AS req_src,
+		bundles_requirements.gitcommit AS req_commit
     FROM
         bundles
     LEFT JOIN
@@ -551,7 +552,7 @@ func (d *Database) ListBundles(ctx context.Context, principal string, opts ListO
 			filepath                                   *string // File system storage
 			excluded                                   *string
 			secretName, secretValue                    *string
-			reqSrc                                     *string
+			reqSrc, reqCommit                          *string
 		}
 		bundleMap := make(map[string]*config.Bundle)
 		idMap := make(map[string]int64)
@@ -564,7 +565,7 @@ func (d *Database) ListBundles(ctx context.Context, principal string, opts ListO
 				&row.gcpProject, &row.gcpObject, // GCP
 				&row.azureAccountURL, &row.azureContainer, &row.azurePath, // Azure
 				&row.filepath,
-				&row.excluded, &row.secretName, &row.secretValue, &row.reqSrc); err != nil {
+				&row.excluded, &row.secretName, &row.secretValue, &row.reqSrc, &row.reqCommit); err != nil {
 				return nil, "", err
 			}
 
@@ -641,7 +642,7 @@ func (d *Database) ListBundles(ctx context.Context, principal string, opts ListO
 			}
 
 			if row.reqSrc != nil {
-				bundle.Requirements = append(bundle.Requirements, config.Requirement{Source: row.reqSrc})
+				bundle.Requirements = append(bundle.Requirements, config.Requirement{Source: row.reqSrc, Git: config.GitRequirement{Commit: row.reqCommit}})
 			}
 
 			if row.id > lastId {
@@ -703,7 +704,8 @@ func (d *Database) ListSources(ctx context.Context, principal string, opts ListO
 	secrets.name AS secret_name,
 	sources_secrets.ref_type as secret_ref_type,
 	secrets.value AS secret_value,
-	sources_requirements.requirement_name
+	sources_requirements.requirement_name,
+	sources_requirements.gitcommit
 FROM
 	sources
 LEFT JOIN
@@ -744,7 +746,7 @@ WHERE (sources_secrets.ref_type = 'git_credentials' OR sources_secrets.ref_type 
 			repo                                             string
 			ref, gitCommit, path, includePaths, excludePaths *string
 			secretName, secretRefType, secretValue           *string
-			requirementName                                  *string
+			requirementName, requirementCommit               *string
 		}
 
 		srcMap := make(map[string]*config.Source)
@@ -753,7 +755,7 @@ WHERE (sources_secrets.ref_type = 'git_credentials' OR sources_secrets.ref_type 
 
 		for rows.Next() {
 			var row sourceRow
-			if err := rows.Scan(&row.id, &row.sourceName, &row.builtin, &row.repo, &row.ref, &row.gitCommit, &row.path, &row.includePaths, &row.excludePaths, &row.secretName, &row.secretRefType, &row.secretValue, &row.requirementName); err != nil {
+			if err := rows.Scan(&row.id, &row.sourceName, &row.builtin, &row.repo, &row.ref, &row.gitCommit, &row.path, &row.includePaths, &row.excludePaths, &row.secretName, &row.secretRefType, &row.secretValue, &row.requirementName, &row.requirementCommit); err != nil {
 				return nil, "", err
 			}
 
@@ -801,7 +803,7 @@ WHERE (sources_secrets.ref_type = 'git_credentials' OR sources_secrets.ref_type 
 			}
 
 			if row.requirementName != nil {
-				src.Requirements = append(src.Requirements, config.Requirement{Source: row.requirementName})
+				src.Requirements = append(src.Requirements, config.Requirement{Source: row.requirementName, Git: config.GitRequirement{Commit: row.requirementCommit}})
 			}
 
 			if row.id > last {
@@ -896,7 +898,8 @@ func (d *Database) ListStacks(ctx context.Context, principal string, opts ListOp
         stacks.name AS stack_name,
         stacks.selector,
 		stacks.exclude_selector,
-        stacks_requirements.source_name
+        stacks_requirements.source_name,
+		stacks_requirements.gitcommit
     FROM
         stacks
     LEFT JOIN
@@ -927,11 +930,11 @@ func (d *Database) ListStacks(ctx context.Context, principal string, opts ListOp
 		defer rows.Close()
 
 		type stackRow struct {
-			id              int64
-			stackName       string
-			selector        string
-			excludeSelector *string
-			sourceName      *string
+			id                       int64
+			stackName                string
+			selector                 string
+			excludeSelector          *string
+			sourceName, sourceCommit *string
 		}
 
 		stacksMap := map[string]*config.Stack{}
@@ -940,7 +943,7 @@ func (d *Database) ListStacks(ctx context.Context, principal string, opts ListOp
 
 		for rows.Next() {
 			var row stackRow
-			if err := rows.Scan(&row.id, &row.stackName, &row.selector, &row.excludeSelector, &row.sourceName); err != nil {
+			if err := rows.Scan(&row.id, &row.stackName, &row.selector, &row.excludeSelector, &row.sourceName, &row.sourceCommit); err != nil {
 				return nil, "", err
 			}
 
@@ -969,6 +972,7 @@ func (d *Database) ListStacks(ctx context.Context, principal string, opts ListOp
 			if row.sourceName != nil {
 				stack.Requirements = append(stack.Requirements, config.Requirement{
 					Source: row.sourceName,
+					Git:    config.GitRequirement{Commit: row.sourceCommit},
 				})
 			}
 
@@ -1104,11 +1108,11 @@ func (d *Database) UpsertBundle(ctx context.Context, principal string, bundle *c
 			}
 		}
 
-		for _, src := range bundle.Requirements {
-			if src.Source != nil {
+		for _, req := range bundle.Requirements {
+			if req.Source != nil {
 				// TODO: add support for mounts on requirements; currently that is only used internally for stacks.
-				if err := d.upsert(ctx, tx, "bundles_requirements", []string{"bundle_name", "source_name"}, []string{"bundle_name", "source_name"},
-					bundle.Name, src.Source); err != nil {
+				if err := d.upsert(ctx, tx, "bundles_requirements", []string{"bundle_name", "source_name", "gitcommit"}, []string{"bundle_name", "source_name"},
+					bundle.Name, req.Source, req.Git.Commit); err != nil {
 					return err
 				}
 			}
@@ -1172,7 +1176,7 @@ func (d *Database) UpsertSource(ctx context.Context, principal string, source *c
 
 		for _, r := range source.Requirements {
 			if r.Source != nil {
-				if err := d.upsert(ctx, tx, "sources_requirements", []string{"source_name", "requirement_name"}, []string{"source_name", "requirement_name"}, source.Name, r.Source); err != nil {
+				if err := d.upsert(ctx, tx, "sources_requirements", []string{"source_name", "requirement_name", "gitcommit"}, []string{"source_name", "requirement_name"}, source.Name, r.Source, r.Git.Commit); err != nil {
 					return err
 				}
 			}
@@ -1228,7 +1232,7 @@ func (d *Database) UpsertStack(ctx context.Context, principal string, stack *con
 		for _, r := range stack.Requirements {
 			if r.Source != nil {
 				// TODO: add support for mounts on requirements; currently that is only used internally for stacks.
-				if err := d.upsert(ctx, tx, "stacks_requirements", []string{"stack_name", "source_name"}, []string{"stack_name", "source_name"}, stack.Name, r.Source); err != nil {
+				if err := d.upsert(ctx, tx, "stacks_requirements", []string{"stack_name", "source_name", "gitcommit"}, []string{"stack_name", "source_name"}, stack.Name, r.Source, r.Git.Commit); err != nil {
 					return err
 				}
 			}

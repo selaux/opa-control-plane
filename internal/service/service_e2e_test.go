@@ -17,6 +17,7 @@ import (
 	"text/template"
 
 	"github.com/go-git/go-git/v5"
+	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/johannesboyne/gofakes3"
 	"github.com/johannesboyne/gofakes3/backend/s3mem"
@@ -302,7 +303,7 @@ func writeFile(t *testing.T, path string, content string) {
 	}
 }
 
-func writeGitRepo(t *testing.T, remoteGitDir string, files map[string]string, parameters map[string]string) {
+func writeGitRepo(t *testing.T, remoteGitDir string, files map[string]string, parameters map[string]string) plumbing.Hash {
 	for path, content := range files {
 		writeFile(t, filepath.Join(remoteGitDir, path), formatTemplate(t, content, parameters))
 	}
@@ -324,8 +325,43 @@ func writeGitRepo(t *testing.T, remoteGitDir string, files map[string]string, pa
 			}
 		}
 
-		if _, err := w.Commit("Initial commit", &git.CommitOptions{Author: &object.Signature{}}); err != nil {
+		if h, err := w.Commit("Initial commit", &git.CommitOptions{Author: &object.Signature{}}); err != nil {
 			t.Fatal(err)
+		} else {
+			return h
 		}
 	}
+
+	var zero plumbing.Hash
+	return zero
+}
+
+func writeGitFiles(t *testing.T, gitDir string, files map[string]string) plumbing.Hash {
+	for path, content := range files {
+		writeFile(t, filepath.Join(gitDir, path), content)
+	}
+
+	if len(files) > 0 {
+		repo, err := git.PlainOpen(gitDir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		w, err := repo.Worktree()
+		if err != nil {
+			t.Fatal(err)
+		}
+		for name := range files {
+			if _, err := w.Add(name); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if h, err := w.Commit("msg", &git.CommitOptions{Author: &object.Signature{}}); err != nil {
+			t.Fatal(err)
+		} else {
+			return h
+		}
+	}
+
+	var zero plumbing.Hash
+	return zero
 }
