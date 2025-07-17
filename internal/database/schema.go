@@ -17,16 +17,6 @@ var schema = []sqlTable{
 		TextColumn("s3key").
 		TextColumn("filepath").
 		TextColumn("excluded"),
-	createSQLTable("bundles").
-		IntegerPrimaryKeyAutoincrementColumn("id").
-		VarCharNonNullUniqueColumn("name").
-		TextColumn("labels").
-		TextColumn("s3url").
-		TextColumn("s3region").
-		TextColumn("s3bucket").
-		TextColumn("s3key").
-		TextColumn("filepath").
-		TextColumn("excluded"),
 	createSQLTable("sources").
 		IntegerPrimaryKeyAutoincrementColumn("id").
 		VarCharNonNullUniqueColumn("name").
