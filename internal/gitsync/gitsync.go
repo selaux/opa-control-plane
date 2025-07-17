@@ -119,16 +119,16 @@ func (s *Synchronizer) execute(ctx context.Context) error {
 
 	var checkoutOpts *git.CheckoutOptions
 
-	if s.config.Reference != nil {
+	if s.config.Commit != nil {
+		checkoutOpts = &git.CheckoutOptions{
+			Force: true, // Discard any local changes
+			Hash:  plumbing.NewHash(*s.config.Commit),
+		}
+	} else if s.config.Reference != nil {
 		ref := fmt.Sprintf("refs/remotes/%s/%s", remote, *s.config.Reference)
 		checkoutOpts = &git.CheckoutOptions{
 			Force:  true, // Discard any local changes
 			Branch: plumbing.ReferenceName(ref),
-		}
-	} else if s.config.Commit != nil {
-		checkoutOpts = &git.CheckoutOptions{
-			Force: true, // Discard any local changes
-			Hash:  plumbing.NewHash(*s.config.Commit),
 		}
 	} else {
 		return errors.New("either reference or commit must be set in git configuration")
