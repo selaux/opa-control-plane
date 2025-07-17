@@ -164,9 +164,20 @@ func TestServerBundleOwners(t *testing.T) {
 		t.Fatal("expected exactly one bundle")
 	}
 
-	ts.Request("GET", "/v1/bundles/testbundle", "", ownerKey).ExpectStatus(200)
+	var bundle types.BundlesGetResponseV1
+	ts.Request("GET", "/v1/bundles/testbundle", "", ownerKey).ExpectStatus(200).ExpectBody(&bundle)
 
-	// TODO(tsandall): check details
+	if !bundle.Result.Equal(&config.Bundle{
+		ObjectStorage: config.ObjectStorage{
+			AmazonS3: &config.AmazonS3{
+				Region: "us-east-1",
+				Bucket: "test-bucket",
+				Key:    "test-key",
+			},
+		},
+	}) {
+		t.Fatal("expected bundle to be populated")
+	}
 
 	var ownerList2 types.SourcesListResponseV1
 	ts.Request("GET", "/v1/bundles", "", ownerKey2).ExpectStatus(200).ExpectBody(&ownerList2)
@@ -201,7 +212,7 @@ func TestServerSourceOwners(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	ts.Request("PUT", "/v1/sources/testsrc", "{}", ownerKey).ExpectStatus(200)
+	ts.Request("PUT", "/v1/sources/testsrc", `{"datasources": [{"name": "ds"}]}`, ownerKey).ExpectStatus(200)
 
 	var ownerList types.SourcesListResponseV1
 	ts.Request("GET", "/v1/sources", "", ownerKey).ExpectStatus(200).ExpectBody(&ownerList)
@@ -209,9 +220,15 @@ func TestServerSourceOwners(t *testing.T) {
 		t.Fatal("expected exactly one source")
 	}
 
-	ts.Request("GET", "/v1/sources/testsrc", "", ownerKey).ExpectStatus(200)
-
-	// TODO(tsandall): check details
+	var src types.SourcesGetResponseV1
+	ts.Request("GET", "/v1/sources/testsrc", "", ownerKey).ExpectStatus(200).ExpectBody(&src)
+	if !src.Result.Equal(&config.Source{
+		Datasources: []config.Datasource{
+			{Name: "ds"},
+		},
+	}) {
+		t.Fatal("expected source to be populated")
+	}
 
 	var ownerList2 types.SourcesListResponseV1
 	ts.Request("GET", "/v1/sources", "", ownerKey2).ExpectStatus(200).ExpectBody(&ownerList2)
