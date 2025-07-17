@@ -15,8 +15,11 @@ import (
 	"github.com/open-policy-agent/opa/v1/dependencies"
 )
 
+const cacheSize = 128
+
 //go:embed authz.rego
 var src string
+var partialCache = newCache(cacheSize)
 
 // Any references to `data` documents in the authorization policy are considered
 // references to SQL tables and therefore are marked as unknowns by default. In addition,
@@ -190,11 +193,16 @@ func Check(ctx context.Context, tx *sql.Tx, access Access) bool {
 	return tx.QueryRowContext(ctx, `SELECT 1 WHERE `+expr.SQL()).Scan(&x) == nil
 }
 
-// TODO(tsandall): add caching
 // TODO(tsandall): revisit extra column mappings... we may only need this for
 // input.id in which case we could special-case that and keep the API a bit more
 // constrained.
 func Partial(ctx context.Context, access Access, extraColumnMappings map[string]ColumnRef) (Expr, error) {
+	return partialCache.Get(access, extraColumnMappings, func() (Expr, error) {
+		return partial(ctx, access, extraColumnMappings)
+	})
+}
+
+func partial(ctx context.Context, access Access, extraColumnMappings map[string]ColumnRef) (Expr, error) {
 
 	var extraUnknowns []string
 	for k := range extraColumnMappings {
