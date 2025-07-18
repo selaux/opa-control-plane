@@ -15,13 +15,11 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob"
 	"github.com/aws/aws-sdk-go-v2/aws"
-	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/feature/s3/manager"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
-	iaws "github.com/styrainc/lighthouse/internal/aws"
+	internal_aws "github.com/styrainc/lighthouse/internal/aws"
 	"github.com/styrainc/lighthouse/internal/config"
-
 	"google.golang.org/api/option"
 )
 
@@ -67,8 +65,6 @@ type (
 func New(ctx context.Context, config config.ObjectStorage) (ObjectStorage, error) {
 	switch {
 	case config.AmazonS3 != nil:
-		var options []func(*awsconfig.LoadOptions) error
-
 		// There are two options for authentication to Amazon S3:
 		//
 		// 1. Using no secret at all. In this case, the AWS SDK will use the default credential provider chain to authenticate. It proceeds in
@@ -79,22 +75,7 @@ func New(ctx context.Context, config config.ObjectStorage) (ObjectStorage, error
 		//    d) If your application is running on an Amazon EC2 instance, IAM role for Amazon EC2.
 		// 2. Using a secret of type "aws_auth". The secret stores the AWS credentials to use to authenticate.
 
-		if region := config.AmazonS3.Region; region != "" {
-			options = append(options, awsconfig.WithRegion(region))
-		}
-
-		if config.AmazonS3.Credentials == nil {
-			// Option 1: default chain.
-		} else {
-			// Option 2: use a secret of type "aws_auth".
-			option, err := s3auth(ctx, config.AmazonS3)
-			if err != nil {
-				return nil, err
-			}
-			options = append(options, option)
-		}
-
-		awsCfg, err := awsconfig.LoadDefaultConfig(ctx, options...)
+		awsCfg, err := internal_aws.Config(ctx, config.AmazonS3.Region, config.AmazonS3.Credentials)
 		if err != nil {
 			return nil, err
 		}
@@ -226,17 +207,6 @@ func New(ctx context.Context, config config.ObjectStorage) (ObjectStorage, error
 	default:
 		return nil, ErrUnsupportedProvider
 	}
-}
-
-func s3auth(_ context.Context, config *config.AmazonS3) (func(*awsconfig.LoadOptions) error, error) {
-	if config.Credentials == nil {
-		return nil, nil
-	}
-
-	// SecretCredentialProvider can handle dynamic credentials but that capability is not strictly
-	// needed here: any configuration change, including credential change, will trigger the service
-	// to recreate the object storage client.
-	return awsconfig.WithCredentialsProvider(iaws.NewSecretCredentialsProvider(config.Credentials)), nil
 }
 
 // ErrUnsupportedProvider is returned when an unsupported S3 provider is specified.

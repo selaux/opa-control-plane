@@ -17,7 +17,6 @@ import (
 	"strconv"
 	"strings"
 
-	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/feature/rds/auth"
 	mysqldriver "github.com/go-sql-driver/mysql"
 	"github.com/jackc/pgx/v5"
@@ -149,19 +148,13 @@ func (d *Database) InitDB(ctx context.Context) error {
 		} else {
 			// Authentication option 3: no explicit credentials configured, use AWS default credential provider chain.
 
-			var options []func(*awsconfig.LoadOptions) error
-
-			if region != "" {
-				options = append(options, awsconfig.WithRegion(region))
-			}
-
-			cfg, err := awsconfig.LoadDefaultConfig(ctx, options...)
+			awsCfg, err := aws.Config(ctx, region, nil)
 			if err != nil {
 				return err
 			}
 
 			authCallback = func(ctx context.Context) (string, error) {
-				return auth.BuildAuthToken(ctx, endpoint, region, dbUser, cfg.Credentials)
+				return auth.BuildAuthToken(ctx, endpoint, region, dbUser, awsCfg.Credentials)
 			}
 
 			d.log.Debugf("Using AWS default credential provider chain for RDS authentication at %s", endpoint)

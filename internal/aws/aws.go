@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
+	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/styrainc/lighthouse/internal/config"
 )
 
@@ -55,4 +56,21 @@ func (s *SecretCredentialsProvider) Retrieve(ctx context.Context) (aws.Credentia
 	default:
 		return aws.Credentials{}, fmt.Errorf("unsupported authentication type: %s", value["type"])
 	}
+}
+
+func Config(ctx context.Context, region string, credentials *config.SecretRef) (aws.Config, error) {
+	var options []func(*awsconfig.LoadOptions) error
+
+	if region != "" {
+		options = append(options, awsconfig.WithRegion(region))
+	}
+
+	if credentials == nil {
+		// Option 1: default chain.
+	} else {
+		// Option 2: use a secret of type "aws_auth".
+		options = append(options, awsconfig.WithCredentialsProvider(NewSecretCredentialsProvider(credentials)))
+	}
+
+	return awsconfig.LoadDefaultConfig(ctx, options...)
 }
