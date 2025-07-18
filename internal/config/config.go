@@ -465,14 +465,15 @@ func (a Sources) Equal(b Sources) bool {
 
 // Stack defines the configuration for a Lighthouse Stack.
 type Stack struct {
-	Name         string       `json:"-" yaml:"-"`
-	Selector     Selector     `json:"selector" yaml:"selector"` // Schema validation overrides Selector to object of string array values.
-	Requirements Requirements `json:"requirements,omitempty" yaml:"requirements,omitempty"`
+	Name            string       `json:"-" yaml:"-"`
+	Selector        Selector     `json:"selector" yaml:"selector"` // Schema validation overrides Selector to object of string array values.
+	ExcludeSelector *Selector    `json:"exclude_selector,omitempty" yaml:"exclude_selector,omitempty"`
+	Requirements    Requirements `json:"requirements,omitempty" yaml:"requirements,omitempty"`
 }
 
 func (a *Stack) Equal(other *Stack) bool {
 	return fastEqual(a, other, func() bool {
-		return a.Name == other.Name && a.Selector.Equal(other.Selector) && a.Requirements.Equal(other.Requirements)
+		return a.Name == other.Name && a.Selector.Equal(other.Selector) && a.ExcludeSelector.PtrEqual(other.ExcludeSelector) && a.Requirements.Equal(other.Requirements)
 	})
 }
 
@@ -524,6 +525,24 @@ func (s *Selector) Matches(labels Labels) bool {
 
 func (s Selector) Equal(other Selector) bool {
 	return maps.EqualFunc(s.s, other.s, func(a, b StringSet) bool { return a.Equal(b) })
+}
+
+func (s *Selector) PtrMatches(labels Labels) bool {
+	if s == nil {
+		return false
+	}
+	return s.Matches(labels)
+}
+
+func (s *Selector) PtrEqual(other *Selector) bool {
+	if s == other {
+		return true
+	} else if s == nil && other != nil {
+		return false
+	} else if s != nil && other == nil {
+		return false
+	}
+	return s.Equal(*other)
 }
 
 func (s Selector) MarshalYAML() (interface{}, error) {

@@ -259,7 +259,7 @@ func (s *Service) launchWorkers(ctx context.Context) {
 		root := newSource(b.Name).AddRequirements(b.Requirements)
 
 		for _, stack := range stacks {
-			if stack.Selector.Matches(b.Labels) {
+			if stack.Selector.Matches(b.Labels) && !stack.ExcludeSelector.PtrMatches(b.Labels) {
 				root = root.AddRequirements(stack.Requirements)
 			}
 		}

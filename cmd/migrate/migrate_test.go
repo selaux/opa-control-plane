@@ -393,6 +393,7 @@ func TestMigrateV1Selector(t *testing.T) {
 		note     string
 		module   string
 		selector string
+		exclude  string
 	}{
 		{
 			note: "include only",
@@ -414,7 +415,7 @@ func TestMigrateV1Selector(t *testing.T) {
 			`,
 		},
 		{
-			note: "exclude causes static match",
+			note: "include and exclude",
 			module: `
 					package x
 
@@ -426,10 +427,15 @@ func TestMigrateV1Selector(t *testing.T) {
 			`,
 			selector: `
 					{
-						"stack-abcd": ["*"],
+						"foo": ["bar"],
 						"system-type": ["foo-v1"]
 					}
 				`,
+			exclude: `
+				{
+					"baz": ["qux"]
+				}
+			`,
 		},
 		{
 			note: "missing match_all causes static match",
@@ -496,19 +502,28 @@ func TestMigrateV1Selector(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.note, func(t *testing.T) {
 			module := ast.MustParseModule(tc.module)
-			var selector config.Selector
-			if err := json.Unmarshal([]byte(tc.selector), &selector); err != nil {
+			var expectedSelector config.Selector
+			if err := json.Unmarshal([]byte(tc.selector), &expectedSelector); err != nil {
 				t.Fatal(err)
+			}
+			var expectedExclude *config.Selector
+			if tc.exclude != "" {
+				if err := json.Unmarshal([]byte(tc.exclude), &expectedExclude); err != nil {
+					t.Fatal(err)
+				}
 			}
 			var stack das.V1Stack
 			stack.Id = "abcd"
 			stack.Type = "foo-v1"
-			result, err := migrateV1Selector(&stack, module)
+			selector, exclude, err := migrateV1Selector(&stack, module)
 			if err != nil {
 				t.Fatal(err)
 			}
-			if !result.Equal(selector) {
-				t.Fatal("expected", selector, "got", result)
+			if !selector.Equal(expectedSelector) {
+				t.Fatal("expected", expectedSelector, "got", selector)
+			}
+			if !expectedExclude.PtrEqual(exclude) {
+				t.Fatal("expected", expectedExclude, "got", exclude)
 			}
 		})
 	}

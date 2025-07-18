@@ -56,6 +56,15 @@ cases:
                 DONOTMATCH: []
               },
               requirements: [{source: TestLibUnused}]
+            },
+            TestStackExclusion: {
+              selector: {
+                env: [production],
+              },
+              exclude_selector: {
+                app: [payments],
+              },
+              requirements: [{source: TestLibUnused}]
             }
           }
         }

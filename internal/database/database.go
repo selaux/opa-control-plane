@@ -871,6 +871,7 @@ func (d *Database) ListStacks(ctx context.Context, principal string, opts ListOp
         stacks.id,
         stacks.name AS stack_name,
         stacks.selector,
+		stacks.exclude_selector,
         stacks_requirements.source_name
     FROM
         stacks
@@ -902,10 +903,11 @@ func (d *Database) ListStacks(ctx context.Context, principal string, opts ListOp
 		defer rows.Close()
 
 		type stackRow struct {
-			id         int64
-			stackName  string
-			selector   string
-			sourceName *string
+			id              int64
+			stackName       string
+			selector        string
+			excludeSelector *string
+			sourceName      *string
 		}
 
 		stacksMap := map[string]*config.Stack{}
@@ -914,7 +916,7 @@ func (d *Database) ListStacks(ctx context.Context, principal string, opts ListOp
 
 		for rows.Next() {
 			var row stackRow
-			if err := rows.Scan(&row.id, &row.stackName, &row.selector, &row.sourceName); err != nil {
+			if err := rows.Scan(&row.id, &row.stackName, &row.selector, &row.excludeSelector, &row.sourceName); err != nil {
 				return nil, "", err
 			}
 
@@ -928,6 +930,13 @@ func (d *Database) ListStacks(ctx context.Context, principal string, opts ListOp
 				stack = &config.Stack{
 					Name:     row.stackName,
 					Selector: selector,
+				}
+				if row.excludeSelector != nil {
+					var excludeSelector config.Selector
+					if err := json.Unmarshal([]byte(*row.excludeSelector), &excludeSelector); err != nil {
+						return nil, "", err
+					}
+					stack.ExcludeSelector = &excludeSelector
 				}
 				stacksMap[row.stackName] = stack
 				idMap[row.stackName] = row.id
@@ -1138,12 +1147,21 @@ func (d *Database) UpsertStack(ctx context.Context, principal string, stack *con
 			return err
 		}
 
-		bs, err := json.Marshal(stack.Selector)
+		selector, err := json.Marshal(stack.Selector)
 		if err != nil {
 			return err
 		}
 
-		if err := d.upsert(ctx, tx, "stacks", []string{"name", "selector"}, []string{"name"}, stack.Name, string(bs)); err != nil {
+		var exclude *[]byte
+		if stack.ExcludeSelector != nil {
+			bs, err := json.Marshal(stack.ExcludeSelector)
+			if err != nil {
+				return err
+			}
+			exclude = &bs
+		}
+
+		if err := d.upsert(ctx, tx, "stacks", []string{"name", "selector", "exclude_selector"}, []string{"name"}, stack.Name, string(selector), exclude); err != nil {
 			return err
 		}
 

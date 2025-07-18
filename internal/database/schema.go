@@ -30,7 +30,8 @@ var schema = []sqlTable{
 	createSQLTable("stacks").
 		IntegerPrimaryKeyAutoincrementColumn("id").
 		VarCharNonNullUniqueColumn("name").
-		TextNonNullColumn("selector"),
+		TextNonNullColumn("selector").
+		TextColumn("exclude_selector"),
 	createSQLTable("secrets").
 		VarCharPrimaryKeyColumn("name").
 		TextColumn("value"),
