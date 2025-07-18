@@ -5,6 +5,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"database/sql"
+	"database/sql/driver"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -16,9 +17,11 @@ import (
 	"strconv"
 	"strings"
 
+	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/feature/rds/auth"
 	mysqldriver "github.com/go-sql-driver/mysql"
-	_ "github.com/jackc/pgx/v5/stdlib" // database/sql compatible driver for pgx
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/stdlib" // database/sql compatible driver for pgx
 	"github.com/styrainc/lighthouse/internal/authz"
 	"github.com/styrainc/lighthouse/internal/aws"
 	"github.com/styrainc/lighthouse/internal/config"
@@ -83,52 +86,92 @@ func (d *Database) WithLogger(log *logging.Logger) *Database {
 func (d *Database) InitDB(ctx context.Context) error {
 	switch {
 	case d.config != nil && d.config.AWSRDS != nil:
+		// There are three options for authentication to Amazon RDS:
+		//
+		// 1. Using a secret of type "password". This requires the database user configured with the password.
+		// 2. Using a secret of type "aws_auth". The secret stores the AWS credentials to use to authenticate to the database. The database
+		//    has no password configured for the user.
+		// 3. Using no secret at all. In this case, the AWS SDK will use the default credential provider chain to authenticate to the database. It proceeds
+		//    the following in order:
+		//    a) Environment variables.
+		//    b) Shared credentials file.
+		//    c) If your application uses an ECS task definition or RunTask API operation, IAM role for tasks.
+		//    d) If your application is running on an Amazon EC2 instance, IAM role for Amazon EC2.
+		//
+		// In case of the second and third option, the SQL driver will use the AWS SDK to regenerate an authentication token for
+		// the database user as necessary.
+
 		config := d.config.AWSRDS
-		driver := config.Driver
+		drv := config.Driver
 		endpoint := config.Endpoint
 		region := config.Region
 		dbUser := config.DatabaseUser
 		dbName := config.DatabaseName
 		rootCertificates := config.RootCertificates
 
-		var password string
+		var authCallback func(ctx context.Context) (string, error)
 
 		if d.config.AWSRDS.Credentials != nil {
-			secret, err := d.config.AWSRDS.Credentials.Resolve()
+			// Authentication options 1 and 2:
+			authCallback = func(ctx context.Context) (string, error) {
+				secret, err := d.config.AWSRDS.Credentials.Resolve()
+				if err != nil {
+					return "", err
+				}
+
+				var password string
+
+				if secret.Value != nil {
+					switch t, _ := secret.Value["type"].(string); t {
+					case "password":
+						password, _ = secret.Value["password"].(string)
+						if password == "" {
+							return "", fmt.Errorf("missing or invalid password value in secret %q", d.config.AWSRDS.Credentials.Name)
+						}
+
+					case "aws_auth":
+						credentials := aws.NewSecretCredentialsProvider(d.config.AWSRDS.Credentials)
+						password, err = auth.BuildAuthToken(ctx, endpoint, region, dbUser, credentials)
+						if err != nil {
+							return "", err
+						}
+
+					default:
+						return "", fmt.Errorf("unsupported secret type '%s' for RDS credentials", t)
+					}
+				}
+
+				d.log.Debugf("Using a secret for RDS authentication at %s", endpoint)
+
+				return password, nil
+			}
+
+		} else {
+			// Authentication option 3: no explicit credentials configured, use AWS default credential provider chain.
+
+			var options []func(*awsconfig.LoadOptions) error
+
+			if region != "" {
+				options = append(options, awsconfig.WithRegion(region))
+			}
+
+			cfg, err := awsconfig.LoadDefaultConfig(ctx, options...)
 			if err != nil {
 				return err
 			}
 
-			if secret.Value != nil {
-				switch t, _ := secret.Value["type"].(string); t {
-				case "password":
-					password, _ = secret.Value["password"].(string)
-					if password == "" {
-						return fmt.Errorf("missing or invalid password value in secret %q", d.config.AWSRDS.Credentials.Name)
-					}
-
-				case "aws_auth":
-					credentials := aws.NewSecretCredentialsProvider(d.config.AWSRDS.Credentials)
-					password, err = auth.BuildAuthToken(ctx, endpoint, region, dbUser, credentials)
-					if err != nil {
-						return err
-					}
-
-				default:
-					return fmt.Errorf("unsupported secret type '%s' for RDS credentials", t)
-				}
+			authCallback = func(ctx context.Context) (string, error) {
+				return auth.BuildAuthToken(ctx, endpoint, region, dbUser, cfg.Credentials)
 			}
 
-			if password == "" {
-				return fmt.Errorf("missing RDS credentials")
-			}
+			d.log.Debugf("Using AWS default credential provider chain for RDS authentication at %s", endpoint)
 		}
 
-		var dsn string
+		var connector driver.Connector
 
-		switch driver {
+		switch drv {
 		case "postgres":
-			driver = "pgx" // Convenience
+			drv = "pgx" // Convenience
 			fallthrough
 		case "pgx":
 			dbHost, dbPort, found := strings.Cut(endpoint, ":")
@@ -145,11 +188,27 @@ func (d *Database) InitDB(ctx context.Context) error {
 				return fmt.Errorf("invalid port number in endpoint, expected host:port, got %s", endpoint)
 			}
 
+			var cfg *pgx.ConnConfig
 			if config.DSN != "" {
-				dsn = config.DSN
+				cfg, err = pgx.ParseConfig(config.DSN)
+				if err != nil {
+					return err
+				}
+
 			} else {
-				dsn = fmt.Sprintf("host=%s port=%d user=%s password=%s dbname=%s sslmode=require", dbHost, port, dbUser, password, dbName)
+				password, err := authCallback(ctx)
+				if err != nil {
+					return err
+				}
+
+				dsn := fmt.Sprintf("host=%s port=%d user=%s password=%s dbname=%s sslmode=require", dbHost, port, dbUser, password, dbName)
+				cfg, err = pgx.ParseConfig(dsn)
+				if err != nil {
+					return err
+				}
 			}
+
+			connector = stdlib.GetConnector(*cfg)
 			d.kind = postgres
 
 		case "mysql":
@@ -171,25 +230,53 @@ func (d *Database) InitDB(ctx context.Context) error {
 				tlsConfigName = "custom"
 			}
 
+			var cfg *mysqldriver.Config
+			var err error
+
 			if config.DSN != "" {
-				dsn = config.DSN
+				cfg, err = mysqldriver.ParseDSN(config.DSN)
 			} else {
-				dsn = fmt.Sprintf("%s:%s@tcp(%s)/%s?tls=%s&allowCleartextPasswords=true&allowOldPasswords=true&allowNativePasswords=true",
-					dbUser, password, endpoint, dbName, tlsConfigName)
+				var password string
+				password, err = authCallback(ctx)
+				if err != nil {
+					return err
+				}
+
+				cfg = &mysqldriver.Config{
+					User:                    dbUser,
+					Passwd:                  password,
+					Net:                     "tcp",
+					Addr:                    endpoint,
+					DBName:                  dbName,
+					AllowCleartextPasswords: true,
+					AllowNativePasswords:    true,
+					AllowOldPasswords:       true,
+					TLSConfig:               tlsConfigName,
+				}
+
+				err = cfg.Apply(mysqldriver.BeforeConnect(func(ctx context.Context, config *mysqldriver.Config) (err error) {
+					config.Passwd, err = authCallback(ctx)
+					return err
+				}))
+			}
+
+			if err != nil {
+				return err
+			}
+
+			connector, err = mysqldriver.NewConnector(cfg)
+			if err != nil {
+				return err
 			}
 
 			d.kind = mysql
 		default:
-			return fmt.Errorf("unsupported AWS RDS driver: %s", driver)
+			return fmt.Errorf("unsupported AWS RDS driver: %s", drv)
 		}
 
-		var err error
-		d.db, err = sql.Open(driver, dsn)
-		if err != nil {
-			return err
-		}
+		d.db = sql.OpenDB(connector)
 
-		d.log.Debugf("Connected to %s RDS instance at %s", driver, endpoint)
+		d.log.Debugf("Connected to %s RDS instance at %s", drv, endpoint)
 
 	case d.config == nil:
 		// Default to memory-only SQLite3 if no config is provided.
