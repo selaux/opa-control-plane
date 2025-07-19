@@ -1944,6 +1944,7 @@ func fetchDASState(silent bool, c *das.Client, opts dasFetchOptions) (*dasState,
 		return nil, err
 	}
 
+	var systemIds []string
 	var systems []*das.V1System
 
 	if opts.SystemId == "" {
@@ -1951,37 +1952,58 @@ func fetchDASState(silent bool, c *das.Client, opts dasFetchOptions) (*dasState,
 		resp, err := c.JSON("v1/systems", das.Params{Query: map[string]string{
 			"authz":       "false",
 			"compact":     "true",
-			"datasources": "true",
+			"datasources": "false",
 			"errors":      "false",
 			"metadata":    "false",
 			"modules":     "false",
-			"policies":    "true",
+			"policies":    "false",
 			"rule_counts": "false",
 		}})
 		if err != nil {
 			return nil, err
 		}
-
-		err = resp.Decode(&systems)
+		var ids []struct {
+			Id string `json:"id"`
+		}
+		err = resp.Decode(&ids)
 		if err != nil {
 			return nil, err
+		}
+		for _, x := range ids {
+			systemIds = append(systemIds, x.Id)
 		}
 	} else {
-		log.Info("Fetching v1/systems/" + opts.SystemId)
-		resp, err := c.JSON("v1/systems/" + opts.SystemId)
+		systemIds = append(systemIds, opts.SystemId)
+	}
+
+	bar.AddMax(len(systemIds))
+
+	for _, id := range systemIds {
+		log.Info("Fetching v1/systems/" + id)
+		resp, err := c.JSON("v1/systems/"+id, das.Params{
+			Query: map[string]string{
+				"rule_counts":         "false",
+				"errors":              "false",
+				"authz":               "false",
+				"metadata":            "false",
+				"minimum_opa_version": "false",
+				"stacks":              "false",
+				"migration_history":   "false",
+				"tokens":              "false",
+				"info":                "false",
+			},
+		})
 		if err != nil {
 			return nil, err
 		}
-
 		var x das.V1System
 		if err := resp.Decode(&x); err != nil {
 			return nil, err
 		}
-
 		systems = append(systems, &x)
+		bar.Add(1)
 	}
 
-	bar.AddMax(len(systems))
 	var libraries []*das.V1Library
 
 	if state.FeatureFlags.LibraryEditingEnabled {

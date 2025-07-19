@@ -18,8 +18,7 @@ type V1System struct {
 	SourceControl *struct {
 		Origin V1GitRepoConfig `json:"origin"`
 	} `json:"source_control"`
-	MatchingStacks []string          `json:"matching_stacks"`
-	Datasources    []V1DatasourceRef `json:"datasources"`
+	Datasources []V1DatasourceRef `json:"datasources"`
 }
 
 func (v1 *V1System) SanitizedName() string {
