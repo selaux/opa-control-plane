@@ -1,0 +1,19 @@
+{
+  "allowed": false,
+  "code": 403,
+  "headers": {
+    "x-ext-auth-allow": "no"
+  },
+  "http_status": 403,
+  "outcome": {
+    "allowed": false,
+    "code": 403,
+    "decision_type": "DENIED",
+    "http_status": 403,
+    "policy_type": "ingress",
+    "stacks": {
+      "dface8de0e1f4e11a5f467a69f20ced1": {}
+    },
+    "system_type": "envoy"
+  }
+}

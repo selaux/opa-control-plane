@@ -1,0 +1,80 @@
+{
+  "attributes": {
+    "destination": {
+      "address": {
+        "socketAddress": {
+          "address": "10.244.0.7",
+          "portValue": 8000
+        }
+      }
+    },
+    "metadataContext": {
+      "filterMetadata": {
+        "envoy.filters.http.header_to_metadata": {
+          "policy_type": "ingress"
+        }
+      }
+    },
+    "request": {
+      "http": {
+        "headers": {
+          ":authority": "example-app-cbbf33aeb9ce44349bc3faad43060ae0",
+          ":method": "GET",
+          ":path": "/hr/dashboard",
+          "accept": "*/*",
+          "content-length": "0",
+          "user-agent": "curl/7.74.0-DEV",
+          "x-ext-auth-allow": "yes",
+          "x-forwarded-proto": "http",
+          "x-request-id": "c47e7b22-e0b5-46e5-a10b-8424a5deeeb3"
+        },
+        "host": "example-app-cbbf33aeb9ce44349bc3faad43060ae0",
+        "id": "766667694823896640",
+        "method": "GET",
+        "path": "/hr/dashboard",
+        "protocol": "HTTP/1.1"
+      },
+      "time": {
+        "nanos": 939401000,
+        "seconds": 1752929978
+      }
+    },
+    "source": {
+      "address": {
+        "socketAddress": {
+          "address": "10.244.0.6",
+          "portValue": 50556
+        }
+      }
+    }
+  },
+  "parsed_body": null,
+  "parsed_path": [
+    "hr",
+    "dashboard"
+  ],
+  "parsed_query": {},
+  "truncated_body": false,
+  "version": [
+    [
+      {
+        "type": "string",
+        "value": "encoding"
+      },
+      {
+        "type": "string",
+        "value": "protojson"
+      }
+    ],
+    [
+      {
+        "type": "string",
+        "value": "ext_authz"
+      },
+      {
+        "type": "string",
+        "value": "v3"
+      }
+    ]
+  ]
+}

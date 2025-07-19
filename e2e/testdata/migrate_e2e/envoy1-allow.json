@@ -1,0 +1,81 @@
+{
+  "attributes": {
+    "destination": {
+      "address": {
+        "socketAddress": {
+          "address": "10.244.0.7",
+          "portValue": 8000
+        }
+      }
+    },
+    "metadataContext": {
+      "filterMetadata": {
+        "envoy.filters.http.header_to_metadata": {
+          "policy_type": "ingress"
+        }
+      }
+    },
+    "request": {
+      "http": {
+        "headers": {
+          ":authority": "example-app-cbbf33aeb9ce44349bc3faad43060ae0",
+          ":method": "GET",
+          ":path": "/finance/salary/bob",
+          "accept": "*/*",
+          "content-length": "0",
+          "user-agent": "curl/7.74.0-DEV",
+          "x-ext-auth-allow": "yes",
+          "x-forwarded-proto": "http",
+          "x-request-id": "15caef54-38c0-41ef-b3b6-b8aa45764ea5"
+        },
+        "host": "example-app-cbbf33aeb9ce44349bc3faad43060ae0",
+        "id": "10410025108359290712",
+        "method": "GET",
+        "path": "/finance/salary/bob",
+        "protocol": "HTTP/1.1"
+      },
+      "time": {
+        "nanos": 931111000,
+        "seconds": 1752929978
+      }
+    },
+    "source": {
+      "address": {
+        "socketAddress": {
+          "address": "10.244.0.6",
+          "portValue": 50556
+        }
+      }
+    }
+  },
+  "parsed_body": null,
+  "parsed_path": [
+    "finance",
+    "salary",
+    "bob"
+  ],
+  "parsed_query": {},
+  "truncated_body": false,
+  "version": [
+    [
+      {
+        "type": "string",
+        "value": "encoding"
+      },
+      {
+        "type": "string",
+        "value": "protojson"
+      }
+    ],
+    [
+      {
+        "type": "string",
+        "value": "ext_authz"
+      },
+      {
+        "type": "string",
+        "value": "v3"
+      }
+    ]
+  ]
+}

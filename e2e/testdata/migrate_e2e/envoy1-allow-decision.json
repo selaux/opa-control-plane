@@ -1,0 +1,19 @@
+{
+  "allowed": true,
+  "code": 200,
+  "headers": {
+    "x-ext-auth-allow": "yes"
+  },
+  "http_status": 200,
+  "outcome": {
+    "allowed": true,
+    "code": 200,
+    "decision_type": "ALLOWED",
+    "http_status": 200,
+    "policy_type": "ingress",
+    "stacks": {
+      "dface8de0e1f4e11a5f467a69f20ced1": {}
+    },
+    "system_type": "envoy"
+  }
+}

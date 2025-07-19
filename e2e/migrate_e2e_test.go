@@ -1,4 +1,4 @@
-//go:build migration_e2e
+// go:build migration_e2e
 
 package e2e
 
@@ -91,6 +91,19 @@ func TestMigration(t *testing.T) {
 			systemId:          "cbbf33aeb9ce44349bc3faad43060ae0",
 			bundleName:        "envoy-v1-e2e-test",
 			styraTokenEnvName: "STYRA_TOKEN_3",
+			skipBacktest:      true,
+			queries: []string{
+				`data.policy["com.styra.envoy"].resolver.main`,
+				`data.policy["com.styra.envoy"].resolver.main`,
+			},
+			inputs: []string{
+				readFileString("testdata/migrate_e2e/envoy1-allow.json"),
+				readFileString("testdata/migrate_e2e/envoy1-deny.json"),
+			},
+			decisions: []string{
+				readFileString("testdata/migrate_e2e/envoy1-allow-decision.json"),
+				readFileString("testdata/migrate_e2e/envoy1-deny-decision.json"),
+			},
 			extraConfigs: map[string]string{
 				"config.d/2-storage.yaml": `{
 					bundles: {
@@ -544,14 +557,8 @@ func TestMigration(t *testing.T) {
 					}
 
 					for i := range tc.queries {
-						var input any
-						if err := json.Unmarshal([]byte(tc.inputs[i]), &input); err != nil {
-							t.Fatal(err)
-						}
-						var decision any
-						if err := json.Unmarshal([]byte(tc.decisions[i]), &decision); err != nil {
-							t.Fatal(err)
-						}
+						input := decodeJSONUseNumber(tc.inputs[i])
+						decision := decodeJSONUseNumber(tc.decisions[i])
 						rs, err := rego.New(
 							rego.ParsedBundle("bundle.tar.gz", &a),
 							rego.Query(tc.queries[i]),
@@ -561,7 +568,7 @@ func TestMigration(t *testing.T) {
 							t.Fatal(err)
 						}
 						if !reflect.DeepEqual(rs[0].Expressions[0].Value, decision) {
-							t.Fatalf("expected %v but got %v", decision, rs[0].Expressions[0])
+							t.Fatalf("unexpected decision:\ngot: %v\nexp: %v", rs[0].Expressions[0].Value, decision)
 						}
 					}
 				}
@@ -577,4 +584,22 @@ func testS3Service(t *testing.T, bucket string) (*s3mem.Backend, *httptest.Serve
 	ts := httptest.NewServer(gofakes3.New(mock).Server())
 	t.Cleanup(ts.Close)
 	return mock, ts
+}
+
+func readFileString(name string) string {
+	bs, err := os.ReadFile(name)
+	if err != nil {
+		panic(err)
+	}
+	return string(bs)
+}
+
+func decodeJSONUseNumber(s string) any {
+	d := json.NewDecoder(bytes.NewBuffer([]byte(s)))
+	d.UseNumber()
+	var x any
+	if err := d.Decode(&x); err != nil {
+		panic(err)
+	}
+	return x
 }
