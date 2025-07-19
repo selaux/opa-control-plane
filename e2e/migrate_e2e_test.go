@@ -1,4 +1,4 @@
-// go:build migration_e2e
+//go:build migration_e2e
 
 package e2e
 
