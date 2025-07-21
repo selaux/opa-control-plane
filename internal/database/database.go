@@ -491,7 +491,6 @@ func (d *Database) ListBundles(ctx context.Context, principal string, opts ListO
 			return nil, "", err
 		}
 
-		// TODO: object storage credential types beyond aws.
 		query := `SELECT
 		bundles.id,
         bundles.name AS bundle_name,
@@ -500,10 +499,14 @@ func (d *Database) ListBundles(ctx context.Context, principal string, opts ListO
 		bundles.s3region,
 		bundles.s3bucket,
 		bundles.s3key,
+		bundles.gcp_project,
+		bundles.gcp_object,
+		bundles.azure_account_url,
+		bundles.azure_container,
+		bundles.azure_path,
 		bundles.filepath,
 		bundles.excluded,
         secrets.name AS secret_name,
-		bundles_secrets.ref_type AS secret_ref_type,
         secrets.value AS secret_value,
 		bundles_requirements.source_name AS req_src
     FROM
@@ -514,13 +517,7 @@ func (d *Database) ListBundles(ctx context.Context, principal string, opts ListO
         secrets ON bundles_secrets.secret_name = secrets.name
 	LEFT JOIN
 		bundles_requirements ON bundles.name = bundles_requirements.bundle_name ` +
-			// Bundles stored to S3 object storages
-			`WHERE ((bundles.s3bucket IS NOT NULL) AND
-		(bundles_secrets.ref_type IS NULL OR bundles_secrets.ref_type = 'aws')` +
-			// Bundles stored to filesystem
-			" OR (bundles.filepath IS NOT NULL))" +
-			// Authorization
-			" AND (" + expr.SQL() + ")"
+			`WHERE (` + expr.SQL() + ")"
 		var args []any
 
 		if opts.name != "" {
@@ -548,9 +545,12 @@ func (d *Database) ListBundles(ctx context.Context, principal string, opts ListO
 			id                                         int64
 			bundleName                                 string
 			labels                                     *string
-			s3url, s3region, s3bucket, s3key, filepath *string
+			s3url, s3region, s3bucket, s3key           *string // S3 object storage
+			gcpProject, gcpObject                      *string // GCP object storage
+			azureAccountURL, azureContainer, azurePath *string // Azure object storage
+			filepath                                   *string // File system storage
 			excluded                                   *string
-			secretName, secretRefType, secretValue     *string
+			secretName, secretValue                    *string
 			reqSrc                                     *string
 		}
 		bundleMap := make(map[string]*config.Bundle)
@@ -559,8 +559,21 @@ func (d *Database) ListBundles(ctx context.Context, principal string, opts ListO
 
 		for rows.Next() {
 			var row bundleRow
-			if err := rows.Scan(&row.id, &row.bundleName, &row.labels, &row.s3url, &row.s3region, &row.s3bucket, &row.s3key, &row.filepath, &row.excluded, &row.secretName, &row.secretRefType, &row.secretValue, &row.reqSrc); err != nil {
+			if err := rows.Scan(&row.id, &row.bundleName, &row.labels,
+				&row.s3url, &row.s3region, &row.s3bucket, &row.s3key, // S3
+				&row.gcpProject, &row.gcpObject, // GCP
+				&row.azureAccountURL, &row.azureContainer, &row.azurePath, // Azure
+				&row.filepath,
+				&row.excluded, &row.secretName, &row.secretValue, &row.reqSrc); err != nil {
 				return nil, "", err
+			}
+
+			var s *config.Secret
+			if row.secretName != nil {
+				s = &config.Secret{Name: *row.secretName}
+				if err := json.Unmarshal([]byte(*row.secretValue), &s.Value); err != nil {
+					return nil, "", err
+				}
 			}
 
 			bundle, exists := bundleMap[row.bundleName]
@@ -587,6 +600,33 @@ func (d *Database) ListBundles(ctx context.Context, principal string, opts ListO
 					if row.s3url != nil {
 						bundle.ObjectStorage.AmazonS3.URL = *row.s3url
 					}
+
+					if s != nil {
+						bundle.ObjectStorage.AmazonS3.Credentials = s.Ref()
+					}
+
+				} else if row.gcpProject != nil && row.s3bucket != nil && row.gcpObject != nil {
+					bundle.ObjectStorage.GCPCloudStorage = &config.GCPCloudStorage{
+						Project: *row.gcpProject,
+						Bucket:  *row.s3bucket,
+						Object:  *row.gcpObject,
+					}
+
+					if s != nil {
+						bundle.ObjectStorage.GCPCloudStorage.Credentials = s.Ref()
+					}
+
+				} else if row.azureAccountURL != nil && row.azureContainer != nil && row.azurePath != nil {
+					bundle.ObjectStorage.AzureBlobStorage = &config.AzureBlobStorage{
+						AccountURL: *row.azureAccountURL,
+						Container:  *row.azureContainer,
+						Path:       *row.azurePath,
+					}
+
+					if s != nil {
+						bundle.ObjectStorage.AzureBlobStorage.Credentials = s.Ref()
+					}
+
 				} else if row.filepath != nil {
 					bundle.ObjectStorage.FileSystemStorage = &config.FileSystemStorage{
 						Path: *row.filepath,
@@ -596,20 +636,6 @@ func (d *Database) ListBundles(ctx context.Context, principal string, opts ListO
 				if row.excluded != nil {
 					if err := json.Unmarshal([]byte(*row.excluded), &bundle.ExcludedFiles); err != nil {
 						return nil, "", fmt.Errorf("failed to unmarshal excluded files for %q: %w", bundle.Name, err)
-					}
-				}
-			}
-
-			if row.secretName != nil {
-				s := config.Secret{Name: *row.secretName}
-				if err := json.Unmarshal([]byte(*row.secretValue), &s.Value); err != nil {
-					return nil, "", err
-				}
-
-				switch *row.secretRefType {
-				case "aws":
-					if bundle.ObjectStorage.AmazonS3 != nil {
-						bundle.ObjectStorage.AmazonS3.Credentials = s.Ref()
 					}
 				}
 			}
@@ -1007,12 +1033,22 @@ func (d *Database) UpsertBundle(ctx context.Context, principal string, bundle *c
 			return err
 		}
 
-		var s3url, s3region, s3bucket, s3key, filepath *string
+		var s3url, s3region, s3bucket, s3key, gcpProject, gcpObject, azureAccountURL, azureContainer, azurePath, filepath *string
 		if bundle.ObjectStorage.AmazonS3 != nil {
 			s3url = &bundle.ObjectStorage.AmazonS3.URL
 			s3region = &bundle.ObjectStorage.AmazonS3.Region
 			s3bucket = &bundle.ObjectStorage.AmazonS3.Bucket
 			s3key = &bundle.ObjectStorage.AmazonS3.Key
+		}
+		if bundle.ObjectStorage.GCPCloudStorage != nil {
+			gcpProject = &bundle.ObjectStorage.GCPCloudStorage.Project
+			s3bucket = &bundle.ObjectStorage.GCPCloudStorage.Bucket
+			gcpObject = &bundle.ObjectStorage.GCPCloudStorage.Object
+		}
+		if bundle.ObjectStorage.AzureBlobStorage != nil {
+			azureAccountURL = &bundle.ObjectStorage.AzureBlobStorage.AccountURL
+			azureContainer = &bundle.ObjectStorage.AzureBlobStorage.Container
+			azurePath = &bundle.ObjectStorage.AzureBlobStorage.Path
 		}
 		if bundle.ObjectStorage.FileSystemStorage != nil {
 			filepath = &bundle.ObjectStorage.FileSystemStorage.Path
@@ -1028,8 +1064,16 @@ func (d *Database) UpsertBundle(ctx context.Context, principal string, bundle *c
 			return err
 		}
 
-		if err := d.upsert(ctx, tx, "bundles", []string{"name", "labels", "s3url", "s3region", "s3bucket", "s3key", "filepath", "excluded"}, []string{"name"},
-			bundle.Name, string(labels), s3url, s3region, s3bucket, s3key, filepath, string(excluded)); err != nil {
+		if err := d.upsert(ctx, tx, "bundles", []string{"name", "labels",
+			"s3url", "s3region", "s3bucket", "s3key",
+			"gcp_project", "gcp_object",
+			"azure_account_url", "azure_container", "azure_path",
+			"filepath", "excluded"}, []string{"name"},
+			bundle.Name, string(labels),
+			s3url, s3region, s3bucket, s3key,
+			gcpProject, gcpObject,
+			azureAccountURL, azureContainer, azurePath,
+			filepath, string(excluded)); err != nil {
 			return err
 		}
 
@@ -1037,6 +1081,24 @@ func (d *Database) UpsertBundle(ctx context.Context, principal string, bundle *c
 			if bundle.ObjectStorage.AmazonS3.Credentials != nil {
 				if err := d.upsert(ctx, tx, "bundles_secrets", []string{"bundle_name", "secret_name", "ref_type"}, []string{"bundle_name", "secret_name"},
 					bundle.Name, bundle.ObjectStorage.AmazonS3.Credentials.Name, "aws"); err != nil {
+					return err
+				}
+			}
+		}
+
+		if bundle.ObjectStorage.GCPCloudStorage != nil {
+			if bundle.ObjectStorage.GCPCloudStorage.Credentials != nil {
+				if err := d.upsert(ctx, tx, "bundles_secrets", []string{"bundle_name", "secret_name", "ref_type"}, []string{"bundle_name", "secret_name"},
+					bundle.Name, bundle.ObjectStorage.GCPCloudStorage.Credentials.Name, "gcp"); err != nil {
+					return err
+				}
+			}
+		}
+
+		if bundle.ObjectStorage.AzureBlobStorage != nil {
+			if bundle.ObjectStorage.AzureBlobStorage.Credentials != nil {
+				if err := d.upsert(ctx, tx, "bundles_secrets", []string{"bundle_name", "secret_name", "ref_type"}, []string{"bundle_name", "secret_name"},
+					bundle.Name, bundle.ObjectStorage.AzureBlobStorage.Credentials.Name, "azure"); err != nil {
 					return err
 				}
 			}

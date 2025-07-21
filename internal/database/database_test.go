@@ -15,7 +15,7 @@ import (
 	"github.com/testcontainers/testcontainers-go/modules/postgres"
 )
 
-func TestDatabaseSourcesData(t *testing.T) {
+func TestDatabase(t *testing.T) {
 	ctx := context.Background()
 
 	type Setup struct {
@@ -191,6 +191,40 @@ func TestDatabaseSourcesData(t *testing.T) {
 							config.Requirement{Source: newString("system3")},
 						},
 					},
+					"system4": {
+						Name: "system4",
+						Labels: config.Labels{
+							"env": "test4",
+						},
+						ObjectStorage: config.ObjectStorage{
+							GCPCloudStorage: &config.GCPCloudStorage{
+								Project:     "gcp-project",
+								Bucket:      "gcp-bucket",
+								Object:      "path/to/bundle.tgz",
+								Credentials: &config.SecretRef{Name: "secret1"},
+							},
+						},
+						Requirements: config.Requirements{
+							config.Requirement{Source: newString("system3")},
+						},
+					},
+					"system5": {
+						Name: "system5",
+						Labels: config.Labels{
+							"env": "test5",
+						},
+						ObjectStorage: config.ObjectStorage{
+							AzureBlobStorage: &config.AzureBlobStorage{
+								AccountURL:  "https://myaccount.blob.core.windows.net",
+								Container:   "azure-container",
+								Path:        "path/to/bundle.tgz",
+								Credentials: &config.SecretRef{Name: "secret1"},
+							},
+						},
+						Requirements: config.Requirements{
+							config.Requirement{Source: newString("system3")},
+						},
+					},
 				},
 				Stacks: map[string]*config.Stack{
 					"stack1": {
@@ -243,7 +277,10 @@ func TestDatabaseSourcesData(t *testing.T) {
 				newTestCase("load config").LoadConfig(root),
 
 				// bundle operations:
-				newTestCase("list bundles").ListBundles([]*config.Bundle{root.Bundles["system1"], root.Bundles["system2"], root.Bundles["system3"]}),
+				newTestCase("list bundles").ListBundles([]*config.Bundle{
+					root.Bundles["system1"], root.Bundles["system2"], root.Bundles["system3"],
+					root.Bundles["system4"], root.Bundles["system5"],
+				}),
 				newTestCase("get bundle system1").GetBundle("system1", root.Bundles["system1"]),
 
 				// source operations:

@@ -15,6 +15,11 @@ var schema = []sqlTable{
 		TextColumn("s3region").
 		TextColumn("s3bucket").
 		TextColumn("s3key").
+		TextColumn("gcp_project").
+		TextColumn("gcp_object").
+		TextColumn("azure_account_url").
+		TextColumn("azure_container").
+		TextColumn("azure_path").
 		TextColumn("filepath").
 		TextColumn("excluded"),
 	createSQLTable("sources").
