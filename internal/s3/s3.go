@@ -62,9 +62,9 @@ type (
 )
 
 // New creates a new S3 client based on the provided configuration.
-func New(ctx context.Context, config config.ObjectStorage) (ObjectStorage, error) {
+func New(ctx context.Context, c config.ObjectStorage) (ObjectStorage, error) {
 	switch {
-	case config.AmazonS3 != nil:
+	case c.AmazonS3 != nil:
 		// There are two options for authentication to Amazon S3:
 		//
 		// 1. Using no secret at all. In this case, the AWS SDK will use the default credential provider chain to authenticate. It proceeds in
@@ -75,20 +75,20 @@ func New(ctx context.Context, config config.ObjectStorage) (ObjectStorage, error
 		//    d) If your application is running on an Amazon EC2 instance, IAM role for Amazon EC2.
 		// 2. Using a secret of type "aws_auth". The secret stores the AWS credentials to use to authenticate.
 
-		awsCfg, err := internal_aws.Config(ctx, config.AmazonS3.Region, config.AmazonS3.Credentials)
+		awsCfg, err := internal_aws.Config(ctx, c.AmazonS3.Region, c.AmazonS3.Credentials)
 		if err != nil {
 			return nil, err
 		}
 
 		client := s3.NewFromConfig(awsCfg, func(o *s3.Options) {
-			if config.AmazonS3.URL != "" {
+			if c.AmazonS3.URL != "" {
 				o.UsePathStyle = true
-				o.BaseEndpoint = aws.String(config.AmazonS3.URL)
+				o.BaseEndpoint = aws.String(c.AmazonS3.URL)
 			}
 		})
 
-		return &AmazonS3{bucket: config.AmazonS3.Bucket, key: config.AmazonS3.Key, uploader: manager.NewUploader(client), client: client}, nil
-	case config.GCPCloudStorage != nil:
+		return &AmazonS3{bucket: c.AmazonS3.Bucket, key: c.AmazonS3.Key, uploader: manager.NewUploader(client), client: client}, nil
+	case c.GCPCloudStorage != nil:
 		var client *storage.Client
 
 		// There are two options for authentication to Google Cloud Storage:
@@ -100,7 +100,7 @@ func New(ctx context.Context, config config.ObjectStorage) (ObjectStorage, error
 		//    c) The attached service account, returned by the metadata server.
 		// 2. Using a secret of type "gcp_auth". The secret stores the API key or JSON credentials to use to authenticate.
 
-		if config.GCPCloudStorage.Credentials == nil {
+		if c.GCPCloudStorage.Credentials == nil {
 			// Option 1: default chain.
 			var err error
 			client, err = storage.NewClient(ctx)
@@ -109,37 +109,27 @@ func New(ctx context.Context, config config.ObjectStorage) (ObjectStorage, error
 			}
 		} else {
 			// Option 2: use a secret of type "gcp_auth".
-			secret, err := config.GCPCloudStorage.Credentials.Resolve()
+			value, err := c.GCPCloudStorage.Credentials.Resolve(ctx)
 			if err != nil {
 				return nil, err
 			}
 
-			value, err := secret.Get(ctx)
-			if err != nil {
-				return nil, err
-			}
-
-			if value["type"] != "gcp_auth" {
+			auth, ok := value.(config.SecretGCP)
+			if !ok {
 				return nil, errors.New("invalid GCP secret type")
 			}
 
-			apiKey, _ := value["api_key"].(string)
-			credentials, _ := value["credentials"].(string)
+			if auth.APIKey != "" {
+				client, err = storage.NewClient(ctx, option.WithAPIKey(auth.APIKey))
+			} else if auth.Credentials != "" {
+				client, err = storage.NewClient(ctx, option.WithCredentialsJSON([]byte(auth.Credentials)))
+			}
 
-			if apiKey != "" {
-				client, err = storage.NewClient(ctx, option.WithAPIKey(apiKey))
-			} else if credentials != "" {
-				client, err = storage.NewClient(ctx, option.WithCredentialsJSON([]byte(credentials)))
-			} else {
-				return nil, errors.New("missing api_key or credentials in GCP secret")
-			}
-			if err != nil {
-				return nil, err
-			}
+			return nil, err
 		}
 
-		return &GCPCloudStorage{project: config.GCPCloudStorage.Project, bucket: config.GCPCloudStorage.Bucket, object: config.GCPCloudStorage.Object, client: client}, nil
-	case config.AzureBlobStorage != nil:
+		return &GCPCloudStorage{project: c.GCPCloudStorage.Project, bucket: c.GCPCloudStorage.Bucket, object: c.GCPCloudStorage.Object, client: client}, nil
+	case c.AzureBlobStorage != nil:
 		var client *azblob.Client
 
 		// There are two options for authentication to Azure Blob Storage:
@@ -156,54 +146,43 @@ func New(ctx context.Context, config config.ObjectStorage) (ObjectStorage, error
 		//    e) If the developer authenticated to Azure using Azure Developer CLI's azd auth login command, authenticate with that account.
 		// 2) Use the credentials (account name and account key) provided in the configuration.
 
-		if config.AzureBlobStorage.Credentials == nil {
+		if c.AzureBlobStorage.Credentials == nil {
 			// Option 1: Use "DefaultAzureCredential".
 			credential, err := azidentity.NewDefaultAzureCredential(nil)
 			if err != nil {
 				return nil, err
 			}
 
-			client, err = azblob.NewClient(config.AzureBlobStorage.AccountURL, credential, nil)
+			client, err = azblob.NewClient(c.AzureBlobStorage.AccountURL, credential, nil)
 			if err != nil {
 				return nil, err
 			}
 		} else {
 			// Option 2: Use the credentials provided in the configuration.
-			secret, err := config.AzureBlobStorage.Credentials.Resolve()
+			value, err := c.AzureBlobStorage.Credentials.Resolve(ctx)
 			if err != nil {
 				return nil, err
 			}
 
-			value, err := secret.Get(ctx)
-			if err != nil {
-				return nil, err
-			}
-
-			if value["type"] != "azure_auth" {
+			auth, ok := value.(config.SecretAzure)
+			if !ok {
 				return nil, errors.New("invalid Azure secret type")
 			}
 
-			accountName, _ := value["account_name"].(string)
-			accountKey, _ := value["account_key"].(string)
+			credential, err := azblob.NewSharedKeyCredential(auth.AccountName, auth.AccountKey)
+			if err != nil {
+				return nil, err
+			}
 
-			if accountName != "" && accountKey != "" {
-				credential, err := azblob.NewSharedKeyCredential(accountName, accountKey)
-				if err != nil {
-					return nil, err
-				}
-
-				client, err = azblob.NewClientWithSharedKeyCredential(config.AzureBlobStorage.AccountURL, credential, nil)
-				if err != nil {
-					return nil, err
-				}
-			} else {
-				return nil, errors.New("missing account_name or account_key in Azure secret")
+			client, err = azblob.NewClientWithSharedKeyCredential(c.AzureBlobStorage.AccountURL, credential, nil)
+			if err != nil {
+				return nil, err
 			}
 		}
 
-		return &AzureBlobStorage{container: config.AzureBlobStorage.Container, path: config.AzureBlobStorage.Path, client: client}, nil
-	case config.FileSystemStorage != nil:
-		return &FileSystemStorage{path: config.FileSystemStorage.Path}, nil
+		return &AzureBlobStorage{container: c.AzureBlobStorage.Container, path: c.AzureBlobStorage.Path, client: client}, nil
+	case c.FileSystemStorage != nil:
+		return &FileSystemStorage{path: c.FileSystemStorage.Path}, nil
 	default:
 		return nil, ErrUnsupportedProvider
 	}

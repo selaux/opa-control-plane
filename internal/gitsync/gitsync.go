@@ -26,14 +26,6 @@ import (
 	"golang.org/x/crypto/ssh"
 )
 
-var wellknownFingerprints = []string{
-	"SHA256:uNiVztksCsDhcc0u9e8BujQXVUpKZIDTMczCvj3tD2s", // github.com https://docs.github.com/en/github/authenticating-to-github/githubs-ssh-key-fingerprints
-	"SHA256:p2QAMXNIC1TJYWeIOttrVc98/R1BUFWu3/LiyKgUfQM", // github.com
-	"SHA256:+DiY3wvvV6TuJJhbpZisF/zLDA0zPMSvHdkr4UvCOqU", // github.com
-	"SHA256:zzXQOXSRBEiUtuE8AikJYKwbHaxvSc0ojez9YXaGp1A", // bitbucket.org https://support.atlassian.com/bitbucket-cloud/docs/configure-ssh-and-two-step-verification/
-	"SHA256:ohD8VZEXGWo6Ez8GSEJQ9WpafgLFsOfLOtGGQCQo6Og", // dev.azure.com https://github.com/MicrosoftDocs/azure-devops-docs/issues/7726 (also available through user settings after signing in)
-}
-
 func init() {
 	// For Azure DevOps compatibility. More details: https://github.com/go-git/go-git/issues/64
 	transport.UnsupportedCapabilities = []capability.Capability{
@@ -147,71 +139,32 @@ func (s *Synchronizer) auth(ctx context.Context) (transport.AuthMethod, error) {
 		return nil, nil
 	}
 
-	secret, err := s.config.Credentials.Resolve()
+	value, err := s.config.Credentials.Resolve(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	value, err := secret.Get(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	if len(value) == 0 {
-		return nil, fmt.Errorf("secret %q is not configured", secret.Name)
-	}
-
-	switch value["type"] {
-	case "basic_auth":
-		username, _ := value["username"].(string)
-		password, _ := value["password"].(string)
-		l, _ := value["headers"].([]interface{})
-		headers := make([]string, 0, len(l))
-		for _, h := range l {
-			if s, ok := h.(string); ok {
-				headers = append(headers, s)
-			}
-		}
-
+	switch value := value.(type) {
+	case config.SecretBasicAuth:
 		return &basicAuth{
-			Username: username,
-			Password: password,
-			Headers:  headers,
+			Username: value.Username,
+			Password: value.Password,
+			Headers:  value.Headers,
 		}, nil
-	case "github_app_auth":
-		integrationID, _ := value["integration_id"].(int64)
-		installationID, _ := value["installation_id"].(int64)
-		privateKey, _ := value["private_key"].(string)
 
-		token, err := s.gh.Token(ctx, integrationID, installationID, privateKey)
+	case config.SecretGitHubApp:
+		token, err := s.gh.Token(ctx, value.IntegrationID, value.InstallationID, value.PrivateKey)
 		if err != nil {
 			return nil, err
 		}
 
 		return &http.TokenAuth{Token: token}, nil
 
-	case "ssh_key":
-		key, _ := value["key"].(string)
-		passphrase, _ := value["passphrase"].(string)
-
-		l, _ := value["fingerprints"].([]interface{})
-		fingerprints := make([]string, 0, len(l))
-		for _, fp := range l {
-			if s, ok := fp.(string); ok {
-				fingerprints = append(fingerprints, s)
-			}
-		}
-
-		// If no fingerprints are provided, use well-known ones for popular services.
-		if len(fingerprints) == 0 {
-			fingerprints = wellknownFingerprints
-		}
-
-		return newSSHAuth(key, passphrase, fingerprints)
-
-	default:
-		return nil, fmt.Errorf("unsupported authentication type: %s", value["type"])
+	case config.SecretSSHKey:
+		return newSSHAuth(value.Key, value.Passphrase, value.Fingerprints)
 	}
+
+	return nil, fmt.Errorf("unsupported authentication type: %T", value)
 }
 
 type github struct {

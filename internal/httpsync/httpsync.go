@@ -64,27 +64,17 @@ func setAuthHeaders(ctx context.Context, credentials *config.SecretRef, req *htt
 		return nil
 	}
 
-	secret, err := credentials.Resolve()
+	value, err := credentials.Resolve(ctx)
 	if err != nil {
 		return err
 	}
 
-	value, err := secret.Get(ctx)
-	if err != nil {
-		return err
+	switch value := value.(type) {
+	case config.SecretBasicAuth:
+		req.SetBasicAuth(value.Username, value.Password)
+	case config.SecretTokenAuth:
+		req.Header.Set("Authorization", "Bearer "+value.Token)
 	}
 
-	switch value["type"] {
-	case "basic_auth":
-		username, _ := value["username"].(string)
-		password, _ := value["password"].(string)
-		req.SetBasicAuth(username, password)
-	case "token_auth":
-		token, _ := value["token"].(string)
-		req.Header.Set("Authorization", "Bearer "+token)
-	default:
-		return fmt.Errorf("unsupported authentication type: %v", value["type"])
-	}
-
-	return nil
+	return fmt.Errorf("unsupported authentication type: %T", value)
 }

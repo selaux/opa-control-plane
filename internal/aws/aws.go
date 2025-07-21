@@ -27,35 +27,28 @@ func NewSecretCredentialsProvider(credentials *config.SecretRef) aws.Credentials
 }
 
 func (s *SecretCredentialsProvider) Retrieve(ctx context.Context) (aws.Credentials, error) {
-	secret, err := s.credentials.Resolve()
+	value, err := s.credentials.Resolve(ctx)
 	if err != nil {
 		return aws.Credentials{}, err
 	}
 
-	value, err := secret.Get(ctx)
-	if err != nil {
-		return aws.Credentials{}, err
-	}
-
-	switch value["type"] {
-	case "aws_auth":
-		accessKeyId, _ := value["access_key_id"].(string)
-		secretAccessKey, _ := value["secret_access_key"].(string)
-		sessionToken, _ := value["session_token"].(string)
-		if accessKeyId != "" || secretAccessKey != "" || sessionToken != "" {
+	switch value := value.(type) {
+	case config.SecretAWS:
+		if value.AccessKeyID != "" || value.SecretAccessKey != "" || value.SessionToken != "" {
 			return aws.Credentials{
-				AccessKeyID: accessKeyId, SecretAccessKey: secretAccessKey, SessionToken: sessionToken,
-				Source:    "configurated credentials",
-				CanExpire: true,
-				Expires:   time.Now().Add(refreshCredentialsInterval),
+				AccessKeyID:     value.AccessKeyID,
+				SecretAccessKey: value.SecretAccessKey,
+				SessionToken:    value.SessionToken,
+				Source:          "configurated credentials",
+				CanExpire:       true,
+				Expires:         time.Now().Add(refreshCredentialsInterval),
 			}, nil
 		}
 
 		return aws.Credentials{}, fmt.Errorf("missing access_key_id or secret_access_key in credentials")
-
-	default:
-		return aws.Credentials{}, fmt.Errorf("unsupported authentication type: %s", value["type"])
 	}
+
+	return aws.Credentials{}, fmt.Errorf("unsupported authentication type: %T", value)
 }
 
 func Config(ctx context.Context, region string, credentials *config.SecretRef) (aws.Config, error) {

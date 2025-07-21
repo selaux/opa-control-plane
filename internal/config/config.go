@@ -675,11 +675,14 @@ func (s *SecretRef) PrepareJSONSchema(schema *jsonschema.Schema) error {
 	return nil
 }
 
-func (s *SecretRef) Resolve() (*Secret, error) {
+// Resolve retrieves the secret value from the secret store. If the secret is not found, an error is returned.
+// If the secret is found, it returns the value as an interface{} which can be further typed as needed.
+func (s *SecretRef) Resolve(ctx context.Context) (interface{}, error) {
 	if s.value == nil {
 		return nil, fmt.Errorf("secret %q not found", s.Name)
 	}
-	return s.value, nil
+
+	return s.value.Typed(ctx)
 }
 
 func (s *SecretRef) MarshalYAML() (interface{}, error) {
@@ -717,104 +720,6 @@ func (s *SecretRef) Equal(other *SecretRef) bool {
 	return fastEqual(s, other, func() bool {
 		return s.Name == other.Name && s.value.Equal(other.value)
 	})
-}
-
-// Secret defines the configuration for secrets/tokens used by Lighthouse
-// for Git synchronization, datasources, etc.
-//
-// Each secret is stored as a map of key-value pairs, where the keys and values are strings. Secret type is also declared in the config.
-// For example, a secret for basic HTTP authentication might look like this (in YAML):
-//
-// my_secret:
-//
-//	type: basic_auth
-//	username: myuser
-//	password: mypassword
-//
-// Secrets may also refer to environment variables using the ${VAR_NAME} syntax. For example:
-//
-// my_secret:
-//
-//	type: aws_auth
-//	access_key_id: ${AWS_ACCESS_KEY_ID}
-//	secret_access_key: ${AWS_SECRET_ACCESS_KEY}
-//	session_token: ${AWS_SESSION_TOKEN}
-//
-// In this case, the actual values for username and password will be read from the environment variables AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY,
-// and AWS_SESSION_TOKEN.
-//
-// Currently the following secret types are supported:
-//
-//   - "aws_auth" for AWS authentication. Values for keys "access_key_id", "secret_access_key", and optional "session_token" are expected.
-//   - "azure_auth" for Azure authentication. Values for keys "account_name" and "account_key" are expected.
-//   - "basic_auth" for HTTP basic authentication. Values for keys "username" and "password" are expected.
-//     "headers" (string array) is optional and can be used to set additional headers for the HTTP requests (currently only supported for git).
-//   - "gcp_auth" for Google Cloud authentication. Value for a key "api_key" or "credentials" is expected.
-//   - "github_app_auth" for GitHub App authentication. Values for keys "integration_id", "installation_id", and "private_key" are expected.
-//   - "password" for password authentication. Value for key "password" is expected.
-//   - "ssh_key" for SSH private key authentication. Value for key "key" (private key) is expected. "fingerprints" (string array) and "passphrase" are optional.
-//   - "token_auth" for HTTP bearer token authentication. Value for a key "token" is expected.
-type Secret struct {
-	Name  string                 `json:"-" yaml:"-"`
-	Value map[string]interface{} `json:"-" yaml:"-"`
-}
-
-func (s *Secret) Ref() *SecretRef {
-	return &SecretRef{Name: s.Name, value: s}
-}
-
-func (s *Secret) PrepareJSONSchema(schema *jsonschema.Schema) error {
-	schema.Type = nil
-	schema.AddType(jsonschema.Object)
-	return nil
-}
-
-func (s *Secret) MarshalYAML() (interface{}, error) {
-	if len(s.Value) == 0 {
-		return map[string]interface{}{}, nil
-	}
-	return s.Value, nil
-}
-
-func (s *Secret) MarshalJSON() ([]byte, error) {
-	v, err := s.MarshalYAML()
-	if err != nil {
-		return nil, err
-	}
-
-	return json.Marshal(v)
-}
-
-func (s *Secret) UnmarshalYAML(n *yaml.Node) error {
-	if n.Kind == yaml.MappingNode {
-		return n.Decode(&s.Value)
-	}
-	return fmt.Errorf("expected mapping node, got %v", n.Kind)
-}
-
-func (s *Secret) UnmarshalJSON(bs []byte) error {
-	return json.Unmarshal(bs, &s.Value)
-}
-
-func (s *Secret) Equal(other *Secret) bool {
-	return fastEqual(s, other, func() bool {
-		return s.Name == other.Name && reflect.DeepEqual(s.Value, other.Value)
-	})
-}
-
-// Get retrieves the values from any external source as necessary.
-func (s *Secret) Get(ctx context.Context) (map[string]interface{}, error) {
-	value := make(map[string]interface{}, len(s.Value))
-
-	for k, v := range s.Value {
-		if str, ok := v.(string); ok && str != "" {
-			value[k] = os.ExpandEnv(str)
-		} else {
-			value[k] = v // Keep non-string values as is
-		}
-	}
-
-	return value, nil
 }
 
 // Token represents an API token to access the Lighthouse APIs.

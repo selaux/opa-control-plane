@@ -100,44 +100,42 @@ func (d *Database) InitDB(ctx context.Context) error {
 		// In case of the second and third option, the SQL driver will use the AWS SDK to regenerate an authentication token for
 		// the database user as necessary.
 
-		config := d.config.AWSRDS
-		drv := config.Driver
-		endpoint := config.Endpoint
-		region := config.Region
-		dbUser := config.DatabaseUser
-		dbName := config.DatabaseName
-		rootCertificates := config.RootCertificates
+		c := d.config.AWSRDS
+		drv := c.Driver
+		endpoint := c.Endpoint
+		region := c.Region
+		dbUser := c.DatabaseUser
+		dbName := c.DatabaseName
+		rootCertificates := c.RootCertificates
 
 		var authCallback func(ctx context.Context) (string, error)
 
 		if d.config.AWSRDS.Credentials != nil {
 			// Authentication options 1 and 2:
 			authCallback = func(ctx context.Context) (string, error) {
-				secret, err := d.config.AWSRDS.Credentials.Resolve()
+				value, err := d.config.AWSRDS.Credentials.Resolve(ctx)
 				if err != nil {
 					return "", err
 				}
 
 				var password string
 
-				if secret.Value != nil {
-					switch t, _ := secret.Value["type"].(string); t {
-					case "password":
-						password, _ = secret.Value["password"].(string)
-						if password == "" {
-							return "", fmt.Errorf("missing or invalid password value in secret %q", d.config.AWSRDS.Credentials.Name)
-						}
-
-					case "aws_auth":
-						credentials := aws.NewSecretCredentialsProvider(d.config.AWSRDS.Credentials)
-						password, err = auth.BuildAuthToken(ctx, endpoint, region, dbUser, credentials)
-						if err != nil {
-							return "", err
-						}
-
-					default:
-						return "", fmt.Errorf("unsupported secret type '%s' for RDS credentials", t)
+				switch value := value.(type) {
+				case config.SecretPassword:
+					password = value.Password
+					if password == "" {
+						return "", fmt.Errorf("missing or invalid password value in secret %q", d.config.AWSRDS.Credentials.Name)
 					}
+
+				case config.SecretAWS:
+					credentials := aws.NewSecretCredentialsProvider(d.config.AWSRDS.Credentials)
+					password, err = auth.BuildAuthToken(ctx, endpoint, region, dbUser, credentials)
+					if err != nil {
+						return "", err
+					}
+
+				default:
+					return "", fmt.Errorf("unsupported secret type '%T' for RDS credentials", value)
 				}
 
 				d.log.Debugf("Using a secret for RDS authentication at %s", endpoint)
@@ -182,8 +180,8 @@ func (d *Database) InitDB(ctx context.Context) error {
 			}
 
 			var cfg *pgx.ConnConfig
-			if config.DSN != "" {
-				cfg, err = pgx.ParseConfig(config.DSN)
+			if c.DSN != "" {
+				cfg, err = pgx.ParseConfig(c.DSN)
 				if err != nil {
 					return err
 				}
@@ -226,8 +224,8 @@ func (d *Database) InitDB(ctx context.Context) error {
 			var cfg *mysqldriver.Config
 			var err error
 
-			if config.DSN != "" {
-				cfg, err = mysqldriver.ParseDSN(config.DSN)
+			if c.DSN != "" {
+				cfg, err = mysqldriver.ParseDSN(c.DSN)
 			} else {
 				var password string
 				password, err = authCallback(ctx)

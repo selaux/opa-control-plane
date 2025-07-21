@@ -24,6 +24,7 @@ func TestParseSecretResolve(t *testing.T) {
 		},
 		secrets: {
 			secret1: {
+				type: basic_auth,
 				username: bob,
 				password: '${LIGHTHOUSE_PASSWORD}'
 			}
@@ -36,22 +37,19 @@ func TestParseSecretResolve(t *testing.T) {
 
 	t.Setenv("LIGHTHOUSE_PASSWORD", "passw0rd")
 
-	secret, err := result.Sources["foo"].Git.Credentials.Resolve()
+	value, err := result.Sources["foo"].Git.Credentials.Resolve(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	exp := map[string]interface{}{
-		"username": "bob",
-		"password": "passw0rd",
+	exp := config.SecretBasicAuth{
+		Username: "bob",
+		Password: "passw0rd",
 	}
-
-	value, _ := secret.Get(context.Background())
 
 	if !reflect.DeepEqual(value, exp) {
 		t.Fatalf("expected: %v\n\ngot: %v", exp, value)
 	}
-
 }
 
 func TestFilesMarshallingRoundtrip(t *testing.T) {
