@@ -566,12 +566,15 @@ type MigrateStatus int
 
 const (
 	MigrateStatusUnknown MigrateStatus = iota
+	MigrateStatusError
 	MigrateStatusReview
 	MigrateStatusSuccess
 )
 
 func (s MigrateStatus) String() string {
 	switch s {
+	case MigrateStatusError:
+		return "ERROR"
 	case MigrateStatusReview:
 		return "REVIEW"
 	case MigrateStatusSuccess:
@@ -672,13 +675,14 @@ func Run(params Options) error {
 	}
 
 	hasSecrets := make(map[string]struct{}, len(state.LibrariesById)+len(state.SystemsById)+len(state.StacksById))
+	systemErrors := make(map[string]error, len(state.SystemsById))
 
 	index, err := migrateLibraries(params, state, &c, nf, &output, hasSecrets)
 	if err != nil {
 		return err
 	}
 
-	if err := migrateSystems(params, state, &c, nf, &output, hasSecrets); err != nil {
+	if err := migrateSystems(params, state, &c, nf, &output, hasSecrets, systemErrors); err != nil {
 		return err
 	}
 
@@ -811,6 +815,10 @@ func Run(params Options) error {
 			var rows []row
 
 			for _, system := range state.SystemsById {
+				if err, ok := systemErrors[system.Id]; ok {
+					rows = append(rows, row{system.Name, KindSystem, "not available", MigrateStatusError, err.Error()})
+					continue
+				}
 				name := system.SanitizedName()
 				var msgs []string
 				for key := range output.Bundles[name].Labels {
@@ -962,22 +970,21 @@ func migrateLibraries(params Options, state *dasState, c *das.Client, nf *nameFa
 	return index, nil
 }
 
-func migrateSystems(params Options, state *dasState, c *das.Client, nf *nameFactory, output *config.Root, hasSecrets map[string]struct{}) error {
+func migrateSystems(params Options, state *dasState, c *das.Client, nf *nameFactory, output *config.Root, hasSecrets map[string]struct{}, systemErrors map[string]error) error {
 	bar := progress.New(params.Noninteractive, len(state.SystemsById), "migrating systems")
 	defer bar.Finish()
 
 	for _, system := range state.SystemsById {
 		b, src, secrets, err := migrateV1System(nf, c, state, system, params.Datasources)
 		if err != nil {
-			return err
-		}
-
-		output.Sources[src.Name] = src
-		output.Bundles[b.Name] = b
-
-		for _, s := range secrets {
-			output.Secrets[s.Name] = s
-			hasSecrets[system.Id] = struct{}{}
+			systemErrors[system.Id] = err
+		} else {
+			output.Sources[src.Name] = src
+			output.Bundles[b.Name] = b
+			for _, s := range secrets {
+				output.Secrets[s.Name] = s
+				hasSecrets[system.Id] = struct{}{}
+			}
 		}
 
 		bar.Add(1)
@@ -1008,9 +1015,32 @@ func migrateStacks(params Options, state *dasState, c *das.Client, nf *nameFacto
 		if _, ok := sc.Selector.Get(staticStackSelectorPrefix + id); ok {
 			for _, systemId := range stack.MatchingSystems {
 				if system, ok := state.SystemsById[systemId]; ok {
-					log.Warnf("Stack %v selector logic cannot be automatically translated. Review logic and configure bundle labels and stack selector manually.", stack.Id)
-					output.Bundles[system.SanitizedName()].Labels[staticStackSelectorPrefix+id] = "FIXME"
+					if b, ok := output.Bundles[system.SanitizedName()]; ok {
+						b.Labels[staticStackSelectorPrefix+id] = "true"
+					}
 				}
+			}
+		}
+
+		// check if any of the matching systems have an exclusion label set
+		// (e.g., because stack sources have been required for manual
+		// deployments)
+		var found bool
+		for _, systemId := range stack.MatchingSystems {
+			if system, ok := state.SystemsById[systemId]; ok {
+				if b, ok := output.Bundles[system.SanitizedName()]; ok {
+					if _, exists := b.Labels["exclude-stack-"+id]; exists {
+						found = true
+					}
+				}
+			}
+		}
+		if found {
+			if sc.ExcludeSelector == nil {
+				sc.ExcludeSelector = &config.Selector{}
+			}
+			if err := sc.ExcludeSelector.Set("exclude-stack-"+id, []string{"*"}); err != nil {
+				return err
 			}
 		}
 
@@ -1038,16 +1068,18 @@ func splitConfig(outputDir string, output config.Root) (map[string][]byte, map[s
 	sourceFiles := make(map[string]string, len(output.Sources))
 
 	for name, b := range output.Bundles {
-		srcName := *b.Requirements[0].Source
-		src := output.Sources[srcName]
-		delete(output.Sources, srcName) // do not include bundle source twice
-		root := config.Root{
-			Bundles: map[string]*config.Bundle{name: b},
-			Sources: map[string]*config.Source{srcName: src},
+		if len(b.Requirements) > 0 {
+			srcName := *b.Requirements[0].Source
+			src := output.Sources[srcName]
+			delete(output.Sources, srcName) // do not include bundle source twice
+			root := config.Root{
+				Bundles: map[string]*config.Bundle{name: b},
+				Sources: map[string]*config.Source{srcName: src},
+			}
+			f := "system-" + name + ".yaml"
+			configs[f] = root
+			bundleFiles[name] = filepath.Join(relDir, f)
 		}
-		f := "system-" + name + ".yaml"
-		configs[f] = root
-		bundleFiles[name] = filepath.Join(relDir, f)
 	}
 
 	for name, s := range output.Stacks {
@@ -1239,6 +1271,62 @@ func migrateV1System(nf *nameFactory, client *das.Client, state *dasState, v1 *d
 
 		library.Datasources = ds
 		secrets = append(secrets, dsSecrets...)
+	}
+
+	if v1.BundleRegistry.ManualDeployment {
+		resp, err := client.JSON("v1/systems/" + v1.Id + "/bundles")
+		if err != nil {
+			return nil, nil, nil, err
+		}
+		var deployed []das.V1Bundle
+		if err := resp.Decode(&deployed); err != nil {
+			return nil, nil, nil, err
+		}
+		var policyBundles []das.V1Bundle
+		for _, b := range deployed {
+			if b.Id == "policy" {
+				policyBundles = append(policyBundles, b)
+			}
+		}
+		if len(policyBundles) > 0 {
+			active := slices.MaxFunc(policyBundles, func(a, b das.V1Bundle) int {
+				if a.Active == b.Active {
+					return 0
+				} else if a.Active > b.Active {
+					return 1
+				} else {
+					return -1
+				}
+			})
+			excludeStacks := make(map[string]struct{})
+			for _, o := range active.SBOM.Origins {
+				if strings.HasPrefix(o.Id, "systems/") {
+					id := o.Id[len("systems/"):]
+					if id == v1.Id {
+						bundle.Requirements[0].Git.Commit = &o.Commit
+					} else {
+						return nil, nil, nil, fmt.Errorf("migrate: SBOM refers to different system: %v", o.Id)
+					}
+				} else if strings.HasPrefix(o.Id, "stacks/") {
+					id := o.Id[len("stacks/"):]
+					stack, ok := state.StacksById[id]
+					if !ok {
+						return nil, nil, nil, fmt.Errorf("migrate: SBOM refers to non-existent stack: %v", o.Id)
+					}
+					name := stack.SanitizedName()
+					bundle.Requirements = append(bundle.Requirements, config.Requirement{Source: &name, Git: config.GitRequirement{Commit: &o.Commit}})
+					excludeStacks[id] = struct{}{}
+				} else if strings.HasPrefix(o.Id, "libraries/") {
+					name := das.Sanitize(o.Id[len("libraries/"):])
+					bundle.Requirements = append(bundle.Requirements, config.Requirement{Source: &name, Git: config.GitRequirement{Commit: &o.Commit}})
+				} else {
+					return nil, nil, nil, fmt.Errorf("migrate: SBOM refers to unknown resource: %v", o.Id)
+				}
+			}
+			for id := range excludeStacks {
+				bundle.Labels["exclude-stack-"+id] = "true"
+			}
+		}
 	}
 
 	return bundle, library, secrets, nil
@@ -1756,13 +1844,33 @@ func getStackGitRoots(c *das.Client, sbomEnabled bool, v1 *das.V1Stack) ([]strin
 
 func migrateDependencies(_ *das.Client, state *dasState, index *libraryPackageIndex, output *config.Root) error {
 	for id, policies := range state.SystemPolicies {
+		src, ok := output.Sources[state.SystemsById[id].SanitizedName()]
+		if !ok {
+			continue
+		}
+
 		rs, err := getRequirementsForPolicies(policies, index, "")
 		if err != nil {
 			return err
 		}
 
-		src := output.Sources[state.SystemsById[id].SanitizedName()]
-		src.Requirements = append(src.Requirements, rs...)
+		for _, r := range rs {
+			// If manual deployment pinning is enabled then requirement will
+			// already exist. Do not add twice.
+			var found bool
+			if r.Source != nil {
+				for _, other := range src.Requirements {
+					if other.Source != nil {
+						if *r.Source == *other.Source {
+							found = true
+						}
+					}
+				}
+			}
+			if !found {
+				src.Requirements = append(src.Requirements, r)
+			}
+		}
 	}
 
 	for id, policies := range state.StackPolicies {

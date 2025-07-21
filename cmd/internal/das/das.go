@@ -18,7 +18,10 @@ type V1System struct {
 	SourceControl *struct {
 		Origin V1GitRepoConfig `json:"origin"`
 	} `json:"source_control"`
-	Datasources []V1DatasourceRef `json:"datasources"`
+	Datasources    []V1DatasourceRef `json:"datasources"`
+	BundleRegistry struct {
+		ManualDeployment bool `json:"manual_deployment"`
+	} `json:"bundle_registry"`
 }
 
 func (v1 *V1System) SanitizedName() string {
@@ -89,10 +92,14 @@ type V1GitRepoConfig struct {
 }
 
 type V1Bundle struct {
-	DownloadURL string `json:"download_url"`
+	Id          string  `json:"id"`
+	Active      float64 `json:"active"`
+	DownloadURL string  `json:"download_url"`
 	SBOM        struct {
 		Origins []struct {
-			Roots []string `json:"roots"`
+			Id     string   `json:"id"`
+			Commit string   `json:"commit"`
+			Roots  []string `json:"roots"`
 		} `json:"origins"`
 	} `json:"sbom"`
 }
