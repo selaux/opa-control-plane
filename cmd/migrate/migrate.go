@@ -1297,9 +1297,37 @@ func migrateV1HTTPPullDatasource(nsPrefix string, v1 *das.V1Datasource) (config.
 	ds.Config = make(map[string]interface{})
 	ds.Config["url"] = v1.URL
 
-	// TODO(tsandall): add header support (incl. secrets)
+	headers := make(map[string]string)
+	var secret *config.Secret
 
-	return ds, nil, nil
+	for _, header := range v1.Headers {
+		switch header.Name {
+		case "Authorization":
+			if header.Value != nil {
+				headers["authorization"] = *header.Value
+			} else if header.SecretId != nil {
+				// If the header is a secret then we need to create a new secret placeholder
+				// with the name of the secret. The value will be set later when the user
+				// configures the secret.
+
+				secret = &config.Secret{
+					Name:  das.Sanitize(*header.SecretId),
+					Value: map[string]interface{}{"type": "token_auth", "token": ""},
+				}
+
+				ds.Credentials = &config.SecretRef{Name: secret.Name}
+			}
+		default:
+			if header.Value != nil {
+				headers[header.Name] = *header.Value
+			} else {
+				// Secrets are not supported for other headers right now.
+				log.Warnf("Datasource %v header %q w/ secret value is not supported, skipping", v1.Id, header.Name)
+			}
+		}
+	}
+
+	return ds, secret, nil
 }
 
 func mapV1SystemToBundleSourceAndSecretConfig(nf *nameFactory, _ *das.Client, v1 *das.V1System) (*config.Bundle, *config.Source, *config.Secret, error) {

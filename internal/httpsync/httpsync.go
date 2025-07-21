@@ -15,11 +15,12 @@ import (
 type HttpDataSynchronizer struct {
 	path        string // The path where the data will be saved
 	url         string
+	headers     map[string]interface{} // Headers to include in the HTTP request
 	credentials *config.SecretRef
 }
 
-func New(path string, url string, credentials *config.SecretRef) *HttpDataSynchronizer {
-	return &HttpDataSynchronizer{path: path, url: url, credentials: credentials}
+func New(path string, url string, headers map[string]interface{}, credentials *config.SecretRef) *HttpDataSynchronizer {
+	return &HttpDataSynchronizer{path: path, url: url, headers: headers, credentials: credentials}
 }
 
 func (s *HttpDataSynchronizer) Execute(ctx context.Context) error {
@@ -39,7 +40,7 @@ func (s *HttpDataSynchronizer) Execute(ctx context.Context) error {
 		return err
 	}
 
-	err = setAuthHeaders(ctx, s.credentials, req)
+	err = s.setHeaders(ctx, req)
 	if err != nil {
 		return err
 	}
@@ -59,12 +60,18 @@ func (s *HttpDataSynchronizer) Close(ctx context.Context) {
 	// No resources to close for HTTP synchronizer
 }
 
-func setAuthHeaders(ctx context.Context, credentials *config.SecretRef, req *http.Request) error {
-	if credentials == nil {
+func (s *HttpDataSynchronizer) setHeaders(ctx context.Context, req *http.Request) error {
+	for name, value := range s.headers {
+		if value, ok := value.(string); ok && value != "" {
+			req.Header.Set(name, value)
+		}
+	}
+
+	if s.credentials == nil {
 		return nil
 	}
 
-	value, err := credentials.Resolve(ctx)
+	value, err := s.credentials.Resolve(ctx)
 	if err != nil {
 		return err
 	}
