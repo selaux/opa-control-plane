@@ -132,8 +132,9 @@ type BundleReport struct {
 }
 
 type DecisionDiff struct {
-	Error error  `json:"error"`
-	Path  string `json:"path"`
+	Status  ReportStatus `json:"status"`
+	Message string       `json:"error"`
+	Path    string       `json:"path"`
 }
 
 func Run(opts Options) error {
@@ -432,7 +433,13 @@ func backtestBundle(ctx context.Context, opts Options, styra *das.Client, b *con
 			return innerErr
 		}
 
-		diffs = append(diffs, DecisionDiff{Error: err, Path: path})
+		switch err := err.(type) {
+		case *compareErr:
+			diffs = append(diffs, DecisionDiff{Status: err.Status, Message: err.Message, Path: path})
+		default:
+			diffs = append(diffs, DecisionDiff{Status: ReportStatusError, Message: err.Error(), Path: path})
+		}
+
 	}
 
 	if len(diffs) == 0 {
@@ -445,10 +452,13 @@ func backtestBundle(ctx context.Context, opts Options, styra *das.Client, b *con
 
 	var nonErrorDiffs, errorDiffs int
 	for _, d := range diffs {
-		if _, ok := d.Error.(*compareErr); !ok {
-			errorDiffs++
-		} else {
+		switch d.Status {
+		case ReportStatusLatencyInflation:
+			fallthrough
+		case ReportStatusResultDiff:
 			nonErrorDiffs++
+		default:
+			errorDiffs++
 		}
 	}
 
@@ -460,7 +470,7 @@ func backtestBundle(ctx context.Context, opts Options, styra *das.Client, b *con
 		}
 	} else {
 		report.Bundles[b.Name] = BundleReport{
-			Status:  diffs[0].Error.(*compareErr).Status,
+			Status:  diffs[0].Status,
 			Message: fmt.Sprintf("%d/%d decisions differed. Details: %v", nonErrorDiffs, len(decisions.Items), filepath.Dir(diffs[0].Path)),
 			Details: diffs,
 		}
