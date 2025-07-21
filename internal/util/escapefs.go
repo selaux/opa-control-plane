@@ -155,12 +155,30 @@ func unescapeInfo(info fs.FileInfo) fs.FileInfo {
 	return &fileInfo{info}
 }
 
-// TODO: Use more robust escaping
+// Escape ':' with "#" and '#' with double '#'. This is to work around the restricted ':' in embedded file names.
 
+// unescape replaces first "##" with "#" and then replaces all remaining "#" with ":".
 func unescape(path string) string {
-	return strings.ReplaceAll(path, "#", ":")
+	var result string
+
+	for len(path) > 0 {
+		if i := strings.Index(path, "##"); i != -1 {
+			result += path[:i+1] // Drop the second '#' to treat "##" as a single '#'.
+			path = path[i+2:]
+		} else if i := strings.Index(path, "#"); i != -1 {
+			result += path[:i] + ":" // Replace single '#' with ':'
+			path = path[i+1:]
+		} else {
+			result += path // No more "##" found, append the rest
+			path = ""
+		}
+	}
+
+	return result
 }
 
+// escape replaces first '#' with '##' and then replaces all remaining ':' with '#'.
 func escape(path string) string {
+	path = strings.ReplaceAll(path, "#", "##")
 	return strings.ReplaceAll(path, ":", "#")
 }
