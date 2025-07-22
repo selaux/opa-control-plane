@@ -29,10 +29,6 @@ build: go-build
 .PHONY: test
 test: go-test go-bench library-test authz-test
 
-.PHONY: docker-build
-docker-build:
-	$(DOCKER) build --platform linux/amd64 --build-arg GOVERSION=$(GOVERSION) -t styrainc/opactl:$(VCS) -f Dockerfile .
-
 .PHONY: go-build
 go-build: generate
 	$(GO) build $(GO_TAGS) -o $(BIN) -ldflags $(LDFLAGS)
