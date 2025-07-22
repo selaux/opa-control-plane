@@ -32,7 +32,7 @@ func init() {
 
 	run := &cobra.Command{
 		Use:   "run",
-		Short: "Run the Lighthouse service",
+		Short: "Run the OPA Control Plane service",
 		Run: func(cmd *cobra.Command, args []string) {
 			ctx := context.Background()
 

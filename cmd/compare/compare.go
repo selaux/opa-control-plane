@@ -94,7 +94,7 @@ func init() {
 
 	compare := &cobra.Command{
 		Use:   "compare",
-		Short: "Compare Lighthouse configuration and bundles to version from Styra",
+		Short: "Compare OPA Control Plane configuration and bundles to version from Styra",
 		Run: func(cmd *cobra.Command, args []string) {
 			if err := doCompare(params); err != nil {
 				log.Fatal(err.Error())

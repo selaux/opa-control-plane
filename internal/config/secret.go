@@ -21,7 +21,7 @@ var wellknownFingerprints = []string{
 	"SHA256:ohD8VZEXGWo6Ez8GSEJQ9WpafgLFsOfLOtGGQCQo6Og", // dev.azure.com https://github.com/MicrosoftDocs/azure-devops-docs/issues/7726 (also available through user settings after signing in)
 }
 
-// Secret defines the configuration for secrets/tokens used by Lighthouse
+// Secret defines the configuration for secrets/tokens used by OPA Control Plane
 // for Git synchronization, datasources, etc.
 //
 // Each secret is stored as a map of key-value pairs, where the keys and values are strings. Secret type is also declared in the config.

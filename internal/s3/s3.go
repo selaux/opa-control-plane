@@ -1,4 +1,4 @@
-// s3 connects Lighthouse to S3-compatible object storages.
+// s3 connects OPA Control Plane to S3-compatible object storages.
 package s3
 
 import (

@@ -18,8 +18,8 @@ var (
 func init() {
 	version := &cobra.Command{
 		Use:   "version",
-		Short: "Print the version of Lighthouse",
-		Long:  "Show version and build information for Lighthouse.",
+		Short: "Print the version of OPA Control Plane",
+		Long:  "Show version and build information for OPA Control Plane.",
 		Run: func(cmd *cobra.Command, args []string) {
 			generateCmdOutput(os.Stdout)
 		},

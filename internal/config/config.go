@@ -20,7 +20,7 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// Internal configuration data structures for Lighthouse.
+// Internal configuration data structures for OPA Control Plane.
 
 // Metadata contains metadata about the configuration file itself. This
 // information is not stored in the database and is only used by the migration
@@ -30,7 +30,7 @@ type Metadata struct {
 	ExportedAt   string `json:"exported_at" yaml:"exported_at"`
 }
 
-// Root is the top-level configuration structure used by Lighthouse.
+// Root is the top-level configuration structure used by OPA Control Plane.
 type Root struct {
 	Metadata Metadata           `json:"metadata" yaml:"metadata"`
 	Bundles  map[string]*Bundle `json:"bundles,omitempty" yaml:"bundles,omitempty"`
@@ -62,7 +62,7 @@ func (r *Root) SetSQLitePersistentByDefault(persistenceDir string) {
 }
 
 // UnmarshalYAML implements the yaml.Marshaler interface for the Root struct. This
-// lets us define Lighthouse resources in a more user-friendly way with mappings
+// lets us define OPA Control Plane resources in a more user-friendly way with mappings
 // where keys are the resource names. It is also used to inject the secret store
 // into each secret reference so that internal callers can resolve secret values
 // as needed.
@@ -229,7 +229,7 @@ func (r *Root) Validate() error {
 	return rootSchema.Validate(config)
 }
 
-// Bundle defines the configuration for a Lighthouse Bundle.
+// Bundle defines the configuration for a OPA Control Plane Bundle.
 type Bundle struct {
 	Name          string        `json:"-" yaml:"-"`
 	Labels        Labels        `json:"labels,omitempty" yaml:"labels,omitempty"`
@@ -379,7 +379,7 @@ func (s *Bundle) Equal(other *Bundle) bool {
 	})
 }
 
-// Source defines the configuration for a Lighthouse Source.
+// Source defines the configuration for a OPA Control Plane Source.
 type Source struct {
 	Name          string       `json:"-" yaml:"-"`
 	Builtin       *string      `json:"builtin,omitempty" yaml:"builtin,omitempty"`
@@ -456,7 +456,7 @@ func (a Sources) Equal(b Sources) bool {
 	return setEqual(a, b, func(s *Source) string { return s.Name }, func(a, b *Source) bool { return a.Equal(b) })
 }
 
-// Stack defines the configuration for a Lighthouse Stack.
+// Stack defines the configuration for a OPA Control Plane Stack.
 type Stack struct {
 	Name            string       `json:"-" yaml:"-"`
 	Selector        Selector     `json:"selector" yaml:"selector"` // Schema validation overrides Selector to object of string array values.
@@ -634,7 +634,7 @@ func (a StringSet) Add(value string) StringSet {
 	return StringSet(slices.Insert(a, i, value))
 }
 
-// Git defines the Git synchronization configuration used by Lighthouse Sources.
+// Git defines the Git synchronization configuration used by OPA Control Plane Sources.
 type Git struct {
 	Repo          string     `json:"repo" yaml:"repo"`
 	Reference     *string    `json:"reference,omitempty" yaml:"reference,omitempty"`
@@ -715,7 +715,7 @@ func (s *SecretRef) Equal(other *SecretRef) bool {
 	})
 }
 
-// Token represents an API token to access the Lighthouse APIs.
+// Token represents an API token to access the OPA Control Plane APIs.
 type Token struct {
 	Name   string  `json:"-" yaml:"-"`
 	APIKey string  `json:"api_key" yaml:"api_key"`

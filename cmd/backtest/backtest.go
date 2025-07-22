@@ -64,7 +64,7 @@ func init() {
 
 	backtest := &cobra.Command{
 		Use:   "backtest",
-		Short: "Run backtest on Lighthouse bundles against decisions from Styra",
+		Short: "Run backtest on OPA Control Plane bundles against decisions from Styra",
 		Run: func(cmd *cobra.Command, args []string) {
 			opts.Output = os.Stdout
 			if err := Run(opts); err != nil {

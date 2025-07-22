@@ -1761,7 +1761,7 @@ func migrateV1SelectorLogic(module *ast.Module) (config.Selector, *config.Select
 	}
 
 	// NOTE(tsandall): DAS matching also takes into account the type information on the system/stack
-	// since we don't have those in Lighthouse we need to exclude stacks that have an empty selector
+	// since we don't have those in OPA Control Plane we need to exclude stacks that have an empty selector
 	// because otherwise an empty selector matches ALL systems.
 	//
 	// NOTE(tsandall): users should just remove stacks from DAS with empty selectors.

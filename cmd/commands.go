@@ -10,6 +10,6 @@ import (
 // RootCommand is the base CLI command that all subcommands are added to.
 var RootCommand = &cobra.Command{
 	Use:   path.Base(os.Args[0]),
-	Short: "Lighthouse",
+	Short: "OPA Control Plane",
 	Long:  "An open source control plane for Open Policy Agent (OPA).",
 }
