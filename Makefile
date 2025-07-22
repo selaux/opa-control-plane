@@ -8,7 +8,7 @@ GOOS := $(shell go env GOOS)
 
 GO_TAGS := -tags=
 
-BIN := lighthouse_$(GOOS)_$(GOARCH)
+BIN := opactl_$(GOOS)_$(GOARCH)
 
 LDFLAGS := ""
 
@@ -31,7 +31,7 @@ test: go-test go-bench library-test authz-test
 
 .PHONY: docker-build
 docker-build:
-	$(DOCKER) build --platform linux/amd64 --build-arg GOVERSION=$(GOVERSION) -t styrainc/lighthouse:$(VCS) -f Dockerfile .
+	$(DOCKER) build --platform linux/amd64 --build-arg GOVERSION=$(GOVERSION) -t styrainc/opactl:$(VCS) -f Dockerfile .
 
 .PHONY: go-build
 go-build: generate
@@ -64,4 +64,4 @@ authz-test:
 
 .PHONY: clean
 clean:
-	rm -f lighthouse_*_*
+	rm -f opactl_*_*

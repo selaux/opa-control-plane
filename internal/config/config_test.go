@@ -26,7 +26,7 @@ func TestParseSecretResolve(t *testing.T) {
 			secret1: {
 				type: basic_auth,
 				username: bob,
-				password: '${LIGHTHOUSE_PASSWORD}'
+				password: '${OPACTL_PASSWORD}'
 			}
 		}
 	}`)))
@@ -35,7 +35,7 @@ func TestParseSecretResolve(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	t.Setenv("LIGHTHOUSE_PASSWORD", "passw0rd")
+	t.Setenv("OPACTL_PASSWORD", "passw0rd")
 
 	value, err := result.Sources["foo"].Git.Credentials.Resolve(context.Background())
 	if err != nil {

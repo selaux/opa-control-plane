@@ -5,5 +5,5 @@ config.yaml
 config.d
 bundles/
 data
-lighthouse_*
+opactl_*
 files

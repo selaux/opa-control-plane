@@ -380,7 +380,7 @@ func backtestBundle(ctx context.Context, opts Options, styra *das.Client, b *con
 
 	// Re-evaluate decisions
 
-	tempDir, err := os.MkdirTemp("", "lighthouse-backtest-"+b.Name)
+	tempDir, err := os.MkdirTemp("", "opa-control-plane-backtest-"+b.Name)
 	if err != nil {
 		return err
 	}

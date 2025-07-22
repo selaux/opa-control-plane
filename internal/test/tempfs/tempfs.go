@@ -9,7 +9,7 @@ import (
 /* copied from https://github.com/open-policy-agent/opa/blob/main/v1/util/test/tempfs.go */
 
 func WithTempFS(t *testing.T, files map[string]string, f func(t *testing.T, dir string)) {
-	rootDir, cleanup, err := makeTempFS("", "lighthouse_test", files)
+	rootDir, cleanup, err := makeTempFS("", "opa-control-plane_test", files)
 	if err != nil {
 		panic(err)
 	}
