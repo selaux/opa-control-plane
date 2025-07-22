@@ -105,7 +105,7 @@ func (s *Secret) Equal(other *Secret) bool {
 }
 
 // get retrieves the values from any external source as necessary.
-func (s *Secret) get(ctx context.Context) (map[string]interface{}, error) {
+func (s *Secret) get() (map[string]interface{}, error) {
 	value := make(map[string]interface{}, len(s.Value))
 
 	for k, v := range s.Value {
@@ -120,7 +120,7 @@ func (s *Secret) get(ctx context.Context) (map[string]interface{}, error) {
 }
 
 func (s *Secret) Typed(ctx context.Context) (interface{}, error) {
-	m, err := s.get(ctx) // Ensure values are resolved
+	m, err := s.get() // Ensure values are resolved
 	if err != nil {
 		return nil, err
 	}
