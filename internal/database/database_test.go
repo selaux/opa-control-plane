@@ -7,9 +7,9 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/styrainc/lighthouse/internal/config"
-	"github.com/styrainc/lighthouse/internal/database"
-	"github.com/styrainc/lighthouse/internal/service"
+	"github.com/styrainc/opa-control-plane/internal/config"
+	"github.com/styrainc/opa-control-plane/internal/database"
+	"github.com/styrainc/opa-control-plane/internal/service"
 	"github.com/testcontainers/testcontainers-go"
 	"github.com/testcontainers/testcontainers-go/modules/mysql"
 	"github.com/testcontainers/testcontainers-go/modules/postgres"

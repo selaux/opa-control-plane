@@ -8,10 +8,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/styrainc/lighthouse/internal/builtinsync"
-	"github.com/styrainc/lighthouse/internal/test/libraries"
-	"github.com/styrainc/lighthouse/internal/test/tempfs"
-	"github.com/styrainc/lighthouse/internal/util"
+	"github.com/styrainc/opa-control-plane/internal/builtinsync"
+	"github.com/styrainc/opa-control-plane/internal/test/libraries"
+	"github.com/styrainc/opa-control-plane/internal/test/tempfs"
+	"github.com/styrainc/opa-control-plane/internal/util"
 )
 
 func TestBuiltinSync(t *testing.T) {

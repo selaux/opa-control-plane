@@ -9,9 +9,9 @@ import (
 	"testing"
 
 	"github.com/open-policy-agent/opa/ast"
-	"github.com/styrainc/lighthouse/cmd/internal/das"
-	"github.com/styrainc/lighthouse/internal/config"
-	"github.com/styrainc/lighthouse/libraries"
+	"github.com/styrainc/opa-control-plane/cmd/internal/das"
+	"github.com/styrainc/opa-control-plane/internal/config"
+	"github.com/styrainc/opa-control-plane/libraries"
 )
 
 func TestLibraryPackageIndex(t *testing.T) {

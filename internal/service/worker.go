@@ -6,11 +6,11 @@ import (
 	"time"
 
 	"github.com/open-policy-agent/opa/ast"
-	"github.com/styrainc/lighthouse/internal/builder"
-	"github.com/styrainc/lighthouse/internal/config"
-	"github.com/styrainc/lighthouse/internal/logging"
-	"github.com/styrainc/lighthouse/internal/progress"
-	"github.com/styrainc/lighthouse/internal/s3"
+	"github.com/styrainc/opa-control-plane/internal/builder"
+	"github.com/styrainc/opa-control-plane/internal/config"
+	"github.com/styrainc/opa-control-plane/internal/logging"
+	"github.com/styrainc/opa-control-plane/internal/progress"
+	"github.com/styrainc/opa-control-plane/internal/s3"
 )
 
 var (

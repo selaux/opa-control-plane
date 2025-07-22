@@ -26,13 +26,13 @@ import (
 	"github.com/open-policy-agent/opa/sdk"
 	v1 "github.com/open-policy-agent/opa/v1/logging"
 	"github.com/spf13/cobra"
-	"github.com/styrainc/lighthouse/cmd"
-	"github.com/styrainc/lighthouse/cmd/internal/das"
-	"github.com/styrainc/lighthouse/cmd/internal/flags"
-	"github.com/styrainc/lighthouse/internal/config"
-	"github.com/styrainc/lighthouse/internal/logging"
-	"github.com/styrainc/lighthouse/internal/progress"
-	"github.com/styrainc/lighthouse/internal/s3"
+	"github.com/styrainc/opa-control-plane/cmd"
+	"github.com/styrainc/opa-control-plane/cmd/internal/das"
+	"github.com/styrainc/opa-control-plane/cmd/internal/flags"
+	"github.com/styrainc/opa-control-plane/internal/config"
+	"github.com/styrainc/opa-control-plane/internal/logging"
+	"github.com/styrainc/opa-control-plane/internal/progress"
+	"github.com/styrainc/opa-control-plane/internal/s3"
 )
 
 var log *logging.Logger

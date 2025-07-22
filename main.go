@@ -3,13 +3,13 @@ package main
 import (
 	"os"
 
-	"github.com/styrainc/lighthouse/cmd"
-	_ "github.com/styrainc/lighthouse/cmd/backtest"
-	_ "github.com/styrainc/lighthouse/cmd/build"
-	_ "github.com/styrainc/lighthouse/cmd/compare"
-	_ "github.com/styrainc/lighthouse/cmd/migrate"
-	_ "github.com/styrainc/lighthouse/cmd/run"
-	_ "github.com/styrainc/lighthouse/cmd/version"
+	"github.com/styrainc/opa-control-plane/cmd"
+	_ "github.com/styrainc/opa-control-plane/cmd/backtest"
+	_ "github.com/styrainc/opa-control-plane/cmd/build"
+	_ "github.com/styrainc/opa-control-plane/cmd/compare"
+	_ "github.com/styrainc/opa-control-plane/cmd/migrate"
+	_ "github.com/styrainc/opa-control-plane/cmd/run"
+	_ "github.com/styrainc/opa-control-plane/cmd/version"
 )
 
 func main() {

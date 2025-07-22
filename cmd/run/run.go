@@ -6,14 +6,14 @@ import (
 	"os"
 
 	"github.com/spf13/cobra"
-	"github.com/styrainc/lighthouse/cmd"
-	"github.com/styrainc/lighthouse/cmd/internal/flags"
-	"github.com/styrainc/lighthouse/internal/config"
-	"github.com/styrainc/lighthouse/internal/logging"
-	"github.com/styrainc/lighthouse/internal/server"
-	"github.com/styrainc/lighthouse/internal/service"
-	"github.com/styrainc/lighthouse/internal/util"
-	"github.com/styrainc/lighthouse/libraries"
+	"github.com/styrainc/opa-control-plane/cmd"
+	"github.com/styrainc/opa-control-plane/cmd/internal/flags"
+	"github.com/styrainc/opa-control-plane/internal/config"
+	"github.com/styrainc/opa-control-plane/internal/logging"
+	"github.com/styrainc/opa-control-plane/internal/server"
+	"github.com/styrainc/opa-control-plane/internal/service"
+	"github.com/styrainc/opa-control-plane/internal/util"
+	"github.com/styrainc/opa-control-plane/libraries"
 )
 
 const defaultLocalAddr = "localhost:8282"

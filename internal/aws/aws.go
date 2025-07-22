@@ -7,7 +7,7 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
-	"github.com/styrainc/lighthouse/internal/config"
+	"github.com/styrainc/opa-control-plane/internal/config"
 )
 
 // refreshCredentialsInterval sets the refreshing interval to ensure they are up to date.

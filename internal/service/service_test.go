@@ -9,9 +9,9 @@ import (
 	"testing"
 	"text/template"
 
-	"github.com/styrainc/lighthouse/internal/config"
-	"github.com/styrainc/lighthouse/internal/logging"
-	"github.com/styrainc/lighthouse/internal/service"
+	"github.com/styrainc/opa-control-plane/internal/config"
+	"github.com/styrainc/opa-control-plane/internal/logging"
+	"github.com/styrainc/opa-control-plane/internal/service"
 )
 
 func TestUnconfiguredSecretHandling(t *testing.T) {

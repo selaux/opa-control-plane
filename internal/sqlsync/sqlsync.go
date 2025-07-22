@@ -5,7 +5,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/styrainc/lighthouse/internal/database"
+	"github.com/styrainc/opa-control-plane/internal/database"
 )
 
 // SQLDataSynchronizer is a struct that implements the Synchronizer interface for bundle files stored in SQL database.

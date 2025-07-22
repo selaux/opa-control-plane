@@ -8,7 +8,7 @@ import (
 	"runtime/debug"
 
 	"github.com/spf13/cobra"
-	"github.com/styrainc/lighthouse/cmd"
+	"github.com/styrainc/opa-control-plane/cmd"
 )
 
 var (

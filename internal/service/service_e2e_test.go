@@ -23,12 +23,12 @@ import (
 	"github.com/johannesboyne/gofakes3/backend/s3mem"
 	"github.com/open-policy-agent/opa/ast"
 	"github.com/open-policy-agent/opa/bundle"
-	"github.com/styrainc/lighthouse/internal/config"
-	"github.com/styrainc/lighthouse/internal/logging"
-	"github.com/styrainc/lighthouse/internal/service"
-	"github.com/styrainc/lighthouse/internal/test/libraries"
-	"github.com/styrainc/lighthouse/internal/test/tempfs"
-	"github.com/styrainc/lighthouse/internal/util"
+	"github.com/styrainc/opa-control-plane/internal/config"
+	"github.com/styrainc/opa-control-plane/internal/logging"
+	"github.com/styrainc/opa-control-plane/internal/service"
+	"github.com/styrainc/opa-control-plane/internal/test/libraries"
+	"github.com/styrainc/opa-control-plane/internal/test/tempfs"
+	"github.com/styrainc/opa-control-plane/internal/util"
 	"gopkg.in/yaml.v3"
 )
 

@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/styrainc/lighthouse/internal/config"
+	"github.com/styrainc/opa-control-plane/internal/config"
 	"gopkg.in/yaml.v3"
 )
 

@@ -13,9 +13,9 @@ import (
 
 	"github.com/gorilla/mux"
 	"github.com/open-policy-agent/opa/server/writer"
-	"github.com/styrainc/lighthouse/internal/config"
-	"github.com/styrainc/lighthouse/internal/database"
-	"github.com/styrainc/lighthouse/internal/server/types"
+	"github.com/styrainc/opa-control-plane/internal/config"
+	"github.com/styrainc/opa-control-plane/internal/database"
+	"github.com/styrainc/opa-control-plane/internal/server/types"
 )
 
 type Server struct {

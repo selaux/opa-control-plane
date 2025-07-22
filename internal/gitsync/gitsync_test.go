@@ -7,7 +7,7 @@ import (
 
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing/object"
-	"github.com/styrainc/lighthouse/internal/config"
+	"github.com/styrainc/opa-control-plane/internal/config"
 )
 
 // TestGitsync tests the functionality of the gitsync package by creating a temporary git repository,
