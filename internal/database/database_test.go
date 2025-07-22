@@ -253,7 +253,7 @@ func TestDatabase(t *testing.T) {
 					},
 				},
 				Secrets: map[string]*config.Secret{
-					"secret1": &config.Secret{
+					"secret1": {
 						Name: "secret1",
 						Value: map[string]interface{}{
 							"type":     "password",
