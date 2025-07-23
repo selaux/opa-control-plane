@@ -55,6 +55,7 @@ type Options struct {
 	Output               io.Writer
 	Noninteractive       bool
 	Format               string
+	BundleNames          []string
 }
 
 func init() {
@@ -75,6 +76,7 @@ func init() {
 	}
 
 	flags.AddConfig(backtest.Flags(), &opts.ConfigFile)
+	flags.AddBundleName(backtest.Flags(), &opts.BundleNames)
 	backtest.Flags().StringVarP(&opts.URL, "url", "u", "", "Styra tenant URL (e.g., https://expo.styra.com)")
 	backtest.Flags().StringSliceVarP(&opts.Headers, "header", "", nil, "Set additional HTTP headers for requests to Styra API")
 	backtest.Flags().IntVarP(&opts.NumDecisions, "decisions", "n", 100, "Number of decisions to backtest")
@@ -152,6 +154,14 @@ func Run(opts Options) error {
 	cfg, err := config.Parse(bytes.NewBuffer(bs))
 	if err != nil {
 		return err
+	}
+
+	if len(opts.BundleNames) > 0 {
+		for name := range cfg.Bundles {
+			if !slices.Contains(opts.BundleNames, name) {
+				delete(cfg.Bundles, name)
+			}
+		}
 	}
 
 	url := cfg.Metadata.ExportedFrom

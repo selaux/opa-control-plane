@@ -27,6 +27,7 @@ type buildParams struct {
 	persistenceDir    string
 	resetPersistence  bool
 	mergeConflictFail bool
+	bundleNames       []string
 	logging           logging.Config
 }
 
@@ -63,6 +64,14 @@ func init() {
 				log.Fatalf("configuration error: %v", err)
 			}
 
+			if len(params.bundleNames) > 0 {
+				for name := range config.Bundles {
+					if !slices.Contains(params.bundleNames, name) {
+						delete(config.Bundles, name)
+					}
+				}
+			}
+
 			svc := service.New().
 				WithPersistenceDir(params.persistenceDir).
 				WithConfig(config).
@@ -83,6 +92,7 @@ func init() {
 	}
 
 	flags.AddConfig(build.Flags(), &params.configFile)
+	flags.AddBundleName(build.Flags(), &params.bundleNames)
 	build.Flags().StringVarP(&params.persistenceDir, "data-dir", "d", "data", "Path to the persistence directory")
 	build.Flags().BoolVarP(&params.resetPersistence, "reset-persistence", "", false, "Reset the persistence directory (for development purposes)")
 	build.Flags().BoolVarP(&params.mergeConflictFail, "merge-conflict-fail", "", false, "Fail on config merge conflicts")
