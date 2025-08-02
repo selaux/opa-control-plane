@@ -1215,7 +1215,7 @@ func getLibraryGitOrigin(v1 *das.V1Library) (bool, *das.V1GitRepoConfig) {
 func migrateV1System(nf *nameFactory, client *das.Client, state *dasState, v1 *das.V1System, migrateDSContent bool) (*config.Bundle, *config.Source, []*config.Secret, error) {
 
 	var secrets []*config.Secret
-	bundle, library, secret, err := mapV1SystemToBundleSourceAndSecretConfig(nf, client, v1)
+	bundle, src, secret, err := mapV1SystemToBundleSourceAndSecretConfig(nf, client, v1)
 	if err != nil {
 		return nil, nil, nil, err
 	}
@@ -1232,8 +1232,8 @@ func migrateV1System(nf *nameFactory, client *das.Client, state *dasState, v1 *d
 	policies := state.SystemPolicies[v1.Id]
 	var files map[string]string
 	typeLib := getSystemTypeLib(v1.Type)
-	files, library.Requirements = migrateV1Policies(typeLib, "systems/"+v1.Id+"/", policies, gitRoots)
-	library.SetEmbeddedFiles(files)
+	files, src.Requirements = migrateV1Policies(typeLib, "systems/"+v1.Id+"/", policies, gitRoots)
+	src.SetEmbeddedFiles(files)
 
 	resp, err := client.JSON(fmt.Sprintf("v1/data/metadata/%v/labels", v1.Id))
 	if err != nil {
@@ -1265,11 +1265,11 @@ func migrateV1System(nf *nameFactory, client *das.Client, state *dasState, v1 *d
 
 		for _, fs := range files {
 			for file, content := range fs {
-				library.SetEmbeddedFile(file, content)
+				src.SetEmbeddedFile(file, content)
 			}
 		}
 
-		library.Datasources = ds
+		src.Datasources = ds
 		secrets = append(secrets, dsSecrets...)
 	}
 
@@ -1329,7 +1329,7 @@ func migrateV1System(nf *nameFactory, client *das.Client, state *dasState, v1 *d
 		}
 	}
 
-	return bundle, library, secrets, nil
+	return bundle, src, secrets, nil
 }
 
 func migrateV1Datasources(client *das.Client, nsPrefix string, v1 []das.V1DatasourceRef, migrateDSContent bool) ([]config.Datasource, []config.Files, []*config.Secret, error) {
@@ -2288,7 +2288,7 @@ func fetchSystemPolicies(bar *progress.Bar, c *das.Client, state *dasState) erro
 		go func() {
 			for s := range ch {
 				log.Infof("Fetching %d policies for system %v", len(s.Policies), s.Id)
-				ps, err := fetchPolicies(bar, c, s.Policies)
+				ps, err := fetchPolicies(bar, c, s.Policies, nil)
 				if err != nil {
 					panic(err)
 				}
@@ -2321,7 +2321,7 @@ func fetchStackPolicies(bar *progress.Bar, c *das.Client, state *dasState) error
 		go func() {
 			for s := range ch {
 				log.Infof("Fetching %d policies for stack %v", len(s.Policies), s.Id)
-				ps, err := fetchPolicies(bar, c, s.Policies)
+				ps, err := fetchPolicies(bar, c, s.Policies, nil)
 				if err != nil {
 					panic(err)
 				}
@@ -2376,7 +2376,7 @@ func fetchLibraryPolicies(bar *progress.Bar, c *das.Client, state *dasState) err
 				}
 
 				log.Infof("Fetching %d policies for library %q", len(l.Policies), l.Id)
-				ps, err := fetchPolicies(bar, c, l.Policies)
+				ps, err := fetchPolicies(bar, c, l.Policies, nil)
 				if err != nil {
 					panic(err)
 				}
@@ -2393,9 +2393,8 @@ func fetchLibraryPolicies(bar *progress.Bar, c *das.Client, state *dasState) err
 	return nil
 }
 
-func fetchPolicies(bar *progress.Bar, c *das.Client, refs []das.V1PoliciesRef) ([]*das.V1Policy, error) {
+func fetchPolicies(bar *progress.Bar, c *das.Client, refs []das.V1PoliciesRef, result []*das.V1Policy) ([]*das.V1Policy, error) {
 	bar.AddMax(len(refs))
-	var result []*das.V1Policy
 	for _, ref := range refs {
 		resp, err := c.JSON("v1/policies/" + ref.Id)
 		bar.Add(1)
@@ -2412,6 +2411,15 @@ func fetchPolicies(bar *progress.Bar, c *das.Client, refs []das.V1PoliciesRef) (
 		}
 		p.Package = ref.Id
 		result = append(result, &p)
+		for _, sub := range p.Packages {
+			cpy := ref
+			cpy.Id += "/" + sub
+			var err error
+			result, err = fetchPolicies(bar, c, []das.V1PoliciesRef{cpy}, result)
+			if err != nil {
+				return nil, err
+			}
+		}
 	}
 	return result, nil
 }

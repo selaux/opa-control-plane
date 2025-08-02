@@ -128,8 +128,9 @@ type V1PoliciesRef struct {
 }
 
 type V1Policy struct {
-	Package string            `json:"package"`
-	Modules map[string]string `json:"modules"`
+	Package  string            `json:"package"`
+	Modules  map[string]string `json:"modules"`
+	Packages []string          `json:"packages"`
 }
 
 type Client struct {

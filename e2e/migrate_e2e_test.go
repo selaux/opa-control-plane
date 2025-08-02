@@ -388,6 +388,29 @@ func TestMigration(t *testing.T) {
 				}`,
 			},
 		},
+		{
+			name:              "v1-policies with subpackages",
+			styraURL:          "https://expo.styra.com",
+			styraTokenEnvName: "STYRA_TOKEN",
+			systemId:          "a7f6d187ada24f628a417bed3a90a99f",
+			bundleName:        "policy_builder",
+			extraConfigs: map[string]string{
+				"config.d/2-storage.yaml": `{
+					bundles: {
+						"policy_builder": {
+							object_storage: {
+								aws: {
+									url: {{ .URL }},
+									bucket: test,
+									region: mock-region,
+									key: bundle.tar.gz,
+								},
+							},
+						},
+					},
+				}`,
+			},
+		},
 	}
 
 	type templateParams struct {
