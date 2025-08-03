@@ -493,6 +493,25 @@ var baseLibPackageIndex = func() map[string]*libraryPackageIndex {
 	return result
 }()
 
+func isTypeLibrary(t string) bool {
+	for _, src := range systemTypeLibraries {
+		if src.Name == t {
+			return true
+		}
+	}
+	for _, src := range stackTypeLibraries {
+		if src.Name == t {
+			return true
+		}
+	}
+	for _, src := range baseLibraries {
+		if src.Name == t {
+			return true
+		}
+	}
+	return false
+}
+
 type Options struct {
 	Noninteractive    bool
 	Token             string
@@ -1095,12 +1114,25 @@ func splitConfig(outputDir string, output config.Root) (map[string][]byte, map[s
 		stackFiles[name] = filepath.Join(relDir, f)
 	}
 
+	var builtins config.Root
+
 	for name, s := range output.Sources {
-		f := "source-" + name + ".yaml"
-		configs[f] = config.Root{
-			Sources: map[string]*config.Source{name: s},
+		if !isTypeLibrary(name) {
+			f := "source-" + name + ".yaml"
+			configs[f] = config.Root{
+				Sources: map[string]*config.Source{name: s},
+			}
+			sourceFiles[name] = filepath.Join(relDir, f)
+		} else {
+			if builtins.Sources == nil {
+				builtins.Sources = make(map[string]*config.Source)
+			}
+			builtins.Sources[name] = s
 		}
-		sourceFiles[name] = filepath.Join(relDir, f)
+	}
+
+	if len(builtins.Sources) > 0 {
+		configs["builtin-sources.yaml"] = builtins
 	}
 
 	for name, s := range output.Secrets {
