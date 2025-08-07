@@ -17,6 +17,9 @@ const (
 	ParamPrettyV1 = "pretty"
 )
 
+type HealthResponse struct {
+}
+
 type SourcesGetDataResponseV1 struct {
 	Result *interface{} `json:"result,omitempty"`
 }

@@ -3,6 +3,7 @@ package server
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"io"
 	"net/http/httptest"
 	"strconv"
@@ -342,6 +343,26 @@ func TestServerSourcePagination(t *testing.T) {
 	if pageCount != 20 {
 		t.Fatalf("expected pagination to require multiple pages, got %d", pageCount)
 	}
+
+}
+
+func TestServerHealthEndpoint(t *testing.T) {
+
+	ts := initTestServer(t, nil)
+	defer ts.Close()
+
+	notReady := func(_ context.Context) error { return fmt.Errorf("not ready") }
+	ready := func(_ context.Context) error { return nil }
+
+	ts.srv.readyFn = notReady
+
+	resp := ts.Request("GET", "/health", "", "")
+	resp.ExpectStatus(500)
+
+	ts.srv.readyFn = ready
+
+	resp = ts.Request("GET", "/health", "", "")
+	resp.ExpectStatus(200)
 
 }
 

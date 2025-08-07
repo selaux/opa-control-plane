@@ -35,7 +35,8 @@ type Service struct {
 	persistenceDir string
 	pool           *pool.Pool
 	workers        map[string]*BundleWorker
-	mu             sync.Mutex
+	readyMutex     sync.Mutex
+	ready          bool
 	failures       map[string]Status
 	database       database.Database
 	builtinFS      fs.FS
@@ -139,6 +140,9 @@ func (s *Service) Run(ctx context.Context) error {
 
 	defer s.database.CloseDB()
 
+	s.readyMutex.Lock()
+	s.ready = true
+	s.readyMutex.Unlock()
 	// Launch new workers for new bundles and bundles with updated configuration until it is time to shutdown.
 
 shutdown:
@@ -182,6 +186,15 @@ shutdown:
 
 func (s *Service) Report() *Report {
 	return s.report
+}
+
+func (s *Service) Ready(_ context.Context) error {
+	s.readyMutex.Lock()
+	defer s.readyMutex.Unlock()
+	if s.ready {
+		return nil
+	}
+	return fmt.Errorf("not ready")
 }
 
 func (s *Service) initDB(ctx context.Context) error {

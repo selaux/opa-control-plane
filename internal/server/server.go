@@ -19,8 +19,9 @@ import (
 )
 
 type Server struct {
-	router *mux.Router
-	db     *database.Database
+	router  *mux.Router
+	db      *database.Database
+	readyFn func(context.Context) error
 }
 
 func New() *Server {
@@ -32,19 +33,23 @@ func (s *Server) Init() *Server {
 		s.router = mux.NewRouter()
 	}
 
-	s.router.Handle("/v1/sources/{source:.+}/data/{path:.+}", http.HandlerFunc(s.v1SourcesDataGet)).Methods(http.MethodGet)
-	s.router.Handle("/v1/sources/{source:.+}/data/{path:.+}", http.HandlerFunc(s.v1SourcesDataPut)).Methods(http.MethodPost, http.MethodPut)
-	s.router.Handle("/v1/sources/{source:.+}/data/{path:.+}", http.HandlerFunc(s.v1SourcesDataDelete)).Methods(http.MethodDelete)
-	s.router.Handle("/v1/sources", http.HandlerFunc(s.v1SourcesList)).Methods(http.MethodGet)
-	s.router.Handle("/v1/sources/{source:.+}", http.HandlerFunc(s.v1SourcesPut)).Methods(http.MethodPut)
-	s.router.Handle("/v1/sources/{source:.+}", http.HandlerFunc(s.v1SourcesGet)).Methods(http.MethodGet)
-	s.router.Handle("/v1/bundles", http.HandlerFunc(s.v1BundlesList)).Methods(http.MethodGet)
-	s.router.Handle("/v1/bundles/{bundle:.+}", http.HandlerFunc(s.v1BundlesPut)).Methods(http.MethodPut)
-	s.router.Handle("/v1/bundles/{bundle:.+}", http.HandlerFunc(s.v1BundlesGet)).Methods(http.MethodGet)
-	s.router.Handle("/v1/stacks", http.HandlerFunc(s.v1StacksList)).Methods(http.MethodGet)
-	s.router.Handle("/v1/stacks/{stack:.+}", http.HandlerFunc(s.v1StacksPut)).Methods(http.MethodPut)
-	s.router.Handle("/v1/stacks/{stack:.+}", http.HandlerFunc(s.v1StacksGet)).Methods(http.MethodGet)
-	s.router.Use(authenticationMiddleware(s.db))
+	public := s.router.PathPrefix("/").Subrouter()
+	public.Handle("/health", http.HandlerFunc(s.health)).Methods(http.MethodGet)
+
+	api := s.router.PathPrefix("/v1").Subrouter()
+	api.Handle("/sources/{source:.+}/data/{path:.+}", http.HandlerFunc(s.v1SourcesDataGet)).Methods(http.MethodGet)
+	api.Handle("/sources/{source:.+}/data/{path:.+}", http.HandlerFunc(s.v1SourcesDataPut)).Methods(http.MethodPost, http.MethodPut)
+	api.Handle("/sources/{source:.+}/data/{path:.+}", http.HandlerFunc(s.v1SourcesDataDelete)).Methods(http.MethodDelete)
+	api.Handle("/sources", http.HandlerFunc(s.v1SourcesList)).Methods(http.MethodGet)
+	api.Handle("/sources/{source:.+}", http.HandlerFunc(s.v1SourcesPut)).Methods(http.MethodPut)
+	api.Handle("/sources/{source:.+}", http.HandlerFunc(s.v1SourcesGet)).Methods(http.MethodGet)
+	api.Handle("/bundles", http.HandlerFunc(s.v1BundlesList)).Methods(http.MethodGet)
+	api.Handle("/bundles/{bundle:.+}", http.HandlerFunc(s.v1BundlesPut)).Methods(http.MethodPut)
+	api.Handle("/bundles/{bundle:.+}", http.HandlerFunc(s.v1BundlesGet)).Methods(http.MethodGet)
+	api.Handle("/stacks", http.HandlerFunc(s.v1StacksList)).Methods(http.MethodGet)
+	api.Handle("/stacks/{stack:.+}", http.HandlerFunc(s.v1StacksPut)).Methods(http.MethodPut)
+	api.Handle("/stacks/{stack:.+}", http.HandlerFunc(s.v1StacksGet)).Methods(http.MethodGet)
+	api.Use(authenticationMiddleware(s.db))
 
 	return s
 }
@@ -59,8 +64,25 @@ func (s *Server) WithDatabase(db *database.Database) *Server {
 	return s
 }
 
+func (s *Server) WithReadiness(fn func(ctx context.Context) error) *Server {
+	s.readyFn = fn
+	return s
+}
+
 func (s *Server) ListenAndServe(addr string) error {
 	return http.ListenAndServe(addr, s.router)
+}
+
+func (s *Server) health(w http.ResponseWriter, r *http.Request) {
+
+	err := s.readyFn(r.Context())
+	if err != nil {
+		errorAuto(w, err)
+		return
+	}
+
+	resp := types.HealthResponse{}
+	JSONOK(w, resp, false)
 }
 
 func (s *Server) v1BundlesList(w http.ResponseWriter, r *http.Request) {
