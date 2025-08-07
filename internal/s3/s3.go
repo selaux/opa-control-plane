@@ -2,6 +2,7 @@
 package s3
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -57,7 +58,8 @@ type (
 	}
 
 	FileSystemStorage struct {
-		path string
+		path   string
+		digest []byte // digest of the previously written bundle, to avoid rewriting the same content.
 	}
 )
 
@@ -291,6 +293,16 @@ func (s *AzureBlobStorage) Download(ctx context.Context) (io.Reader, error) {
 }
 
 func (s *FileSystemStorage) Upload(ctx context.Context, body io.ReadSeeker) error {
+	digest, equal, err := s.check(ctx, body)
+	if equal || err != nil {
+		return err
+	}
+
+	_, err = body.Seek(0, io.SeekStart)
+	if err != nil {
+		return err
+	}
+
 	if err := os.MkdirAll(filepath.Dir(s.path), 0755); err != nil {
 		return fmt.Errorf("failed to create directory: %w", err)
 	}
@@ -304,6 +316,9 @@ func (s *FileSystemStorage) Upload(ctx context.Context, body io.ReadSeeker) erro
 	if _, err := io.Copy(file, body); err != nil {
 		return fmt.Errorf("failed to write to file: %w", err)
 	}
+
+	s.digest = digest // remember the digest of the last written file.
+
 	return nil
 }
 
@@ -314,4 +329,16 @@ func (s *FileSystemStorage) Download(ctx context.Context) (io.Reader, error) {
 	}
 
 	return file, nil
+}
+
+func (s *FileSystemStorage) check(ctx context.Context, body io.Reader) ([]byte, bool, error) {
+	d := sha256.New()
+	_, err := io.Copy(d, body)
+	if err != nil {
+		return nil, false, err
+	}
+
+	digest := d.Sum(nil)
+
+	return digest, bytes.Equal(digest, s.digest), nil
 }
