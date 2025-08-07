@@ -127,6 +127,16 @@ func TestMigration(t *testing.T) {
 			systemId:          "ace44151df234247ab59e9177d02c9cc",
 			styraTokenEnvName: "STYRA_TOKEN_2",
 			bundleName:        "torin-k8s-v1-test",
+			skipBacktest:      true,
+			queries:           []string{"data.main.main", "data.main.main"},
+			inputs: []string{
+				readFileString("testdata/migrate_e2e/kubernetes1-allow.json"),
+				readFileString("testdata/migrate_e2e/kubernetes1-deny.json"),
+			},
+			decisions: []string{
+				readFileString("testdata/migrate_e2e/kubernetes1-allow-decision.json"),
+				readFileString("testdata/migrate_e2e/kubernetes1-deny-decision.json"),
+			},
 			extraConfigs: map[string]string{
 				"config.d/2-storage.yaml": `{
 					bundles: {

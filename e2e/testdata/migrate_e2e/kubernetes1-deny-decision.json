@@ -1,0 +1,38 @@
+{
+  "apiVersion": "admission.k8s.io/v1",
+  "kind": "AdmissionReview",
+  "outcome": {
+    "allowed": false,
+    "decision_type": "DENIED",
+    "message": "Enforced: Resource Pod/foo/nginx-pod-2 should not use the 'latest' tag on container image nginx:latest.",
+    "policy_type": "admission_control",
+    "stacks": {
+      "e164c2affb24478fb5dbe7024f697ab8": {
+        "enforced": [],
+        "monitored": []
+      }
+    },
+    "system": {
+      "enforced": [
+        {
+          "allowed": false,
+          "message": "Resource Pod/foo/nginx-pod-2 should not use the 'latest' tag on container image nginx:latest."
+        }
+      ],
+      "features": {},
+      "labels": {
+        "purpose": "k8s-v1-e2e-test",
+        "system-type": "kubernetes"
+      },
+      "monitored": []
+    }
+  },
+  "response": {
+    "allowed": false,
+    "status": {
+      "code": 403,
+      "message": "Enforced: Resource Pod/foo/nginx-pod-2 should not use the 'latest' tag on container image nginx:latest."
+    },
+    "uid": "ee044b37-b820-46e3-9b8a-ba34a8b524a4"
+  }
+}

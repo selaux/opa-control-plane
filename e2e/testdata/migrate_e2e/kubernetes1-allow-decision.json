@@ -1,0 +1,28 @@
+{
+  "apiVersion": "admission.k8s.io/v1",
+  "kind": "AdmissionReview",
+  "outcome": {
+    "allowed": true,
+    "decision_type": "ALLOWED",
+    "policy_type": "admission_control",
+    "stacks": {
+      "e164c2affb24478fb5dbe7024f697ab8": {
+        "enforced": [],
+        "monitored": []
+      }
+    },
+    "system": {
+      "enforced": [],
+      "features": {},
+      "labels": {
+        "purpose": "k8s-v1-e2e-test",
+        "system-type": "kubernetes"
+      },
+      "monitored": []
+    }
+  },
+  "response": {
+    "allowed": true,
+    "uid": "5a0d646e-8d07-49e2-8025-1446f07fe96f"
+  }
+}
