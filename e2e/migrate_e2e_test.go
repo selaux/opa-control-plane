@@ -353,6 +353,10 @@ func TestMigration(t *testing.T) {
 			styraTokenEnvName: "STYRA_TOKEN_2",
 			systemId:          "c765ce3ea0e14751b88e3530f9d3c8ac",
 			bundleName:        "torin-pull-test-2",
+			skipBacktest:      true,
+			queries:           []string{`data.main.main.allowed`, `data.main.main.allowed`},
+			inputs:            []string{`{"foo": "bar"}`, `{"foo": "baz"}`},
+			decisions:         []string{"false", "true"},
 			extraConfigs: map[string]string{
 				"config.d/2-storage.yaml": `{
 					bundles: {
