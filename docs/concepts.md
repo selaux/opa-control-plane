@@ -198,10 +198,14 @@ The petshop service will define a policy that allows:
 ```rego
 package service
 
-allow if {	input.action == "view_pets"}
+allow if {
+  input.action == "view_pets"
+}
 
-allow if {	input.action == "update_pets"
-input.principal.is_employee}
+allow if {
+  input.action == "update_pets"
+  input.principal.is_employee
+}
 ```
 
 The notifications service will define a policy that allows customers to subscribe to newsletters:
@@ -209,22 +213,31 @@ The notifications service will define a policy that allows customers to subscrib
 ```rego
 package service
 
-allow if {	input.action == "subscribe_to_newsletter"	input.principal.is_customer}
+allow if {
+  input.action == "subscribe_to_newsletter"
+  input.principal.is_customer
+}
 ```
 
 The stack policy will deny users that are contained in the blocklist datasource.
 
 ```rego
-package globalsecurity
-deny if {	input.principal.username in data.blocklist}
+package globalsecurity
+
+deny if {
+  input.principal.username in data.blocklist
+}
 ```
 
 Finally, the entrypoint policy will combine the service and stack policy to produce the final decision:
 
 ```rego
-package main
-main if {	data.service.allow
-not data.globalsecurity.deny}
+package main
+
+main if {
+  data.service.allow
+  not data.globalsecurity.deny
+}
 ```
 
 The configuration below illustrates how the bundles, sources, and stacks are tied together:
@@ -270,45 +283,51 @@ To illustrate this pattern we will use a simple example with a single bundle pol
 The bundle policy will deny deployments that contain artifacts that do not contain a "qa" attestation.
 
 ```rego
-package pipeline
+package pipeline
+
 deny contains msg if {
-some artifact in input.artifacts
-"qa" in artifact.attestations
-msg := sprintf("deployment contains untested artifact: %v", [artifact.name])
+  some artifact in input.artifacts
+  "qa" in artifact.attestations
+  msg := sprintf("deployment contains untested artifact: %v", [artifact.name])
 }
 ```
 
 The first stack policy will block deployments that do not contain an SBOM:
 
 ```rego
-package pipelines.stacks.sbom
+package pipelines.stacks.sbom
+
 deny contains "deployments must contain sbom" if {
-not input.sbom
+  not input.sbom
 }
 ```
 
 The second stack policy will block deployments if an artifact has critical CVEs:
 
 ```rego
-package pipelines.stacks.cves
+package pipelines.stacks.cves
+
 deny contains msg if {
     some artifact in input.artifacts
     some cve in data.cves[artifact.sha]
     cve.level == "critical"
-msg := sprintf("artifact contains critical cve: %v", [cve.id])
+  msg := sprintf("artifact contains critical cve: %v", [cve.id])
 }
 ```
 
 The entrypoint policy will union all of the deny reasons to produce the final set. Since stacks are added to bundles dynamically at build-time, the entrypoint policy iterates over the `stacks` namespace. Only applicable stacks will be present in the bundle.
 
 ```rego
-package pipelines
+package pipelines
+
 deny contains msg if {
     some msg in data.pipeline.deny
 }
 
 deny contains msg if {
-some stackname	some msg in data.pipelines.stacks[stackname].deny}
+  some stackname
+	some msg in data.pipelines.stacks[stackname].deny
+}
 ```
 
 The configuration below illustrates how the bundles, sources, and stacks are tied together:
@@ -415,7 +434,7 @@ pipelines. Choose the level of granularity that matches your operational
 complexity—favor modularity for larger teams and environments, but keep things
 simple for smaller setups.
 
-## Multipel Configuration Files and Overrides
+## Multiple Configuration Files and Overrides
 
 When you execute OCP commands you specify the path to configuration files or
 directories with \-c/–config. The flag can point at individual files or
