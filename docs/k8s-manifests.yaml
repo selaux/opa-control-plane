@@ -161,6 +161,9 @@ spec:
       storage: 1Gi
 
 ---
+# WARNING: This deployment IS NOT intended for production--it is for example
+# purposes only. Important settings like readiness and liveness probes and
+# security context have not been configured.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
