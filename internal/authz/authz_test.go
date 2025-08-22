@@ -4,10 +4,39 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"reflect"
 	"testing"
 
 	_ "modernc.org/sqlite"
 )
+
+func TestPartialStringArgs(t *testing.T) {
+	result, err := Partial(context.Background(), Access{Principal: "bob", Resource: "sources", Permission: "sources.view", Name: "x123"}, map[string]ColumnRef{"input.name": {Table: "sources", Column: "name"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	cond, args := result.SQL(func(int) string { return "?" }, nil)
+	expCond := `EXISTS (SELECT 1 FROM resource_permissions WHERE resource_permissions.name=sources.name AND ?=resource_permissions.resource AND ?=resource_permissions.principal_id AND ?=resource_permissions.permission) OR EXISTS (SELECT 1 FROM resource_permissions WHERE resource_permissions.name=sources.name AND ?=resource_permissions.resource AND ?=resource_permissions.principal_id AND resource_permissions.role=?) OR EXISTS (SELECT 1 FROM principals WHERE ?=principals.id AND principals.role=?) OR EXISTS (SELECT 1 FROM principals WHERE ?=principals.id AND principals.role=?)`
+	if cond != expCond {
+		t.Fatalf("unexpected condition\n\ngot: %q\n\nexp: %q", cond, expCond)
+	}
+	expArgs := []any{
+		"sources",
+		"bob",
+		"sources.view",
+		"sources",
+		"bob",
+		"owner",
+		"bob",
+		"administrator",
+		"bob",
+		"viewer",
+	}
+	if !reflect.DeepEqual(expArgs, args) {
+		t.Fatalf("unexpected args\n\ngot: %v\n\nexp: %v", args, expArgs)
+	}
+}
 
 func TestPartial(t *testing.T) {
 	db, err := sql.Open("sqlite", "file::memory:?cache=shared")
