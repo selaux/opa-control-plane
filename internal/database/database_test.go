@@ -5,6 +5,7 @@ import (
 	"reflect"
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
 	"github.com/styrainc/opa-control-plane/internal/config"
 	"github.com/styrainc/opa-control-plane/internal/database"
 	"github.com/styrainc/opa-control-plane/internal/service"
@@ -123,6 +124,17 @@ func TestDatabase(t *testing.T) {
 							config.Requirement{Source: newString("system3")},
 						},
 					},
+					"bundle-a": {
+						Name: "bundle-a",
+						ObjectStorage: config.ObjectStorage{
+							FileSystemStorage: &config.FileSystemStorage{
+								Path: "path/to/export",
+							},
+						},
+						Requirements: config.Requirements{
+							config.Requirement{Source: newString("source-a")},
+						},
+					},
 				},
 				Stacks: map[string]*config.Stack{
 					"stack1": {
@@ -133,6 +145,7 @@ func TestDatabase(t *testing.T) {
 						Requirements: config.Requirements{
 							config.Requirement{Source: newString("system1")},
 							config.Requirement{Source: newString("system2")},
+							config.Requirement{Source: newString("source-b")},
 						},
 					},
 				},
@@ -157,6 +170,14 @@ func TestDatabase(t *testing.T) {
 					},
 					"system5": {
 						Name:         "system5",
+						Requirements: config.Requirements{},
+					},
+					"source-a": {
+						Name:         "source-a",
+						Requirements: config.Requirements{},
+					},
+					"source-b": {
+						Name:         "source-b",
 						Requirements: config.Requirements{},
 					},
 				},
@@ -185,12 +206,21 @@ func TestDatabase(t *testing.T) {
 				newTestCase("load config").LoadConfig(root),
 
 				// source operations:
-				newTestCase("list sources").ListSources([]*config.Source{root.Sources["system1"], root.Sources["system2"], root.Sources["system3"], root.Sources["system5"], root.Sources["system4"]}),
+				newTestCase("list sources").ListSources([]*config.Source{
+					root.Sources["source-a"], root.Sources["source-b"], root.Sources["system1"],
+					root.Sources["system2"], root.Sources["system3"], root.Sources["system5"],
+					root.Sources["system4"]}),
 				newTestCase("get source system1").GetSource("system1", root.Sources["system1"]),
 
 				// stack operations:
 				newTestCase("list stacks").ListStacks([]*config.Stack{root.Stacks["stack1"]}),
 				newTestCase("get stack stack1").GetStack("stack1", root.Stacks["stack1"]),
+				newTestCase("delete stack stack1 and source-b").
+					DeleteSource("source-b", false). // cannot delete it, it's referenced in stack-1
+					DeleteStack("stack1", true).
+					DeleteSource("source-b", true).
+					GetSource("source-b", nil).
+					GetStack("stack1", nil),
 
 				// source data operations:
 				newTestCase("source/get non-existing  data").SourcesGetData("system1", "foo", nil),
@@ -236,8 +266,8 @@ func TestDatabase(t *testing.T) {
 
 				// bundle operations:
 				newTestCase("list bundles").ListBundles([]*config.Bundle{
-					root.Bundles["system1"], root.Bundles["system2"], root.Bundles["system3"],
-					root.Bundles["system4"], root.Bundles["system5"],
+					root.Bundles["bundle-a"], root.Bundles["system1"], root.Bundles["system2"],
+					root.Bundles["system3"], root.Bundles["system4"], root.Bundles["system5"],
 				}),
 				newTestCase("get bundle system1").GetBundle("system1", root.Bundles["system1"]),
 				newTestCase("put bundle requirements").BundlesPutRequirements("system6", config.Requirements{
@@ -271,8 +301,13 @@ func TestDatabase(t *testing.T) {
 					Name:         "system6",
 					Requirements: config.Requirements{},
 				}),
+				newTestCase("delete bundle and sources").
+					DeleteSource("source-a", false). // Cannot delete source, it's referenced
+					DeleteBundle("bundle-a", true).
+					DeleteSource("source-a", true). // Can delete source now!
+					GetBundle("bundle-a", nil).
+					GetSource("source-a", nil),
 			}
-
 			for _, test := range tests {
 				t.Run(test.note, func(t *testing.T) {
 					for _, op := range test.operations {
@@ -404,16 +439,9 @@ func (tc *testCase) ListBundles(expected []*config.Bundle) *testCase {
 			}
 		}
 
-		if len(expected) != len(listed) {
-			t.Fatalf("expected %d bundles but got %d", len(expected), len(listed))
+		if diff := cmp.Diff(expected, listed); diff != "" {
+			t.Fatal("unexpected list result", diff)
 		}
-
-		for i := range expected {
-			if !listed[i].Equal(expected[i]) {
-				t.Fatalf("expected bundle %q to be equal.", expected[i].Name)
-			}
-		}
-
 	})
 
 	return tc
@@ -455,6 +483,22 @@ func (tc *testCase) GetBundle(id string, expected *config.Bundle) *testCase {
 	return tc
 }
 
+func (tc *testCase) DeleteBundle(id string, expSuccess bool) *testCase {
+	tc.operations = append(tc.operations, func(ctx context.Context, t *testing.T, db *database.Database) {
+		err := db.DeleteBundle(ctx, "admin", id)
+		// NB(sr): we're rather loose with the error matching because these tests run
+		// with all three backends and the error types returned are driver-specific.
+		if !expSuccess && err == nil {
+			t.Fatal("expected error, got nil")
+		}
+		if expSuccess && err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	})
+
+	return tc
+}
+
 func (tc *testCase) ListSources(expected []*config.Source) *testCase {
 	tc.operations = append(tc.operations, func(ctx context.Context, t *testing.T, db *database.Database) {
 		cursor := ""
@@ -477,16 +521,9 @@ func (tc *testCase) ListSources(expected []*config.Source) *testCase {
 			}
 		}
 
-		if len(expected) != len(listed) {
-			t.Fatalf("expected %d sources but got %d", len(expected), len(listed))
+		if diff := cmp.Diff(expected, listed); diff != "" {
+			t.Fatal("unexpected list result", diff)
 		}
-
-		for i := range expected {
-			if !listed[i].Equal(expected[i]) {
-				t.Fatalf("expected source %q to be equal.", expected[i].Name)
-			}
-		}
-
 	})
 
 	return tc
@@ -516,6 +553,22 @@ func (tc *testCase) GetSource(id string, expected *config.Source) *testCase {
 	return tc
 }
 
+func (tc *testCase) DeleteSource(id string, expSuccess bool) *testCase {
+	tc.operations = append(tc.operations, func(ctx context.Context, t *testing.T, db *database.Database) {
+		err := db.DeleteSource(ctx, "admin", id)
+		// NB(sr): we're rather loose with the error matching because these tests run
+		// with all three backends and the error types returned are driver-specific.
+		if !expSuccess && err == nil {
+			t.Fatal("expected error, got nil")
+		}
+		if expSuccess && err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	})
+
+	return tc
+}
+
 func (tc *testCase) ListStacks(expected []*config.Stack) *testCase {
 	tc.operations = append(tc.operations, func(ctx context.Context, t *testing.T, db *database.Database) {
 		cursor := ""
@@ -524,7 +577,7 @@ func (tc *testCase) ListStacks(expected []*config.Stack) *testCase {
 		for {
 			var stacks []*config.Stack
 			var err error
-			limit := 2
+			limit := 4
 			stacks, cursor, err = db.ListStacks(ctx, "admin", database.ListOptions{Limit: limit, Cursor: cursor})
 			if err != nil {
 				t.Fatalf("expected no error, got %v", err)
@@ -538,16 +591,9 @@ func (tc *testCase) ListStacks(expected []*config.Stack) *testCase {
 			}
 		}
 
-		if len(expected) != len(listed) {
-			t.Fatalf("expected %d stacks but got %d", len(expected), len(listed))
+		if diff := cmp.Diff(expected, listed); diff != "" {
+			t.Fatal("unexpected list result", diff)
 		}
-
-		for i := range expected {
-			if !listed[i].Equal(expected[i]) {
-				t.Fatalf("expected stack %q to be equal.", expected[i].Name)
-			}
-		}
-
 	})
 
 	return tc
@@ -571,6 +617,22 @@ func (tc *testCase) GetStack(id string, expected *config.Stack) *testCase {
 			if !stack.Equal(expected) {
 				t.Fatalf("expected stack not found, got %v", stack)
 			}
+		}
+	})
+
+	return tc
+}
+
+func (tc *testCase) DeleteStack(id string, expSuccess bool) *testCase {
+	tc.operations = append(tc.operations, func(ctx context.Context, t *testing.T, db *database.Database) {
+		err := db.DeleteStack(ctx, "admin", id)
+		// NB(sr): we're rather loose with the error matching because these tests run
+		// with all three backends and the error types returned are driver-specific.
+		if !expSuccess && err == nil {
+			t.Fatal("expected error, got nil")
+		}
+		if expSuccess && err != nil {
+			t.Fatalf("unexpected error: %v", err)
 		}
 	})
 
