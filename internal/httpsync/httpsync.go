@@ -49,8 +49,11 @@ func (s *HttpDataSynchronizer) Execute(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-
 	defer resp.Body.Close()
+
+	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
+		return fmt.Errorf("unsuccessful status code %d", resp.StatusCode)
+	}
 
 	_, err = io.Copy(f, resp.Body)
 	return err
