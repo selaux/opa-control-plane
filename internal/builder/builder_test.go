@@ -128,6 +128,52 @@ func TestBuilder(t *testing.T) {
 			expRoots: []string{"x", "lib1", "lib2"},
 		},
 		{
+			note: "multiple requirements, with overlapping but ignored packages",
+			sources: []sourceMock{
+				{
+					name: "src",
+					files: map[string]string{
+						"/x/x.rego": `package x
+						import rego.v1
+						p if data.lib1.q`,
+					},
+					requirements: []string{"lib1", "lib2"},
+				},
+				{
+					name: "lib1",
+					files: map[string]string{
+						"/lib1.rego": `package lib1
+						import rego.v1
+						q if data.lib2.r`,
+						"overlapping.yaml": "[]",
+					},
+					excludedFiles: []string{"*.yaml"},
+				},
+				{
+					name: "lib2",
+					files: map[string]string{
+						"/lib2.rego": `package lib2
+						import rego.v1
+						r if input.x > 7`,
+						"overlapping.yaml": "[]",
+					},
+					excludedFiles: []string{"*.yaml"},
+				},
+			},
+			exp: map[string]string{
+				"/src/x/x.rego": `package x
+				import rego.v1
+				p if data.lib1.q`,
+				"/lib1/lib1.rego": `package lib1
+				import rego.v1
+				q if data.lib2.r`,
+				"/lib2/lib2.rego": `package lib2
+				import rego.v1
+				r if input.x > 7`,
+			},
+			expRoots: []string{"x", "lib1", "lib2"},
+		},
+		{
 			note: "package conflict: same",
 			sources: []sourceMock{
 				{

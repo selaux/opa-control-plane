@@ -309,10 +309,22 @@ func isIncluded(path string, includes []glob.Glob) bool {
 // getRegoAndJSONRootsForDirs returns the set of roots for the given directories. The
 // returned roots are the package paths for rego files and the directories
 // holding the JSON files.
-func getRegoAndJSONRootsForDirs(excluded []glob.Glob, dirs []Dir) ([]ast.Ref, error) {
+func getRegoAndJSONRootsForDirs(excludedFromBundle []glob.Glob, dirs []Dir) ([]ast.Ref, error) {
 	set := ast.NewSet()
 
 	for _, dir := range dirs {
+		var excluded []glob.Glob
+		for _, e := range excludedFromBundle {
+			excluded = append(excluded, e)
+		}
+		for _, e := range dir.ExcludedFiles {
+			glob, err := glob.Compile(e, '/')
+			if err != nil {
+				return nil, err
+			}
+			excluded = append(excluded, glob)
+		}
+
 		if err := walkFilesRecursive(excluded, dir, []string{".rego"}, func(path string, _ os.FileInfo) error {
 			bs, err := os.ReadFile(path)
 			if err != nil {
