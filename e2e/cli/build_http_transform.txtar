@@ -64,4 +64,4 @@ rule := [u, p] if {
 -- exp/data.json --
 {"basicauth":["user001","letmein"],"headers":["open","sesame"]}
 -- exp/.manifest --
-{"revision":"","roots":["basicauth","headers"],"rego_version":0}
+{"revision":"392f2881c233887a2a63122f4344af5d82080596d95b6b58b601ddaa60243de9","roots":["basicauth","headers"],"rego_version":0}

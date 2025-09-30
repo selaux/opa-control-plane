@@ -62,6 +62,7 @@ const (
 	BuildStateTransformFailed
 	BuildStateBuildFailed
 	BuildStatePushFailed
+	BuildStateNoChange
 )
 
 func (s BuildState) String() string {
@@ -78,6 +79,8 @@ func (s BuildState) String() string {
 		return "BUILD_FAILED"
 	case BuildStatePushFailed:
 		return "PUSH_FAILED"
+	case BuildStateNoChange:
+		return "NO_CHANGE"
 	case BuildStateInternalError:
 		fallthrough
 	default:

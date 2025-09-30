@@ -3,6 +3,7 @@ package service
 import (
 	"bytes"
 	"context"
+	"errors"
 	"time"
 
 	"github.com/open-policy-agent/opa/ast" // nolint:staticcheck
@@ -125,18 +126,30 @@ func (w *BundleWorker) Execute(ctx context.Context) time.Time {
 		}
 	}
 
+	var revision string
+	if r := revisions.GetLatest(w.bundleConfig.Name); r != nil {
+		revision = *r
+	}
+
 	buffer := bytes.NewBuffer(nil)
 
 	b := builder.New().
+		WithPreviousRevision(revision).
 		WithSources(w.sources).
 		WithExcluded(w.bundleConfig.ExcludedFiles).
 		WithOutput(buffer)
 
-	err := b.Build(ctx)
+	rev, err := b.Build(ctx)
 	if err != nil {
-		w.log.Warnf("failed to build a bundle %q: %v", w.bundleConfig.Name, err)
-		return w.report(ctx, BuildStateBuildFailed, err)
+		if errors.Is(err, builder.ErrNoChange) {
+			w.log.Debugf("bundle %q skipped because contents are the same", w.bundleConfig.Name)
+			return w.report(ctx, BuildStateNoChange, nil)
+		} else {
+			w.log.Warnf("failed to build a bundle %q: %v", w.bundleConfig.Name, err)
+			return w.report(ctx, BuildStateBuildFailed, err)
+		}
 	}
+	revisions.SetLatest(w.bundleConfig.Name, rev)
 
 	if w.storage != nil {
 		if err := w.storage.Upload(ctx, bytes.NewReader(buffer.Bytes())); err != nil {

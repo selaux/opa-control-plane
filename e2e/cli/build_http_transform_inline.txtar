@@ -34,4 +34,4 @@ sources:
 -- exp/data.json --
 {"users":{"alice":{"roles":["admin","editor"]},"bob":{"roles":["viewer"]}}}
 -- exp/.manifest --
-{"revision":"","roots":["users"],"rego_version":0}
+{"revision":"5ffffea2891951429185daa3a6f0d75c4534f4079bc813ad9e60448c7ea5fb6f","roots":["users"],"rego_version":0}

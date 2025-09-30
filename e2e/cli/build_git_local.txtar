@@ -3,8 +3,8 @@ cd repo
 env HOME=.
 exec git init .
 exec git branch -m main
-exec git config --global user.name "botbotbot" 
-exec git config --global user.email "bot@bot.bot" 
+exec git config --global user.name "botbotbot"
+exec git config --global user.email "bot@bot.bot"
 exec git add .
 exec git commit -m initial-commit
 cd ..
@@ -46,10 +46,11 @@ sources:
       reference: main
       excluded_files:
       - unrelated.yaml
+      - ".*/*"
 -- exp/tarball --
 /data.json
 /.manifest
 -- exp/data.json --
 {"users":[{"id":"alice"},{"id":"bob"}]}
 -- exp/.manifest --
-{"revision":"","roots":["users"],"rego_version":0}
+{"revision":"5328ca0fddd8ac062bd4b43e42a1fa371bc67be9368fe2de21010d45efc888a0","roots":["users"],"rego_version":0}

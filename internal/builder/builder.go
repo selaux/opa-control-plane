@@ -2,16 +2,20 @@ package builder
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
 	"slices"
+	"sort"
 	"strconv"
 	"strings"
 
+	"github.com/gobwas/glob"
 	"github.com/open-policy-agent/opa/ast"     // nolint:staticcheck
 	"github.com/open-policy-agent/opa/bundle"  // nolint:staticcheck
 	"github.com/open-policy-agent/opa/compile" // nolint:staticcheck
@@ -20,6 +24,8 @@ import (
 	"github.com/styrainc/opa-control-plane/internal/config"
 	"github.com/styrainc/opa-control-plane/internal/util"
 )
+
+var ErrNoChange = errors.New("no change")
 
 type Source struct {
 	Name         string
@@ -116,13 +122,19 @@ type Dir struct {
 }
 
 type Builder struct {
-	sources  []*Source
-	output   io.Writer
-	excluded []string
+	sources          []*Source
+	output           io.Writer
+	excluded         []string
+	previousRevision string
 }
 
 func New() *Builder {
 	return &Builder{}
+}
+
+func (b *Builder) WithPreviousRevision(revision string) *Builder {
+	b.previousRevision = revision
+	return b
 }
 
 func (b *Builder) WithOutput(w io.Writer) *Builder {
@@ -158,7 +170,7 @@ func (err *PackageConflictErr) Error() string {
 	return strings.Join(lines, "\n")
 }
 
-func (b *Builder) Build(ctx context.Context) error {
+func (b *Builder) Build(ctx context.Context) (string, error) {
 
 	var existingRoots []ast.Ref
 	// NB(sr): We've accumulated all deps already (service.go#getDeps), but we'll
@@ -189,12 +201,12 @@ func (b *Builder) Build(ctx context.Context) error {
 				srcDir.IncludedFiles,
 				slices.Concat(b.excluded, srcDir.ExcludedFiles))
 			if err != nil {
-				return err
+				return "", err
 			}
 
 			rs, err := getRegoAndJSONRoots(fs0)
 			if err != nil {
-				return fmt.Errorf("%v: %w", next.Name, err)
+				return "", fmt.Errorf("%v: %w", next.Name, err)
 			}
 			newRoots = append(newRoots, rs...)
 			prefix := next.Name
@@ -206,7 +218,7 @@ func (b *Builder) Build(ctx context.Context) error {
 
 		for _, root := range newRoots {
 			if overlap := rootsOverlap(existingRoots, root); len(overlap) > 0 {
-				return &PackageConflictErr{
+				return "", &PackageConflictErr{
 					Requirement: next,
 					Package:     &ast.Package{Path: root},
 					rootMap:     rootMap,
@@ -220,7 +232,7 @@ func (b *Builder) Build(ctx context.Context) error {
 			if r.Source != nil {
 				src, ok := sourceMap[*r.Source]
 				if !ok {
-					return fmt.Errorf("missing source %q", *r.Source)
+					return "", fmt.Errorf("missing source %q", *r.Source)
 				}
 				if _, ok := processed[src.Name]; !ok {
 					toProcess = append(toProcess, src)
@@ -234,16 +246,27 @@ func (b *Builder) Build(ctx context.Context) error {
 	paths := make([]string, 0, len(buildSources))
 	for _, src := range buildSources {
 		if err := ns.Bind(src.prefix, src.fsys); err != nil {
-			return err
+			return "", err
 		}
 		paths = append(paths, src.prefix)
+	}
+	sort.Strings(paths)
+
+	revision, err := calculateRevision(paths, ns)
+	if err != nil {
+		return "", fmt.Errorf("revision: %w", err)
+	}
+
+	if revision == b.previousRevision {
+		return "", ErrNoChange
 	}
 
 	c := compile.New().
 		WithFS(ns).
+		WithRevision(revision).
 		WithPaths(paths...)
 	if err := c.Build(ctx); err != nil {
-		return fmt.Errorf("build: %w", err)
+		return "", fmt.Errorf("build: %w", err)
 	}
 
 	result := c.Bundle()
@@ -254,16 +277,106 @@ func (b *Builder) Build(ctx context.Context) error {
 	for _, root := range existingRoots {
 		r, err := root.Ptr()
 		if err != nil {
-			return err
+			return "", err
 		}
 		result.Manifest.AddRoot(r)
 	}
 	result.Manifest.SetRegoVersion(ast.RegoV0)
-	return bundle.Write(b.output, *result)
+
+	err = bundle.Write(b.output, *result)
+	if err != nil {
+		return "", err
+	}
+
+	return revision, nil
 }
 
-// getRegoAndJSONRoots returns the set of roots for the given directories.
-// The returned roots are the package paths for rego files and the directories
+// calculateRevision calculates a hash based on all files that are considered to be included in the bundle
+func calculateRevision(prefixes []string, ns fs.FS) (string, error) {
+	revisionArr := [][]string{}
+	for _, prefix := range prefixes {
+		err := fs.WalkDir(ns, prefix, func(path string, d fs.DirEntry, err error) error {
+			if err != nil {
+				return err
+			}
+			if d.IsDir() {
+				return nil
+			}
+
+			file, err := ns.Open(path)
+			if err != nil {
+				return err
+			}
+			defer file.Close()
+
+			fileHash := sha256.New()
+			_, err = io.Copy(fileHash, file)
+			if err != nil {
+				return err
+			}
+			fileHashStr := fmt.Sprintf("%x", fileHash.Sum(nil))
+
+			revisionArr = append(revisionArr, []string{path[len(prefix)+1:], fileHashStr})
+
+			return nil
+		})
+		if err != nil {
+			return "", err
+		}
+	}
+	revisionBytes, err := json.Marshal(revisionArr)
+	if err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("%x", sha256.Sum256(revisionBytes)), nil
+}
+
+func walkFilesRecursive(excludes []glob.Glob, dir Dir, suffixes []string, fn func(path string, fi os.FileInfo) error) error {
+	includes := make([]glob.Glob, 0, len(dir.IncludedFiles))
+	for _, i := range dir.IncludedFiles {
+		g, err := glob.Compile(i)
+		if err != nil {
+			return err
+		}
+		includes = append(includes, g)
+	}
+	return filepath.Walk(dir.Path, func(path string, fi os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		if fi.IsDir() {
+			return nil
+		}
+		// NB(sr): All our globs are "/"-separated, so we need to check for inclusion/exclusion on
+		// the ToSlash-ed path.
+		trimmed := strings.TrimPrefix(filepath.ToSlash(path), dir.Path+"/")
+		if isExcluded(trimmed, excludes) || !isIncluded(trimmed, includes) {
+			return nil
+		}
+		ext := filepath.Ext(path)
+		if !slices.ContainsFunc(suffixes, func(s string) bool {
+			return strings.EqualFold(s, ext)
+		}) {
+			return nil
+		}
+		return fn(path, fi)
+	})
+}
+
+func isExcluded(path string, excludes []glob.Glob) bool {
+	return slices.ContainsFunc(excludes, func(g glob.Glob) bool {
+		return g.Match(path)
+	})
+}
+
+func isIncluded(path string, includes []glob.Glob) bool {
+	return len(includes) == 0 || slices.ContainsFunc(includes, func(g glob.Glob) bool {
+		return g.Match(path)
+	})
+}
+
+// getRegoAndJSONRootsForDirs returns the set of roots for the given directories. The
+// returned roots are the package paths for rego files and the directories
 // holding the JSON files.
 // It works on `fs.FS`es and expects filters to already have been applied (via
 // `utils.FilterFS`).

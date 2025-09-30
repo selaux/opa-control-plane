@@ -403,7 +403,7 @@ func TestBuilder(t *testing.T) {
 					WithExcluded(tc.excluded).
 					WithOutput(buf)
 
-				err := b.Build(t.Context())
+				_, err := b.Build(t.Context())
 				if err != nil {
 					if tc.expError != nil {
 						if err.Error() == tc.expError.Error() {
