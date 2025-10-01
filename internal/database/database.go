@@ -45,6 +45,23 @@ type Database struct {
 	log    *logging.Logger
 }
 
+func (d *Database) DB() *sql.DB {
+	return d.db
+}
+
+func (d *Database) Dialect() (string, error) {
+	switch d.kind {
+	case sqlite:
+		return "sqlite", nil
+	case postgres:
+		return "postgresql", nil
+	case mysql:
+		return "mysql", nil
+	default:
+		return "", fmt.Errorf("unknown kind: %d", d.kind)
+	}
+}
+
 type ListOptions struct {
 	Limit  int
 	Cursor string
@@ -316,12 +333,6 @@ func (d *Database) InitDB(ctx context.Context) error {
 
 	default:
 		return errors.New("unsupported database connection type")
-	}
-
-	for _, table := range schema {
-		if _, err := d.db.Exec(table.SQL(d.kind)); err != nil {
-			return err
-		}
 	}
 
 	return nil
@@ -1532,10 +1543,6 @@ func (d *Database) resourceExists(ctx context.Context, tx *sql.Tx, table string,
 }
 
 func (d *Database) upsert(ctx context.Context, tx *sql.Tx, table string, columns []string, primaryKey []string, values ...any) error {
-	if err := checkTablePrimaryKey(table, primaryKey); err != nil {
-		return err
-	}
-
 	var query string
 	switch d.kind {
 	case sqlite:
