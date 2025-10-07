@@ -16,7 +16,6 @@ import (
 	"time"
 
 	"github.com/styrainc/opa-control-plane/internal/builder"
-	"github.com/styrainc/opa-control-plane/internal/builtinsync"
 	"github.com/styrainc/opa-control-plane/internal/config"
 	"github.com/styrainc/opa-control-plane/internal/database"
 	"github.com/styrainc/opa-control-plane/internal/gitsync"
@@ -27,6 +26,7 @@ import (
 	"github.com/styrainc/opa-control-plane/internal/progress"
 	"github.com/styrainc/opa-control-plane/internal/s3"
 	"github.com/styrainc/opa-control-plane/internal/sqlsync"
+	"github.com/styrainc/opa-control-plane/internal/util"
 	_ "modernc.org/sqlite"
 )
 
@@ -331,7 +331,8 @@ func (s *Service) launchWorkers(ctx context.Context) {
 		bundleDir := join(s.persistenceDir, md5sum(b.Name))
 
 		for _, dep := range deps {
-			srcDir := join(bundleDir, "sources", dep.Name)
+			// NB(sr): dep.Name could contain a `:` which cause build errors in OPA's bundle build machinery
+			srcDir := join(bundleDir, "sources", util.Escape(dep.Name))
 
 			src := newSource(dep.Name).
 				SyncBuiltin(&syncs, dep.Builtin, s.builtinFS, join(srcDir, "builtin")).
@@ -420,12 +421,16 @@ func newSource(name string) *source {
 }
 
 func (src *source) addDir(dir string, wipe bool, includedFiles []string, excludedFiles []string) {
-	src.Source.Dirs = append(src.Source.Dirs, builder.Dir{
+	_ = src.Source.AddDir(builder.Dir{
 		Path:          filepath.ToSlash(dir),
 		Wipe:          wipe,
 		IncludedFiles: includedFiles,
 		ExcludedFiles: excludedFiles,
 	})
+}
+
+func (src *source) addFS(fsys fs.FS) {
+	src.Source.AddFS(fsys)
 }
 
 func (src *source) SyncGit(syncs *[]Synchronizer, sourceName string, git config.Git, repoDir string, reqCommit string) *source {
@@ -444,10 +449,12 @@ func (src *source) SyncGit(syncs *[]Synchronizer, sourceName string, git config.
 	return src
 }
 
-func (src *source) SyncBuiltin(syncs *[]Synchronizer, builtin *string, fs fs.FS, dir string) *source {
+func (src *source) SyncBuiltin(syncs *[]Synchronizer, builtin *string, fs_ fs.FS, dir string) *source {
 	if builtin != nil {
-		src.addDir(dir, true, nil, nil)
-		*syncs = append(*syncs, builtinsync.New(fs, dir, *builtin))
+		// NB(sr): If the builtin isn't known, this will end up returning
+		// "open .: file does not exist", so we don't check it here.
+		sub, _ := fs.Sub(fs_, *builtin)
+		src.addFS(sub)
 	}
 	return src
 }
